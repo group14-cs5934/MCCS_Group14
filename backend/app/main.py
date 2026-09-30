@@ -6,7 +6,7 @@ import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import health
+from app.api import health, products
 from app.core.config import ConfigError, Settings, get_settings
 from app.core.request_logging import REQUEST_ID_HEADER, add_request_logging
 
@@ -36,6 +36,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     add_request_logging(app)
 
     app.include_router(health.router)
+    app.include_router(products.router)
 
     @app.get("/")
     def root() -> dict[str, str]:
