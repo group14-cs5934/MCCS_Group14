@@ -94,16 +94,28 @@ uv run fastapi dev app/main.py   # http://localhost:8000, API docs at /docs
 Settings are read from environment variables and `backend/.env` (real environment variables
 win). They're defined and validated in `app/core/config.py`; `.env.example` lists every variable.
 
-| Variable       | Required | Default       | Notes                                  |
-| -------------- | -------- | ------------- | -------------------------------------- |
-| `DATABASE_URL` | yes      |               | Postgres connection string             |
-| `APP_ENV`      | no       | `development` | `development`, `test`, or `production` |
-| `LOG_LEVEL`    | no       | `INFO`        | `DEBUG`, `INFO`, `WARNING`, or `ERROR` |
+| Variable       | Required | Default       | Notes                                                         |
+| -------------- | -------- | ------------- | ------------------------------------------------------------- |
+| `DATABASE_URL` | yes      |               | Postgres connection string                                    |
+| `APP_ENV`      | no       | `development` | `development`, `test`, or `production`                        |
+| `LOG_LEVEL`    | no       | `INFO`        | `DEBUG`, `INFO`, `WARNING`, or `ERROR`                        |
+| `CORS_ORIGINS` | no       | _(none)_      | Comma-separated browser origins, e.g. `http://localhost:8081` |
 
 If a required variable is missing or a value is invalid, the server refuses to start and prints
 which variable is wrong. To add a variable: add a field to `Settings`, add it to `.env.example`,
 and add a row here. Read settings in code with `get_settings()` (or `Depends(get_settings)` in a
 route).
+
+### Health, CORS & logging
+
+- `GET /health` returns `200 {"status": "ok"}` while the service is up.
+- **CORS**: only origins in `CORS_ORIGINS` may call the API from a browser; others are blocked
+  (preflight gets `400`). The native app isn't a browser and doesn't need an entry. Origins must
+  be `scheme://host[:port]` with no trailing slash, or the server won't start.
+- **Request logging**: every request logs one line, e.g.
+  `GET /products/123 -> 200 (4.2 ms) [request_id=9f1c...]`. The query string is never logged.
+  Each response carries an `X-Request-ID` header (the app can send its own); include it in bug
+  reports to find the matching log line. Successful `/health` calls log at `DEBUG` only.
 
 ### Test & lint
 
