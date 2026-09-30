@@ -117,6 +117,29 @@ route).
   Each response carries an `X-Request-ID` header (the app can send its own); include it in bug
   reports to find the matching log line. Successful `/health` calls log at `DEBUG` only.
 
+### API models
+
+Request/response models live in `app/schemas/`. Each resource has a `...Create` model (what
+clients send; unknown fields are rejected) and a `...Read` model (what the API returns). Invalid
+payloads get `422` with every problem listed.
+
+| Model      | Required               | Optional                                                          |
+| ---------- | ---------------------- | ----------------------------------------------------------------- |
+| `Product`  | `barcode`, `name`      | `brand_id`, `category_id`, `description`, `size`, `image_url`     |
+| `Price`    | `product_id`, `amount` | `currency` (default `USD`), `source`, `observed_at` (default now) |
+| `Category` | `name`, `slug`         | `description`                                                     |
+| `Brand`    | `name`                 |                                                                   |
+
+- `barcode`: 8, 12, 13, or 14 digits (EAN-8, UPC-A, EAN-13, GTIN-14) with a valid check digit.
+- `amount`: exact decimal, greater than 0, at most 2 decimal places; sent in JSON as a string
+  (`"3.49"`) so it never loses cents.
+- `slug`: lowercase words joined by hyphens, e.g. `chips-snacks`.
+- IDs are integers. `ProductRead` includes the nested `brand`, `category`, and current `price`.
+- Price is its own table so price history is kept (needed for the price-tracker stretch goal);
+  per-store stock belongs in a separate store/product table (T047).
+
+`POST /products/validate` checks a product payload without saving it (useful for demos and forms).
+
 ### Test & lint
 
 ```sh
