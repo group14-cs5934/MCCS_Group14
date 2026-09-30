@@ -3,6 +3,7 @@
     "name": "Recon",
     "slug": "mccs-recon",
     "version": "1.0.0",
+    "scheme": "recon",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -21,6 +22,9 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": ["expo-font", "expo-splash-screen"]
+    "plugins": ["expo-font", "expo-splash-screen", "expo-router", "expo-asset"],
+    "experiments": {
+      "typedRoutes": true
+    }
   }
 }

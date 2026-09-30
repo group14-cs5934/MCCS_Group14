@@ -12,11 +12,11 @@ import {
 
 /**
  * Developer screen that renders every theme token. Change a value in src/theme/ and
- * reload to see it update here. Temporary until real screens replace it (T003/T016).
+ * reload to see it update here. Opened from Home in development builds.
  */
 export default function ThemePreview() {
   return (
-    <ScrollView style={sharedStyles.screen} contentContainerStyle={styles.content}>
+    <ScrollView style={sharedStyles.screen} contentContainerStyle={sharedStyles.screenContent}>
       <View>
         <Text style={[textStyles.display, { color: colors.textPrimary }]}>Recon</Text>
         <Text style={[textStyles.subheading, { color: colors.textSecondary }]}>
@@ -66,10 +66,6 @@ export default function ThemePreview() {
 }
 
 const styles = StyleSheet.create({
-  content: {
-    ...StyleSheet.flatten(sharedStyles.screenContent),
-    paddingTop: spacing.xxxl + spacing.lg,
-  },
   ratingRow: {
     gap: spacing.xs,
     marginVertical: spacing.xs,
