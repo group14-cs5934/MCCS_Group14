@@ -1,0 +1,14 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+
+# VS Code: share team settings + recommended extensions, ignore everything else
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# Env files (never commit secrets)
+.env
+.env.*
+!.env.example
