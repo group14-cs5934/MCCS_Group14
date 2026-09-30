@@ -4,15 +4,19 @@ Real environment variables take precedence over values in .env. See .env.example
 full list of variables.
 """
 
+import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import PostgresDsn, ValidationError
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import PostgresDsn, ValidationError, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # backend/.env, found the same way no matter which directory the server is started from.
 ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+
+# scheme://host[:port] with no path or trailing slash, e.g. http://localhost:8081
+_ORIGIN_PATTERN = re.compile(r"^https?://[A-Za-z0-9.-]+(:\d{1,5})?$")
 
 
 class Settings(BaseSettings):
@@ -24,6 +28,29 @@ class Settings(BaseSettings):
     # Optional
     app_env: Literal["development", "test", "production"] = "development"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    # Browser origins allowed to call the API (comma-separated in .env). Empty = none allowed.
+    # The native app doesn't need this; it's for Expo web and any future web dashboard.
+    cors_origins: Annotated[list[str], NoDecode] = []
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _split_origins(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return [origin.strip() for origin in value.split(",") if origin.strip()]
+        return value
+
+    @field_validator("cors_origins")
+    @classmethod
+    def _check_origins(cls, origins: list[str]) -> list[str]:
+        for origin in origins:
+            if not _ORIGIN_PATTERN.match(origin):
+                # A trailing slash or path never matches a browser's Origin header, so CORS
+                # would silently block everything. Fail loudly instead.
+                raise ValueError(
+                    f"'{origin}' is not a valid origin; use scheme://host[:port] with no "
+                    "trailing slash, e.g. http://localhost:8081"
+                )
+        return origins
 
 
 class ConfigError(RuntimeError):
