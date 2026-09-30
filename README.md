@@ -5,7 +5,7 @@ Mobile app for scanning retail products and viewing product info, prices, rating
 | Folder     | What                                |
 | ---------- | ----------------------------------- |
 | `mobile/`  | React Native app (Expo, TypeScript) |
-| `backend/` | FastAPI service (coming in T004)    |
+| `backend/` | FastAPI service (Python 3.13, uv)   |
 
 ## Mobile app
 
@@ -76,3 +76,39 @@ npm run typecheck     # tsc --noEmit
 
 Run `npm run lint && npm run typecheck && npm test` before opening a PR. Install the recommended VS Code
 extensions (ESLint, Prettier) to get format-on-save.
+
+## Backend
+
+Requires [uv](https://docs.astral.sh/uv/getting-started/installation/) (it installs Python 3.13
+for you).
+
+```sh
+cd backend
+uv sync                          # create .venv and install dependencies
+cp .env.example .env             # then fill in real values (never commit .env)
+uv run fastapi dev app/main.py   # http://localhost:8000, API docs at /docs
+```
+
+### Configuration
+
+Settings are read from environment variables and `backend/.env` (real environment variables
+win). They're defined and validated in `app/core/config.py`; `.env.example` lists every variable.
+
+| Variable       | Required | Default       | Notes                                  |
+| -------------- | -------- | ------------- | -------------------------------------- |
+| `DATABASE_URL` | yes      |               | Postgres connection string             |
+| `APP_ENV`      | no       | `development` | `development`, `test`, or `production` |
+| `LOG_LEVEL`    | no       | `INFO`        | `DEBUG`, `INFO`, `WARNING`, or `ERROR` |
+
+If a required variable is missing or a value is invalid, the server refuses to start and prints
+which variable is wrong. To add a variable: add a field to `Settings`, add it to `.env.example`,
+and add a row here. Read settings in code with `get_settings()` (or `Depends(get_settings)` in a
+route).
+
+### Test & lint
+
+```sh
+uv run pytest            # tests
+uv run ruff check .      # lint
+uv run ruff format .     # format (use --check to only check)
+```
