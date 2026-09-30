@@ -1,0 +1,7 @@
+# Always check out text files with LF endings (Prettier requires LF; avoids lint failures on Windows)
+* text=auto eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.ttf binary
