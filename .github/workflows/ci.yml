@@ -26,7 +26,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v10
+      # setup-uv publishes only full version tags (no floating v10), so pin the exact release.
+      - uses: astral-sh/setup-uv@v10.2.0
 
       # Installs Python 3.13 (from .python-version) and the exact versions in uv.lock.
       - name: Install dependencies
