@@ -71,9 +71,7 @@ def seed() -> None:
                 category_row = cursor.fetchone()
 
                 if category_row is None:
-                    raise RuntimeError(
-                        f"Category '{product['category_slug']}' was not found."
-                    )
+                    raise RuntimeError(f"Category '{product['category_slug']}' was not found.")
 
                 category_id = category_row[0]
 
