@@ -147,3 +147,24 @@ uv run pytest            # tests
 uv run ruff check .      # lint
 uv run ruff format .     # format (use --check to only check)
 ```
+
+## Continuous integration
+
+GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs on every pull request
+and every push to `main`. A failing step shows as a failed check on the PR.
+
+| Job       | Checks                                                                  |
+| --------- | ----------------------------------------------------------------------- |
+| `Backend` | `ruff check`, `ruff format --check`, `pytest`                           |
+| `Mobile`  | `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test` |
+
+Every check runs even when an earlier one fails, so a single run lists all problems. Click
+**Details** on a failed check to see the log. To run the same checks locally before pushing:
+
+```sh
+# in backend/
+uv run ruff check . && uv run ruff format --check . && uv run pytest
+
+# in mobile/
+npm run lint && npm run format:check && npm run typecheck && npm test
+```
