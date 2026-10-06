@@ -76,6 +76,7 @@ appear on the dev **Theme preview** screen (link on Home in development builds).
 | `ErrorBanner`  | Small inline error with optional retry, e.g. inside a card or above a list.          |
 | `ErrorState`   | Full-screen error: icon, title, message, Try Again. Extra buttons go in `children`.  |
 | `AsyncContent` | Wraps a screen's content and shows a spinner or `ErrorState` in its place as needed. |
+| `IconBadge`    | Icon in a soft circle, for call-to-action, empty, and error states.                  |
 
 **Loading and error props.** `Card` and `AsyncContent` take `loading`, `error` (a message string),
 and `onRetry`. While `loading` is true they show a spinner instead of their content; when `error`
