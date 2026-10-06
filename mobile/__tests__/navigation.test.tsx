@@ -54,7 +54,7 @@ describe('navigation shell', () => {
   it('goes back through search to the product and then Home', async () => {
     renderRouter('src/app');
 
-    fireEvent.press(await screen.findByText('Search products'));
+    fireEvent.press(await screen.findByText('Search manually'));
     expect(screen).toHavePathname('/search');
     fireEvent.press(screen.getByText('Open a search result'));
     expect(screen).toHavePathname('/product/sample-cheerios');

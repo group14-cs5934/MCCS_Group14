@@ -1,11 +1,11 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ComponentProps, ReactNode } from 'react';
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import Button from '@/components/Button';
-import { colors, radius, sharedStyles, spacing } from '@/theme';
+import IconBadge from '@/components/IconBadge';
+import { sharedStyles, spacing } from '@/theme';
 
-type IconName = ComponentProps<typeof Ionicons>['name'];
+type IconName = ComponentProps<typeof IconBadge>['icon'];
 
 type Props = {
   message: string;
@@ -31,9 +31,7 @@ export default function ErrorState({
 }: Props) {
   return (
     <View style={[styles.container, style]} accessibilityLiveRegion="polite">
-      <View style={styles.iconBadge}>
-        <Ionicons name={icon} size={32} color={colors.accent} />
-      </View>
+      <IconBadge icon={icon} />
       <View
         accessible
         accessibilityRole="alert"
@@ -59,14 +57,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.lg,
     padding: spacing.xl,
-  },
-  iconBadge: {
-    width: 72,
-    height: 72,
-    borderRadius: radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.iconBadge,
   },
   text: {
     gap: spacing.xs,

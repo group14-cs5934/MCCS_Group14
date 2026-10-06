@@ -40,7 +40,12 @@ export default function TabLayout() {
     >
       <Tabs.Screen
         name="index"
-        options={{ title: 'Home', tabBarIcon: tabIcon('home-outline', 'home') }}
+        // Home shows its own large title, so it has no header bar.
+        options={{
+          title: 'Home',
+          headerShown: false,
+          tabBarIcon: tabIcon('home-outline', 'home'),
+        }}
       />
       <Tabs.Screen
         name="scan"
