@@ -22,7 +22,20 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": ["expo-font", "expo-splash-screen", "expo-router", "expo-asset"],
+    "plugins": [
+      "expo-font",
+      "expo-splash-screen",
+      "expo-router",
+      "expo-asset",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Recon uses your camera to scan product barcodes.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ]
+    ],
     "experiments": {
       "typedRoutes": true
     }

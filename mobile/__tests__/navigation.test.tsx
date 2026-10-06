@@ -16,7 +16,7 @@ describe('navigation shell', () => {
     fireEvent.press(tab('Scan'));
     expect(screen).toHavePathname('/scan');
     expect(tab('Scan')).toBeSelected();
-    expect(screen.getByText(/barcode scanner/)).toBeOnTheScreen();
+    expect(screen.getByText('Allow camera access')).toBeOnTheScreen();
 
     fireEvent.press(tab('Saved'));
     expect(screen).toHavePathname('/saved');
