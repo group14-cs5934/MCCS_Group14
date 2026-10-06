@@ -91,6 +91,38 @@ spinner and ignores taps.
 </View>
 ```
 
+### Calling the API
+
+Use the client in `src/api/` for every backend call; don't call `fetch` directly. It never throws:
+each call resolves to `{ ok: true, data }` or `{ ok: false, error }`, where `error.message` is a
+friendly sentence you can show as-is (e.g. as `AsyncContent`'s `error`). If the API is unreachable
+you get a "Can't reach the server" error instead of a crash; requests time out after 10 seconds.
+
+```tsx
+import { api } from '@/api';
+import type { Product } from '@/types/product';
+
+const result = await api.get<Product>(`/products/${id}`, { signal });
+if (result.ok) {
+  setProduct(result.data);
+} else if (result.error.kind !== 'aborted') {
+  setError(result.error.message);
+}
+```
+
+- `error.kind`: `network` (unreachable), `timeout`, `http` (4xx/5xx, see `error.status` and
+  `error.code`), `invalid-response` (not JSON), or `aborted` (you cancelled via `signal`).
+- `error.requestId` matches the backend log line; include it in bug reports.
+- Response types live in `src/types/` and mirror the backend's `...Read` models.
+- Add one function per endpoint next to the client, like `checkHealth()` in `src/api/health.ts`.
+
+**Which backend the app calls:** in development, port 8000 on the computer running Expo, so it
+works on simulators, emulators, and phones on the same Wi-Fi. For a phone or emulator, start the
+backend with `--host 0.0.0.0` so it accepts connections from your network:
+`uv run fastapi dev app/main.py --host 0.0.0.0`. To use a different API (e.g. a deployed one, or
+when running Expo with `--tunnel`), copy `mobile/.env.example` to `mobile/.env` and set
+`EXPO_PUBLIC_API_URL`, then restart `npm start`.
+
 ### Lint, format & test
 
 ```sh
