@@ -26,6 +26,7 @@ export const colors = {
   rating: '#F5B301', // star ratings
   success: '#22C55E',
   danger: '#EF4444', // errors, favorite heart
+  dangerSoft: '#FEF2F2', // error banner background
   iconBadge: '#ECEAF6', // circle behind icons on empty/error states
 
   // Lines and overlays

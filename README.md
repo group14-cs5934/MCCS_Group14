@@ -63,6 +63,34 @@ under `src/app/`:
 - Custom fonts: set `fontFamily` (e.g. `fonts.bold`), not `fontWeight`. Android ignores
   `fontWeight` on custom fonts.
 
+### Shared components
+
+Reusable UI lives in `src/components/`; use these instead of building your own. All of them
+appear on the dev **Theme preview** screen (link on Home in development builds).
+
+| Component      | Use it for                                                                           |
+| -------------- | ------------------------------------------------------------------------------------ |
+| `Button`       | Actions. `variant`: `primary` (default), `secondary`, `text`; optional `icon`.       |
+| `Card`         | White rounded container. `onPress` makes the whole card tappable.                    |
+| `Loader`       | Spinner with an optional `message`.                                                  |
+| `ErrorBanner`  | Small inline error with optional retry, e.g. inside a card or above a list.          |
+| `ErrorState`   | Full-screen error: icon, title, message, Try Again. Extra buttons go in `children`.  |
+| `AsyncContent` | Wraps a screen's content and shows a spinner or `ErrorState` in its place as needed. |
+
+**Loading and error props.** `Card` and `AsyncContent` take `loading`, `error` (a message string),
+and `onRetry`. While `loading` is true they show a spinner instead of their content; when `error`
+is set they show the error instead, with a Try Again button if `onRetry` is given. `loading` wins
+over `error`, so a retry in progress shows the spinner. `Button` also takes `loading`: it shows a
+spinner and ignores taps.
+
+```tsx
+<View style={sharedStyles.screen}>
+  <AsyncContent loading={isLoading} error={error} onRetry={reload}>
+    <ProductDetails product={product} />
+  </AsyncContent>
+</View>
+```
+
 ### Lint, format & test
 
 ```sh
