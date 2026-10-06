@@ -1,5 +1,10 @@
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import Button from '@/components/Button';
+import Card from '@/components/Card';
+import ErrorBanner from '@/components/ErrorBanner';
+import ErrorState from '@/components/ErrorState';
+import Loader from '@/components/Loader';
 import {
   colors,
   radius,
@@ -10,9 +15,11 @@ import {
   type TextStyleName,
 } from '@/theme';
 
+const noop = () => {};
+
 /**
- * Developer screen that renders every theme token. Change a value in src/theme/ and
- * reload to see it update here. Opened from Home in development builds.
+ * Developer screen that renders every theme token and shared component. Change a value in
+ * src/theme/ and reload to see it update here. Opened from Home in development builds.
  */
 export default function ThemePreview() {
   return (
@@ -25,7 +32,7 @@ export default function ThemePreview() {
       </View>
 
       <Text style={sharedStyles.heading}>Sample card</Text>
-      <View style={sharedStyles.card}>
+      <Card>
         <Text style={[textStyles.caption, { color: colors.textSecondary }]}>
           Lay&apos;s • Snacks &amp; Chips
         </Text>
@@ -36,11 +43,41 @@ export default function ThemePreview() {
           <Text style={sharedStyles.secondaryText}>(1,234 reviews)</Text>
         </View>
         <Text style={sharedStyles.price}>$3.49</Text>
-        <View style={styles.button}>
-          <Text style={[textStyles.label, { color: colors.textOnPrimary }]}>Scan Product</Text>
-        </View>
-        <Text style={[sharedStyles.link, styles.centerText]}>Search manually</Text>
+        <Button title="Scan Product" icon="scan-outline" onPress={noop} style={styles.cardButton} />
+        <Button title="Search manually" variant="text" onPress={noop} />
+      </Card>
+
+      <Text style={sharedStyles.heading}>Buttons</Text>
+      <View style={styles.stack}>
+        <Button title="Primary" onPress={noop} />
+        <Button title="Secondary" variant="secondary" onPress={noop} />
+        <Button title="Text" variant="text" onPress={noop} />
+        <Button title="Loading" loading onPress={noop} />
+        <Button title="Disabled" disabled onPress={noop} />
       </View>
+
+      <Text style={sharedStyles.heading}>Loading and errors</Text>
+      <Card loading>
+        <Text style={sharedStyles.body}>Hidden while loading</Text>
+      </Card>
+      <Card error="Couldn't load prices." onRetry={noop}>
+        <Text style={sharedStyles.body}>Hidden on error</Text>
+      </Card>
+      <ErrorBanner title="You're offline" message="Showing saved results." />
+      <Card>
+        <Loader message="Loading product…" />
+      </Card>
+      <Card>
+        <ErrorState
+          title="Product not found"
+          message="We couldn't find that barcode."
+          icon="search-outline"
+          onRetry={noop}
+          retryLabel="Retry"
+        >
+          <Button title="Search" variant="secondary" onPress={noop} />
+        </ErrorState>
+      </Card>
 
       <Text style={sharedStyles.heading}>Colors</Text>
       <View style={styles.swatchGrid}>
@@ -70,16 +107,11 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     marginVertical: spacing.xs,
   },
-  button: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md + spacing.xxs,
-    alignItems: 'center',
+  cardButton: {
     marginTop: spacing.lg,
-    marginBottom: spacing.md,
   },
-  centerText: {
-    textAlign: 'center',
+  stack: {
+    gap: spacing.md,
   },
   swatchGrid: {
     flexDirection: 'row',
