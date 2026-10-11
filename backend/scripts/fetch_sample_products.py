@@ -1,6 +1,3 @@
-
-"""T022: Discover and verify real products using UPCitemdb."""
-
 import json
 import time
 import urllib.error
@@ -90,14 +87,8 @@ def search_products(keyword):
     """Discover real product barcodes from UPCitemdb."""
     return request_api(SEARCH_URL, {"s": keyword})
 
-
 def get_product_barcode(product):
-    return str(
-        product.get("upc")
-        or product.get("ean")
-        or ""
-    ).strip()
-
+    return str(product.get("upc") or product.get("ean") or "").strip()
 
 def main():
     print("\n========== T022 PRODUCT COLLECTION ==========\n")
