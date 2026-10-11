@@ -255,6 +255,10 @@ docker run -d --name mccs-test-db -e POSTGRES_PASSWORD=postgres -p 5433:5432 pos
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/postgres uv run pytest
 ```
 
+For endpoint tests that should run without Postgres, swap the repository for an in-memory fake
+with `app.dependency_overrides[get_product_repository] = lambda: fake` (see
+`tests/test_product_lookup_unit.py`). Keep a few database tests too, so the real SQL is covered.
+
 ## Continuous integration
 
 GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs on every pull request

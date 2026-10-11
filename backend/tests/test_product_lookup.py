@@ -1,7 +1,7 @@
-"""GET /products/{id}.
+"""GET /products/{id} against a real database (skipped without TEST_DATABASE_URL).
 
 T018 acceptance: a valid product ID returns name, price, photo URL, and category; an invalid ID
-returns 404. Also T019: both found and not-found lookup cases pass.
+returns 404. Unit tests that need no database are in test_product_lookup_unit.py.
 """
 
 from collections.abc import Iterator
@@ -58,9 +58,3 @@ def test_unknown_id_returns_404(client, product_id) -> None:
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Product not found"}
-
-
-@pytest.mark.parametrize("product_id", ["abc", "-1", "1.5"])
-def test_malformed_id_returns_404(make_client, product_id) -> None:
-    # Only digits match the route, so these never reach the database.
-    assert make_client().get(f"/products/{product_id}").status_code == 404
