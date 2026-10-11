@@ -9,7 +9,8 @@ import { colors, sharedStyles, spacing, textStyles } from '@/theme';
 
 /** Shortcuts for developers, shown only in development builds. */
 const devLinks: { label: string; href: Href }[] = [
-  { label: 'Open a sample product', href: '/product/sample-lays' },
+  // ID 1 is the dev seed script's product in a fresh database (see README: full stack).
+  { label: 'Open a sample product', href: '/product/1' },
   { label: 'Theme preview', href: '/theme-preview' },
 ];
 

@@ -4,6 +4,12 @@ import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-librar
 // T003 acceptance: tapping each tab opens the correct screen, and back returns to the
 // previous screen.
 
+// These tests are about navigation only, so the product page never calls the API: it just
+// shows its loading spinner.
+jest.mock('@/hooks/useProduct', () => ({
+  useProduct: () => ({ loading: true, product: null, error: null, reload: () => {} }),
+}));
+
 /** Tab bar buttons are announced as e.g. "Scan, tab, 2 of 3". */
 const tab = (name: string) => screen.getByRole('button', { name: new RegExp(`^${name}, tab`) });
 
@@ -32,8 +38,8 @@ describe('navigation shell', () => {
     renderRouter('src/app');
 
     fireEvent.press(await screen.findByText('Open a sample product'));
-    expect(screen).toHavePathname('/product/sample-lays');
-    expect(screen.getByText('Product sample-lays')).toBeOnTheScreen();
+    expect(screen).toHavePathname('/product/1');
+    expect(screen.getByText('Loading product…')).toBeOnTheScreen();
 
     act(() => router.back());
     expect(screen).toHavePathname('/');
