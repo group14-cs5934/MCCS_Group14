@@ -259,6 +259,48 @@ For endpoint tests that should run without Postgres, swap the repository for an 
 with `app.dependency_overrides[get_product_repository] = lambda: fake` (see
 `tests/test_product_lookup_unit.py`). Keep a few database tests too, so the real SQL is covered.
 
+## Running the full stack (app ↔ API ↔ database)
+
+Use this to check the whole chain end to end (the T025 integration test). Commands are for Git
+Bash or macOS/Linux; run them from the repo root unless a step says otherwise.
+
+1. **Start a fresh database and apply the migrations** (needs Docker Desktop running):
+
+   ```sh
+   docker run -d --name mccs-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=mccs -p 5432:5432 postgres:17
+   for f in backend/migrations/*.sql; do docker exec -i mccs-db psql -U postgres -d mccs -v ON_ERROR_STOP=1 < "$f"; done
+   ```
+
+   To use the team's Supabase database instead, put its connection string in `backend/.env` and
+   skip this step if its tables already exist (otherwise run each migration file, in order, in
+   Supabase's SQL editor). The seeded product may then not have ID 1.
+
+2. **Configure the backend.** In `backend/.env` (copy `backend/.env.example`):
+   `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mccs` and
+   `CORS_ORIGINS=http://localhost:8081`.
+3. **Seed it**, from `backend/`: `uv run python -m scripts.seed_dev` → prints "Development seed
+   completed successfully." (It adds one product, Sample Chips, with no price.)
+4. **Start the API**, from `backend/`: `uv run fastapi dev app/main.py --host 0.0.0.0`. Check
+   <http://localhost:8000/products/1> returns Sample Chips as JSON.
+5. **Start the app**, from `mobile/`: `npm start`, then open it on a phone with Expo Go (same
+   Wi-Fi as the computer), a simulator, or press `w` for the browser.
+6. **Check the result.** On Home, tap **Open a sample product** (development builds only). The
+   product page shows Snacks, **Sample Chips**, 184g, and "No price yet".
+7. **Check the error path.** Stop the API (Ctrl+C) and open the product again: you should see
+   "Can't reach the server…" with **Try Again**. Start the API, tap Try Again, and the product
+   loads.
+
+If it doesn't work:
+
+- **"Can't reach the server" on a phone:** the API wasn't started with `--host 0.0.0.0`, the phone
+  is on a different network, or the firewall is blocking port 8000 (on Windows, allow Python on
+  private networks when prompted).
+- **"We couldn't find what you're looking for":** there's no product with ID 1 in that database;
+  seed a fresh one (step 1) or open the product's actual ID.
+- **Nothing loads in the browser:** `CORS_ORIGINS` must include `http://localhost:8081`.
+- **Port 8000 already in use:** stop the other program, or run the API with `--port 8001` and set
+  `EXPO_PUBLIC_API_URL=http://<your computer's IP>:8001` in `mobile/.env`.
+
 ## Continuous integration
 
 GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs on every pull request
