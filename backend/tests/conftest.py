@@ -71,6 +71,13 @@ def db_url() -> Iterator[str]:
 
 
 @pytest.fixture
+def connection(db_url: str) -> Iterator[psycopg.Connection]:
+    """A connection to the db_url test database, for adding rows or checking results."""
+    with psycopg.connect(db_url) as connection:
+        yield connection
+
+
+@pytest.fixture
 def env_file(tmp_path: Path) -> Callable[[str], Path]:
     """Write a temporary .env file and return its path."""
 

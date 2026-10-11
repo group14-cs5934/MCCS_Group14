@@ -1,48 +1,12 @@
-from collections.abc import Iterator
-from datetime import UTC, datetime
 from decimal import Decimal
 
-import psycopg
-import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import load_settings
 from app.main import create_app
 from app.repositories import ProductRepository, Products
 from app.schemas import ProductRead
-
-BARCODE = "036000291452"
-
-
-@pytest.fixture
-def connection(db_url: str) -> Iterator[psycopg.Connection]:
-    with psycopg.connect(db_url) as connection:
-        yield connection
-
-
-def add_product(connection: psycopg.Connection, category_slug: str | None = None) -> int:
-    category_id = None
-    if category_slug:
-        (category_id,) = connection.execute(
-            "INSERT INTO categories (name, slug) VALUES ('Snacks', %s) RETURNING id",
-            (category_slug,),
-        ).fetchone()
-    (product_id,) = connection.execute(
-        """
-        INSERT INTO products (barcode, name, size, image_url, category_id)
-        VALUES (%s, 'Sample Chips', '184g', 'https://example.com/chips.jpg', %s)
-        RETURNING id
-        """,
-        (BARCODE, category_id),
-    ).fetchone()
-    return product_id
-
-
-def add_price(connection: psycopg.Connection, product_id: int, amount: str, observed: str) -> None:
-    connection.execute(
-        "INSERT INTO prices (product_id, amount, observed_at) VALUES (%s, %s, %s)",
-        (product_id, Decimal(amount), datetime.fromisoformat(observed).replace(tzinfo=UTC)),
-    )
+from tests.factories import BARCODE, add_price, add_product
 
 
 def test_get_by_id_returns_the_product_with_category_and_latest_price(connection) -> None:
