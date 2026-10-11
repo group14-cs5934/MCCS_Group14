@@ -2,12 +2,15 @@
 
 import logging
 import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import health, products
 from app.core.config import ConfigError, Settings, get_settings
+from app.core.database import create_pool
 from app.core.request_logging import REQUEST_ID_HEADER, add_request_logging
 
 logger = logging.getLogger("app")
@@ -22,7 +25,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Our request log replaces uvicorn's access log (it adds duration and request ID).
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
-    app = FastAPI(title="MCCS Product API", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # Connect in the background so the API (and /health) starts even when the database is
+        # down; requests that need the database fail until it's reachable.
+        pool = create_pool(settings)
+        pool.open(wait=False)
+        app.state.db_pool = pool
+        try:
+            yield
+        finally:
+            pool.close()
+
+    app = FastAPI(title="MCCS Product API", version="0.1.0", lifespan=lifespan)
 
     # Middleware added later wraps earlier ones, so request logging (added last) sees every
     # request, including the ones CORS rejects.
