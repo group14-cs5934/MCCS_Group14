@@ -7,6 +7,9 @@ from psycopg.rows import dict_row
 from app.core.database import DbConnection
 from app.schemas import ProductRead
 
+# products.id is a Postgres INTEGER; larger IDs can't exist, and querying one raises an error.
+_MAX_ID = 2**31 - 1
+
 # A product with its category and most recent price. Columns of a joined table are aliased
 # "<field>__<column>" so _to_product can nest them. Brand stays None until there's a brands
 # table to join (products.brand_id has nothing to reference yet).
@@ -57,6 +60,8 @@ class ProductRepository:
 
     def get_by_id(self, product_id: int) -> ProductRead | None:
         """The product with this ID, or None if there isn't one."""
+        if not 0 < product_id <= _MAX_ID:
+            return None
         return self._fetch_one("WHERE p.id = %s", (product_id,))
 
     def get_by_barcode(self, barcode: str) -> ProductRead | None:

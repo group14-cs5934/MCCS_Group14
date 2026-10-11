@@ -204,6 +204,17 @@ payloads get `422` with every problem listed.
 
 `POST /products/validate` checks a product payload without saving it (useful for demos and forms).
 
+### Endpoints
+
+| Endpoint                  | Returns                                                                     |
+| ------------------------- | --------------------------------------------------------------------------- |
+| `GET /products/{id}`      | One `ProductRead` (with category and current price), or `404` if not found. |
+| `POST /products/validate` | The cleaned-up payload, or `422` listing every problem.                     |
+
+A missing product returns `404 {"detail": "Product not found"}`. Only digits match `{id}`, so
+`/products/abc` is also a `404`, and named routes like `/products/search` can be added without
+clashing. Full request/response details are in the interactive docs at `/docs`.
+
 ### Database access
 
 The app opens a connection pool at startup (`app/core/database.py`). Routes never connect or
