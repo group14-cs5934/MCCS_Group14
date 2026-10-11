@@ -204,12 +204,44 @@ payloads get `422` with every problem listed.
 
 `POST /products/validate` checks a product payload without saving it (useful for demos and forms).
 
+### Database access
+
+The app opens a connection pool at startup (`app/core/database.py`). Routes never connect or
+write SQL themselves: they ask for a repository from `app/repositories/` (or, for one-off queries,
+a `DbConnection`) as a parameter.
+
+```python
+from app.repositories import Products
+
+@router.get("/{product_id}")
+def get_product(product_id: int, products: Products) -> ProductRead:
+    product = products.get_by_id(product_id)  # or products.get_by_barcode(code)
+    ...
+```
+
+- Each request gets its own connection from the pool, so concurrent requests never share one.
+- A request's queries run in one transaction: committed when the route returns, rolled back if it
+  raises.
+- The API starts even if the database is down (`/health` still works); requests that need the
+  database fail after 5 seconds until it's reachable.
+- Add queries as methods on a repository (one per resource, e.g. `ProductRepository`) and
+  always pass values as `%s` parameters, never by building SQL strings.
+
 ### Test & lint
 
 ```sh
 uv run pytest            # tests
 uv run ruff check .      # lint
 uv run ruff format .     # format (use --check to only check)
+```
+
+Database tests (repositories, sessions) need Postgres and are skipped unless `TEST_DATABASE_URL`
+is set; CI always runs them. Each test runs in its own temporary schema with the migrations
+applied, so any Postgres works, e.g. a throwaway Docker container:
+
+```sh
+docker run -d --name mccs-test-db -e POSTGRES_PASSWORD=postgres -p 5433:5432 postgres:17
+TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/postgres uv run pytest
 ```
 
 ## Continuous integration
@@ -219,7 +251,7 @@ and every push to `main`. A failing step shows as a failed check on the PR.
 
 | Job       | Checks                                                                  |
 | --------- | ----------------------------------------------------------------------- |
-| `Backend` | `ruff check`, `ruff format --check`, `pytest`                           |
+| `Backend` | `ruff check`, `ruff format --check`, `pytest` (with a Postgres service) |
 | `Mobile`  | `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test` |
 
 Every check runs even when an earlier one fails, so a single run lists all problems. Click
