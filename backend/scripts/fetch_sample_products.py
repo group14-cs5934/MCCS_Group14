@@ -52,7 +52,7 @@ def load_json(path, default):
     if not path.exists():
         return default
 
-    with open(path, "r", encoding="utf-8") as file:
+    with open(path, encoding="utf-8") as file:
         return json.load(file)
 
 
