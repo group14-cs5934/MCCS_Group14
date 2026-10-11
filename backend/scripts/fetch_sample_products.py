@@ -1,4 +1,3 @@
-
 """T022: Discover and verify real products using UPCitemdb."""
 
 import json
@@ -52,7 +51,7 @@ def load_json(path, default):
     if not path.exists():
         return default
 
-    with open(path, "r", encoding="utf-8") as file:
+    with open(path, encoding="utf-8") as file:
         return json.load(file)
 
 
@@ -92,11 +91,7 @@ def search_products(keyword):
 
 
 def get_product_barcode(product):
-    return str(
-        product.get("upc")
-        or product.get("ean")
-        or ""
-    ).strip()
+    return str(product.get("upc") or product.get("ean") or "").strip()
 
 
 def main():
