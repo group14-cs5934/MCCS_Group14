@@ -31,6 +31,7 @@ mobile/
       _layout.tsx     #   root stack: loads fonts; screens pushed on top of the tabs
       (tabs)/         #   bottom tabs: index (Home), scan, saved
       product/[id].tsx  # product details, e.g. /product/123
+      product/barcode/[code].tsx  # same page, opened by barcode after a scan
       search.tsx
     theme/            # design tokens: colors, typography (Inter), spacing, radius, shadows,
                       #   and sharedStyles. The only place hex colors and font names live.
@@ -79,6 +80,7 @@ appear on the dev **Theme preview** screen (link on Home in development builds).
 | `IconBadge`            | Icon in a soft circle, for call-to-action, empty, and error states.                  |
 | `CameraPermissionGate` | Wraps anything that needs the camera; asks for access and handles "denied" for you.  |
 | `BarcodeScanner`       | Live camera that reads UPC/EAN barcodes; `onScanned` gets the digits of valid reads. |
+| `ProductPage`          | Body of the product page; shared by the by-ID and by-barcode product routes.         |
 
 **Loading and error props.** `Card` and `AsyncContent` take `loading`, `error` (a message string),
 and `onRetry`. While `loading` is true they show a spinner instead of their content; when `error`

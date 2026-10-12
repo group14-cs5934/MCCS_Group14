@@ -1,64 +1,10 @@
 import { useLocalSearchParams } from 'expo-router';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import AsyncContent from '@/components/AsyncContent';
-import Card from '@/components/Card';
+import ProductPage from '@/components/ProductPage';
 import { useProduct } from '@/hooks/useProduct';
-import { colors, sharedStyles, spacing, textStyles } from '@/theme';
-import type { Product } from '@/types/product';
-import { formatPrice } from '@/utils/formatPrice';
 
-/**
- * Product page: loads the product from the API and shows its basic details. This is the Sprint 1
- * version used for the app ↔ API ↔ database check (T025); T040 builds the full page.
- */
+/** Product page opened by product ID, e.g. /product/123 from a search result or saved list. */
 export default function ProductScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { product, loading, error, reload } = useProduct(id);
-
-  return (
-    <View style={sharedStyles.screen}>
-      <AsyncContent
-        loading={loading}
-        error={error?.message}
-        onRetry={reload}
-        loadingMessage="Loading product…"
-      >
-        {product && <ProductDetails product={product} />}
-      </AsyncContent>
-    </View>
-  );
+  return <ProductPage state={useProduct(id)} />;
 }
-
-function ProductDetails({ product }: { product: Product }) {
-  return (
-    <ScrollView contentContainerStyle={sharedStyles.screenContent}>
-      <Card style={styles.card}>
-        {product.category ? <Text style={styles.category}>{product.category.name}</Text> : null}
-        <Text style={sharedStyles.heading}>{product.name}</Text>
-        {product.size ? <Text style={sharedStyles.secondaryText}>{product.size}</Text> : null}
-        {product.price ? (
-          <Text style={sharedStyles.price}>{formatPrice(product.price)}</Text>
-        ) : (
-          <Text style={sharedStyles.secondaryText}>No price yet</Text>
-        )}
-        {product.description ? <Text style={sharedStyles.body}>{product.description}</Text> : null}
-        <Text style={styles.barcode}>Barcode {product.barcode}</Text>
-      </Card>
-    </ScrollView>
-  );
-}
-
-const styles = StyleSheet.create({
-  card: {
-    gap: spacing.sm,
-  },
-  category: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-  },
-  barcode: {
-    ...textStyles.caption,
-    color: colors.textMuted,
-  },
-});
