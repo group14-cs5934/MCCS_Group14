@@ -78,6 +78,16 @@ it('requests the product from the API and displays it', async () => {
   expect(fetchMock.mock.calls[0][0]).toMatch(/\/products\/1$/);
 });
 
+it('looks the product up by barcode when opened from a scan', async () => {
+  respondWith(200, SAMPLE_CHIPS);
+
+  renderRouter('src/app', { initialUrl: '/product/barcode/036000291452' });
+
+  expect(await screen.findByText('Sample Chips')).toBeOnTheScreen();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(fetchMock.mock.calls[0][0]).toMatch(/\/products\/barcode\/036000291452$/);
+});
+
 it('says when a product has no price yet', async () => {
   respondWith(200, { ...SAMPLE_CHIPS, price: null });
 

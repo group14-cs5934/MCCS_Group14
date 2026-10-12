@@ -12,18 +12,13 @@ type Props = {
    * camera reads many times a second, so this is called repeatedly while a barcode is in view.
    */
   onScanned: (barcode: string) => void;
-  /** Text under the frame telling the user what to do. */
-  hint?: string;
 };
 
 /**
  * Live camera that reads product barcodes (UPC and EAN), with a frame to aim with and a
  * flashlight button. Needs camera access, so render it inside a CameraPermissionGate.
  */
-export default function BarcodeScanner({
-  onScanned,
-  hint = 'Point your camera at a barcode',
-}: Props) {
+export default function BarcodeScanner({ onScanned }: Props) {
   const [torchOn, setTorchOn] = useState(false);
 
   const handleBarcodeScanned = ({ type, data }: BarcodeScanningResult) => {
@@ -68,7 +63,7 @@ export default function BarcodeScanner({
           <View style={[styles.corner, styles.bottomRight]} />
         </View>
 
-        <Text style={styles.hint}>{hint}</Text>
+        <Text style={styles.hint}>Point your camera at a barcode</Text>
       </View>
     </View>
   );
