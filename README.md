@@ -81,6 +81,7 @@ appear on the dev **Theme preview** screen (link on Home in development builds).
 | `CameraPermissionGate` | Wraps anything that needs the camera; asks for access and handles "denied" for you.  |
 | `BarcodeScanner`       | Live camera that reads UPC/EAN barcodes; `onScanned` gets the digits of valid reads. |
 | `ProductPage`          | Body of the product page; shared by the by-ID and by-barcode product routes.         |
+| `SearchResultsList`    | List of product cards (photo, name, size, price); `onOpen` gets the tapped product.  |
 
 **Loading and error props.** `Card` and `AsyncContent` take `loading`, `error` (a message string),
 and `onRetry`. While `loading` is true they show a spinner instead of their content; when `error`

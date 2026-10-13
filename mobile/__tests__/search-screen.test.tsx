@@ -200,13 +200,33 @@ it('clearing the search clears the results right away', async () => {
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
 
-it('opens a result’s product page when tapped', async () => {
+// T038 acceptance: each result shows name, price, and photo; tapping one opens its product page.
+it('shows each result’s name, price, and photo, and tapping one opens its product page', async () => {
   await openSearch();
-  respondWith(200, [FOLGERS]);
+  respondWith(200, [
+    {
+      ...FOLGERS,
+      image_url: 'https://images.example.com/folgers.jpg',
+      price: {
+        id: 9,
+        product_id: 2,
+        amount: '8.99',
+        currency: 'USD',
+        source: null,
+        observed_at: '2026-10-11T19:19:16Z',
+      },
+    },
+  ]);
 
   typeQuickly('folgers');
   pause();
-  fireEvent.press(await screen.findByText('Folgers Classic Roast Coffee'));
 
+  expect(await screen.findByText('Folgers Classic Roast Coffee')).toBeOnTheScreen();
+  expect(screen.getByText('$8.99')).toBeOnTheScreen();
+  expect(screen.getByLabelText('Photo of Folgers Classic Roast Coffee')).toHaveProp('source', {
+    uri: 'https://images.example.com/folgers.jpg',
+  });
+
+  fireEvent.press(screen.getByText('Folgers Classic Roast Coffee'));
   expect(screen).toHavePathname('/product/2');
 });

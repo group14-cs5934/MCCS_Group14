@@ -9,6 +9,8 @@ type Props = {
   children: ReactNode;
   /** Makes the whole card tappable, e.g. a search result. Ignored while loading or on error. */
   onPress?: () => void;
+  /** What a screen reader says for a tappable card, e.g. "Folgers Coffee, $8.99". */
+  accessibilityLabel?: string;
   /** Shows a spinner instead of the children. Wins over error, so a retry shows the spinner. */
   loading?: boolean;
   /** Error message to show instead of the children. */
@@ -19,7 +21,15 @@ type Props = {
 };
 
 /** White rounded card. Shows a spinner or error banner in place of its content when told to. */
-export default function Card({ children, onPress, loading = false, error, onRetry, style }: Props) {
+export default function Card({
+  children,
+  onPress,
+  accessibilityLabel,
+  loading = false,
+  error,
+  onRetry,
+  style,
+}: Props) {
   if (loading) {
     return (
       <View style={[sharedStyles.card, style]}>
@@ -41,6 +51,7 @@ export default function Card({ children, onPress, loading = false, error, onRetr
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
         style={({ pressed }) => [sharedStyles.card, pressed && styles.pressed, style]}
       >
         {children}
