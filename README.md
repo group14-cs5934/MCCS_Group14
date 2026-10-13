@@ -202,6 +202,8 @@ payloads get `422` with every problem listed.
   (`"3.49"`) so it never loses cents.
 - `slug`: lowercase words joined by hyphens, e.g. `chips-snacks`.
 - IDs are integers. `ProductRead` includes the nested `brand`, `category`, and current `price`.
+- Product and category names have `pg_trgm` trigram indexes (migration 003) for typo-tolerant
+  search: `'coffe' <% name` matches "Ground Coffee". See the migration for how to query them.
 - Price is its own table so price history is kept (needed for the price-tracker stretch goal);
   per-store stock belongs in a separate store/product table (T047).
 
