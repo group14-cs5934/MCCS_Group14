@@ -295,8 +295,9 @@ TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/postgres uv run 
 ```
 
 For endpoint tests that should run without Postgres, swap the repository for an in-memory fake
-with `app.dependency_overrides[get_product_repository] = lambda: fake` (see
-`tests/test_product_lookup_unit.py`). Keep a few database tests too, so the real SQL is covered.
+with `app.dependency_overrides[get_product_repository] = lambda: fake`, using `FakeProducts`
+from `tests/fakes.py` (see `tests/test_product_search_unit.py`). Keep a few database tests too,
+so the real SQL is covered.
 
 ## Running the full stack (app ↔ API ↔ database)
 

@@ -2,63 +2,18 @@
 
 T019 acceptance: when the test suite runs, both found and not-found lookup cases pass.
 T031 acceptance: a known barcode returns the matching product; an unknown barcode returns 404.
+T033 acceptance: found, not-found, and empty-search cases pass (search is in
+test_product_search_unit.py).
 
 The product repository is replaced with an in-memory fake, so these run anywhere without
 Postgres. test_product_lookup.py runs the same endpoint against a real database.
 """
 
-from datetime import UTC, datetime
-from decimal import Decimal
-
 import pytest
 from fastapi.testclient import TestClient
 
 from app.repositories.products import get_product_repository
-from app.schemas import CategoryRead, PriceRead, ProductRead
-
-CREATED = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
-
-LAYS = ProductRead(
-    id=7,
-    barcode="036000291452",
-    name="Lay's Sour Cream & Onion",
-    size="184g",
-    image_url="https://example.com/lays.jpg",
-    category_id=3,
-    category=CategoryRead(id=3, name="Chips & Snacks", slug="chips-snacks"),
-    price=PriceRead(
-        id=11,
-        product_id=7,
-        amount=Decimal("3.49"),
-        source="MCCS",
-        observed_at=datetime(2026, 10, 1, 9, 30, tzinfo=UTC),
-    ),
-    created_at=CREATED,
-    updated_at=CREATED,
-)
-
-# A product with no category and no price yet.
-OATLY = ProductRead(
-    id=8, barcode="7394376616501", name="Oatly Oat Milk", created_at=CREATED, updated_at=CREATED
-)
-
-
-class FakeProducts:
-    """Stands in for ProductRepository: serves products from memory and records lookups."""
-
-    def __init__(self, *products: ProductRead) -> None:
-        self._by_id = {product.id: product for product in products}
-        self._by_barcode = {product.barcode: product for product in products}
-        self.requested_ids: list[int] = []
-        self.requested_barcodes: list[str] = []
-
-    def get_by_id(self, product_id: int) -> ProductRead | None:
-        self.requested_ids.append(product_id)
-        return self._by_id.get(product_id)
-
-    def get_by_barcode(self, barcode: str) -> ProductRead | None:
-        self.requested_barcodes.append(barcode)
-        return self._by_barcode.get(barcode)
+from tests.fakes import LAYS, OATLY, FakeProducts
 
 
 @pytest.fixture
@@ -160,6 +115,24 @@ def test_unknown_barcode_returns_404(client, products) -> None:
     assert response.status_code == 404
     assert response.json() == {"code": "product_not_found", "message": "Product not found"}
     assert products.requested_barcodes == ["012345678905"]
+
+
+@pytest.mark.parametrize("path", ["/products/barcode/", "/products/barcode"])
+def test_empty_barcode_returns_404(client, products, path) -> None:
+    response = client.get(path)
+
+    # No route matches an empty code, so it's the generic 404 and nothing is looked up.
+    assert response.status_code == 404
+    assert response.json() == {"code": "not_found", "message": "Not Found"}
+    assert products.requested_barcodes == []
+    assert products.requested_ids == []
+
+
+def test_blank_barcode_is_not_found(client, products) -> None:
+    response = client.get("/products/barcode/%20")
+
+    assert response.status_code == 404
+    assert response.json() == {"code": "product_not_found", "message": "Product not found"}
 
 
 def test_barcode_route_is_not_mistaken_for_an_id(client, products) -> None:
