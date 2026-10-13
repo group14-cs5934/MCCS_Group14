@@ -6,6 +6,7 @@ from psycopg.rows import dict_row
 
 from app.core.database import DbConnection
 from app.schemas import ProductRead
+from app.schemas.product import GTIN_LENGTHS
 
 # products.id is a Postgres INTEGER; larger IDs can't exist, and querying one raises an error.
 _MAX_ID = 2**31 - 1
@@ -66,6 +67,10 @@ class ProductRepository:
 
     def get_by_barcode(self, barcode: str) -> ProductRead | None:
         """The product with this barcode, or None if there isn't one."""
+        # Stored barcodes are always 8, 12, 13, or 14 ASCII digits, so nothing else can match.
+        # Checking first also keeps text Postgres rejects (like a NUL byte) out of the query.
+        if not (barcode.isascii() and barcode.isdigit() and len(barcode) in GTIN_LENGTHS):
+            return None
         return self._fetch_one("WHERE p.barcode = %s", (barcode,))
 
     def _fetch_one(self, where: str, params: tuple[Any, ...]) -> ProductRead | None:

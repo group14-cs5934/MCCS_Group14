@@ -209,14 +209,17 @@ payloads get `422` with every problem listed.
 
 ### Endpoints
 
-| Endpoint                  | Returns                                                                     |
-| ------------------------- | --------------------------------------------------------------------------- |
-| `GET /products/{id}`      | One `ProductRead` (with category and current price), or `404` if not found. |
-| `POST /products/validate` | The cleaned-up payload, or `422` listing every problem.                     |
+| Endpoint                       | Returns                                                                     |
+| ------------------------------ | --------------------------------------------------------------------------- |
+| `GET /products/{id}`           | One `ProductRead` (with category and current price), or `404` if not found. |
+| `GET /products/barcode/{code}` | The same `ProductRead` for the product with this barcode, or `404`.         |
+| `POST /products/validate`      | The cleaned-up payload, or `422` listing every problem.                     |
 
 A missing product returns `404 {"detail": "Product not found"}`. Only digits match `{id}`, so
 `/products/abc` is also a `404`, and named routes like `/products/search` can be added without
-clashing. Full request/response details are in the interactive docs at `/docs`.
+clashing. A barcode must match the stored one exactly (the app normalizes scans first, e.g.
+UPC-E to UPC-A), so anything else, including a code that isn't 8, 12, 13, or 14 digits, is a
+`404`. Full request/response details are in the interactive docs at `/docs`.
 
 ### Database access
 

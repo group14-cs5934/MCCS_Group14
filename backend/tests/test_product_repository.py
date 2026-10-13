@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import load_settings
@@ -47,6 +48,15 @@ def test_get_by_barcode(connection) -> None:
     found = products.get_by_barcode(BARCODE)
     assert found is not None and found.id == product_id
     assert products.get_by_barcode("012345678905") is None
+
+
+@pytest.mark.parametrize(
+    "barcode", ["", "abc", "0360002914", "036000291452\x00", "０３６０００２９１４５２"]
+)
+def test_get_by_barcode_returns_none_for_a_malformed_barcode(connection, barcode) -> None:
+    add_product(connection)
+
+    assert ProductRepository(connection).get_by_barcode(barcode) is None
 
 
 def test_routes_get_a_repository_through_depends(db_url: str, connection) -> None:
