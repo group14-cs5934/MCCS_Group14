@@ -1,8 +1,13 @@
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Query
 
 from app.core.errors import ApiError, error_response
 from app.repositories import Products
 from app.schemas import ProductCreate, ProductRead
+
+# Most search results returned at once; page through more with offset.
+MAX_SEARCH_LIMIT = 50
 
 # Declaring 422 here replaces FastAPI's default 422 docs, which show its old {"detail": ...} body.
 router = APIRouter(
@@ -24,6 +29,27 @@ def validate_product(product: ProductCreate) -> ProductCreate:
     if not. Nothing is stored; creating products is added with the database (T017/T087).
     """
     return product
+
+
+@router.get("/search")
+def search_products(
+    products: Products,
+    q: Annotated[
+        str, Query(max_length=100, description="Words in the product name; small typos are OK")
+    ] = "",
+    category: Annotated[
+        str | None, Query(max_length=100, description="Only this category's slug, e.g. snacks")
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=MAX_SEARCH_LIMIT)] = 20,
+    offset: Annotated[int, Query(ge=0, le=10_000, description="Results to skip, for paging")] = 0,
+) -> list[ProductRead]:
+    """Products matching a name search (best match first) and/or in one category (by slug).
+
+    Always a list: no matches, a blank search, or an unknown category give [], never an error.
+    For example, /products/search?q=coffe finds coffee, and ?q=chips&category=snacks finds chips
+    in Snacks only.
+    """
+    return products.search(q, category, limit=limit, offset=offset)
 
 
 # ":int" makes this route match digits only, so /products/abc is a 404 (not a 422) and named

@@ -73,12 +73,46 @@ class ProductRepository:
             return None
         return self._fetch_one("WHERE p.barcode = %s", (barcode,))
 
+    def search(
+        self, query: str = "", category: str | None = None, limit: int = 20, offset: int = 0
+    ) -> list[ProductRead]:
+        """Products whose name matches `query`, best match first, and/or that are in the category
+        with slug `category` (then sorted by name). Empty if neither is given.
+
+        Small typos still match ("coffe" finds "Ground Coffee"): a product matches when one of
+        its words is close enough to the query (pg_trgm word similarity; see migration 003).
+        """
+        query = query.strip()
+        category = (category or "").strip().lower()
+        # Postgres rejects text containing NUL, and no name or slug contains one.
+        if (not query and not category) or "\x00" in query + category:
+            return []
+
+        # Built only from the constants below; values only ever go in `params`.
+        conditions = []
+        if query:
+            conditions.append("%(query)s <%% p.name")
+        if category:
+            conditions.append("c.slug = %(category)s")
+        order = "word_similarity(%(query)s, p.name) DESC, p.name, p.id" if query else "p.name, p.id"
+        params = {"query": query, "category": category, "limit": limit, "offset": offset}
+        return self._fetch_all(
+            f"WHERE {' AND '.join(conditions)} ORDER BY {order} LIMIT %(limit)s OFFSET %(offset)s",
+            params,
+        )
+
     def _fetch_one(self, where: str, params: tuple[Any, ...]) -> ProductRead | None:
         # `where` is always a constant from this class; values only ever go in `params`.
         with self._connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(_PRODUCT_QUERY + where, params)
             row = cursor.fetchone()
         return _to_product(row) if row is not None else None
+
+    def _fetch_all(self, where: str, params: dict[str, Any]) -> list[ProductRead]:
+        # `where` is always a constant from this class; values only ever go in `params`.
+        with self._connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(_PRODUCT_QUERY + where, params)
+            return [_to_product(row) for row in cursor.fetchall()]
 
 
 def get_product_repository(db: DbConnection) -> ProductRepository:
