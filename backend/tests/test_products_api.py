@@ -21,7 +21,9 @@ def test_missing_required_field_returns_422(make_client, field):
     response = validate(make_client(), payload)
 
     assert response.status_code == 422
-    [error] = response.json()["detail"]
+    body = response.json()
+    assert body["code"] == "validation_error"
+    [error] = body["details"]
     assert error["type"] == "missing"
     assert error["loc"] == ["body", field]
 
@@ -40,7 +42,7 @@ def test_every_problem_is_reported_at_once(make_client):
     response = validate(make_client(), {"barcode": "12345", "size": "x" * 51})
 
     assert response.status_code == 422
-    fields = {tuple(e["loc"]) for e in response.json()["detail"]}
+    fields = {tuple(e["loc"]) for e in response.json()["details"]}
     assert fields == {("body", "barcode"), ("body", "name"), ("body", "size")}
 
 

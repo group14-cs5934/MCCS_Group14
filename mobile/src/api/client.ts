@@ -59,18 +59,18 @@ function messageForStatus(status: number): string {
 }
 
 /**
- * Pulls the error code and message out of an error response body. FastAPI's default body is
- * {"detail": "..."}; T032's standard format adds code/message. Update this if that format changes.
+ * Pulls the error code and message out of an error response body. Every backend error uses the
+ * same body, {"code": "product_not_found", "message": "Product not found"} (see the backend
+ * README: errors). Other bodies, e.g. a proxy's HTML error page, give neither.
  */
 function readServerError(body: unknown): Pick<ApiError, 'code' | 'serverMessage'> {
   if (typeof body !== 'object' || body === null) {
     return {};
   }
-  const { code, message, detail } = body as Record<string, unknown>;
-  const serverMessage = [message, detail].find((value) => typeof value === 'string');
+  const { code, message } = body as Record<string, unknown>;
   return {
     code: typeof code === 'string' ? code : undefined,
-    serverMessage: serverMessage as string | undefined,
+    serverMessage: typeof message === 'string' ? message : undefined,
   };
 }
 

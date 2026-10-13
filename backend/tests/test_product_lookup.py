@@ -58,7 +58,7 @@ def test_unknown_id_returns_404(client, product_id) -> None:
     response = client.get(f"/products/{product_id}")
 
     assert response.status_code == 404
-    assert response.json() == {"detail": "Product not found"}
+    assert response.json() == {"code": "product_not_found", "message": "Product not found"}
 
 
 def test_known_barcode_returns_the_matching_product(client, connection) -> None:
@@ -89,4 +89,4 @@ def test_unknown_barcode_returns_404(client, connection, code) -> None:
     response = client.get(f"/products/barcode/{code}")
 
     assert response.status_code == 404
-    assert response.json() == {"detail": "Product not found"}
+    assert response.json() == {"code": "product_not_found", "message": "Product not found"}

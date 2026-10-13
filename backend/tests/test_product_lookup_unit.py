@@ -120,7 +120,7 @@ def test_not_found_returns_404(client, products) -> None:
     response = client.get("/products/999")
 
     assert response.status_code == 404
-    assert response.json() == {"detail": "Product not found"}
+    assert response.json() == {"code": "product_not_found", "message": "Product not found"}
     assert products.requested_ids == [999]
 
 
@@ -158,7 +158,7 @@ def test_unknown_barcode_returns_404(client, products) -> None:
     response = client.get("/products/barcode/012345678905")
 
     assert response.status_code == 404
-    assert response.json() == {"detail": "Product not found"}
+    assert response.json() == {"code": "product_not_found", "message": "Product not found"}
     assert products.requested_barcodes == ["012345678905"]
 
 
