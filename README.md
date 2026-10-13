@@ -28,14 +28,17 @@ features like the camera won't work on web).
 mobile/
   src/
     app/              # screens (Expo Router): every file here is a route
-      _layout.tsx     #   root stack: loads fonts; screens pushed on top of the tabs
+      _layout.tsx     #   root stack: loads fonts and the session; signed-out users only see
+                      #   sign-in/sign-up, signed-in users see the tabs and screens on top of them
       (tabs)/         #   bottom tabs: index (Home), scan, saved
       product/[id].tsx  # product details, e.g. /product/123
       search.tsx
+      sign-in.tsx, sign-up.tsx  # email + password accounts (Supabase Auth)
     theme/            # design tokens: colors, typography (Inter), spacing, radius, shadows,
                       #   and sharedStyles. The only place hex colors and font names live.
     components/       # reusable UI (buttons, cards, loaders, error banners)
     api/              # API client for the FastAPI backend
+    auth/             # Supabase client, AuthProvider/useAuth, form validation
     hooks/            # shared React hooks
     types/            # shared TypeScript types (Product, Price, ...)
     utils/            # small helpers (formatting, validation)
@@ -77,6 +80,7 @@ appear on the dev **Theme preview** screen (link on Home in development builds).
 | `ErrorState`           | Full-screen error: icon, title, message, Try Again. Extra buttons go in `children`.  |
 | `AsyncContent`         | Wraps a screen's content and shows a spinner or `ErrorState` in its place as needed. |
 | `IconBadge`            | Icon in a soft circle, for call-to-action, empty, and error states.                  |
+| `TextField`            | Labeled text input with an optional `error` shown below it (forms, sign-in).         |
 | `CameraPermissionGate` | Wraps anything that needs the camera; asks for access and handles "denied" for you.  |
 
 **Loading and error props.** `Card` and `AsyncContent` take `loading`, `error` (a message string),
@@ -101,13 +105,13 @@ friendly sentence you can show as-is (e.g. as `AsyncContent`'s `error`). If the 
 you get a "Can't reach the server" error instead of a crash; requests time out after 10 seconds.
 
 ```tsx
-import { api } from '@/api';
-import type { Product } from '@/types/product';
+import { api } from "@/api";
+import type { Product } from "@/types/product";
 
 const result = await api.get<Product>(`/products/${id}`, { signal });
 if (result.ok) {
   setProduct(result.data);
-} else if (result.error.kind !== 'aborted') {
+} else if (result.error.kind !== "aborted") {
   setError(result.error.message);
 }
 ```
@@ -115,6 +119,8 @@ if (result.ok) {
 - `error.kind`: `network` (unreachable), `timeout`, `http` (4xx/5xx, see `error.status` and
   `error.code`), `invalid-response` (not JSON), or `aborted` (you cancelled via `signal`).
 - `error.requestId` matches the backend log line; include it in bug reports.
+- Signed-in requests send the user's Supabase token (`Authorization: Bearer ...`) automatically.
+  A `401` comes back as "Your session has expired. Please sign in again."
 - Response types live in `src/types/` and mirror the backend's `...Read` models.
 - Add one function per endpoint next to the client, like `checkHealth()` in `src/api/health.ts`.
 
@@ -124,6 +130,25 @@ backend with `--host 0.0.0.0` so it accepts connections from your network:
 `uv run fastapi dev app/main.py --host 0.0.0.0`. To use a different API (e.g. a deployed one, or
 when running Expo with `--tunnel`), copy `mobile/.env.example` to `mobile/.env` and set
 `EXPO_PUBLIC_API_URL`, then restart `npm start`.
+
+### Accounts (Supabase Auth)
+
+The app requires an account: it opens on **Sign in** until the user signs in or creates an
+account, and remembers the session on the device. Accounts live in the team's Supabase project.
+Before running the app, copy `mobile/.env.example` to `mobile/.env` and set:
+
+| Variable                   | Where to find it                                                 |
+| -------------------------- | ---------------------------------------------------------------- |
+| `EXPO_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API → Project URL                  |
+| `EXPO_PUBLIC_SUPABASE_KEY` | Same page: the **publishable** (anon) key. Never the secret key. |
+
+- In code, read the user with `const { user, signOut } = useAuth();` from `@/auth`.
+- If **Confirm email** is on in Supabase (Authentication → Sign In / Providers → Email), sign-up
+  shows "Check your email"; the user opens the link, then signs in. With it off, sign-up signs the
+  user straight in.
+- Tests never reach Supabase: `__mocks__/@supabase/supabase-js.ts` fakes it and starts signed in.
+  Tests about auth control it with `mockAuth` (see `__tests__/auth.test.tsx`).
+- User roles come later in T039.
 
 ### Lint, format & test
 
@@ -158,12 +183,14 @@ uv run fastapi dev app/main.py   # http://localhost:8000, API docs at /docs
 Settings are read from environment variables and `backend/.env` (real environment variables
 win). They're defined and validated in `app/core/config.py`; `.env.example` lists every variable.
 
-| Variable       | Required | Default       | Notes                                                         |
-| -------------- | -------- | ------------- | ------------------------------------------------------------- |
-| `DATABASE_URL` | yes      |               | Postgres connection string                                    |
-| `APP_ENV`      | no       | `development` | `development`, `test`, or `production`                        |
-| `LOG_LEVEL`    | no       | `INFO`        | `DEBUG`, `INFO`, `WARNING`, or `ERROR`                        |
-| `CORS_ORIGINS` | no       | _(none)_      | Comma-separated browser origins, e.g. `http://localhost:8081` |
+| Variable              | Required | Default       | Notes                                                         |
+| --------------------- | -------- | ------------- | ------------------------------------------------------------- |
+| `DATABASE_URL`        | yes      |               | Postgres connection string                                    |
+| `SUPABASE_URL`        | yes      |               | Supabase Project URL, used to verify sign-in tokens           |
+| `SUPABASE_JWT_SECRET` | no       |               | Only for projects on Supabase's legacy JWT secret             |
+| `APP_ENV`             | no       | `development` | `development`, `test`, or `production`                        |
+| `LOG_LEVEL`           | no       | `INFO`        | `DEBUG`, `INFO`, `WARNING`, or `ERROR`                        |
+| `CORS_ORIGINS`        | no       | _(none)_      | Comma-separated browser origins, e.g. `http://localhost:8081` |
 
 If a required variable is missing or a value is invalid, the server refuses to start and prints
 which variable is wrong. To add a variable: add a field to `Settings`, add it to `.env.example`,
@@ -208,12 +235,32 @@ payloads get `422` with every problem listed.
 
 | Endpoint                  | Returns                                                                     |
 | ------------------------- | --------------------------------------------------------------------------- |
+| `GET /me`                 | The signed-in user (`id`, `email`), or `401` without a valid token.         |
 | `GET /products/{id}`      | One `ProductRead` (with category and current price), or `404` if not found. |
 | `POST /products/validate` | The cleaned-up payload, or `422` listing every problem.                     |
 
 A missing product returns `404 {"detail": "Product not found"}`. Only digits match `{id}`, so
 `/products/abc` is also a `404`, and named routes like `/products/search` can be added without
 clashing. Full request/response details are in the interactive docs at `/docs`.
+
+### Authentication
+
+The app signs users in with Supabase directly and sends their access token as
+`Authorization: Bearer <token>`. The API checks the token's signature (with the public keys
+Supabase publishes for the project at `SUPABASE_URL`), audience, issuer, and expiry. To require a
+signed-in user, take a `CurrentUser` parameter:
+
+```python
+from app.core.auth import CurrentUser
+
+@router.get("/me")
+def read_me(user: CurrentUser) -> UserRead:  # user.id is the Supabase user's UUID
+    ...
+```
+
+A missing, expired, or invalid token gets `401 {"detail": "Not authenticated"}`; if Supabase's keys
+can't be fetched, `503`. Product endpoints are still public. Tests swap in their own signing key
+(see `tests/test_auth.py`), so they never call Supabase. User roles come later in T039.
 
 ### Database access
 
@@ -276,15 +323,16 @@ Bash or macOS/Linux; run them from the repo root unless a step says otherwise.
    Supabase's SQL editor). The seeded product may then not have ID 1.
 
 2. **Configure the backend.** In `backend/.env` (copy `backend/.env.example`):
-   `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mccs` and
-   `CORS_ORIGINS=http://localhost:8081`.
+   `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mccs`, the team's
+   `SUPABASE_URL`, and `CORS_ORIGINS=http://localhost:8081`.
 3. **Seed it**, from `backend/`: `uv run python -m scripts.seed_dev` → prints "Development seed
    completed successfully." (It adds one product, Sample Chips, with no price.)
 4. **Start the API**, from `backend/`: `uv run fastapi dev app/main.py --host 0.0.0.0`. Check
    <http://localhost:8000/products/1> returns Sample Chips as JSON.
-5. **Start the app**, from `mobile/`: `npm start`, then open it on a phone with Expo Go (same
-   Wi-Fi as the computer), a simulator, or press `w` for the browser.
-6. **Check the result.** On Home, tap **Open a sample product** (development builds only). The
+5. **Start the app**, from `mobile/`: set the Supabase variables in `mobile/.env` (see
+   [Accounts](#accounts-supabase-auth)), run `npm start`, then open it on a phone with Expo Go
+   (same Wi-Fi as the computer), a simulator, or press `w` for the browser.
+6. **Check the result.** Sign in (or create an account). On Home, tap **Open a sample product** (development builds only). The
    product page shows Snacks, **Sample Chips**, 184g, and "No price yet".
 7. **Check the error path.** Stop the API (Ctrl+C) and open the product again: you should see
    "Can't reach the server…" with **Try Again**. Start the API, tap Try Again, and the product

@@ -10,13 +10,22 @@ import pytest
 from fastapi.testclient import TestClient
 from psycopg import sql
 
-CONFIG_VARS = ("DATABASE_URL", "APP_ENV", "LOG_LEVEL", "CORS_ORIGINS")
+CONFIG_VARS = (
+    "DATABASE_URL",
+    "SUPABASE_URL",
+    "SUPABASE_JWT_SECRET",
+    "APP_ENV",
+    "LOG_LEVEL",
+    "CORS_ORIGINS",
+)
+VALID_SUPABASE_URL = "https://test-project.supabase.co"
 VALID_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/mccs"
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"
 
 # Test-suite config, set before any test imports app.main (which loads settings on import).
 # Real environment variables win over backend/.env, so tests never depend on a developer's .env.
 os.environ["DATABASE_URL"] = VALID_DATABASE_URL
+os.environ["SUPABASE_URL"] = VALID_SUPABASE_URL
 os.environ["APP_ENV"] = "test"
 
 
@@ -35,6 +44,7 @@ def make_client() -> Callable[..., TestClient]:
 
     def make(**overrides: Any) -> TestClient:
         overrides.setdefault("database_url", VALID_DATABASE_URL)
+        overrides.setdefault("supabase_url", VALID_SUPABASE_URL)
         return TestClient(create_app(load_settings(_env_file=None, **overrides)))
 
     return make

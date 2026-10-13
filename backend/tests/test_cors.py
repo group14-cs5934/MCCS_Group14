@@ -8,7 +8,7 @@ page read the response.
 import pytest
 
 from app.core.config import ConfigError, load_settings
-from tests.conftest import VALID_DATABASE_URL
+from tests.conftest import VALID_DATABASE_URL, VALID_SUPABASE_URL
 
 ALLOWED = "http://localhost:8081"
 BLOCKED = "http://evil.example.com"
@@ -58,7 +58,7 @@ def test_no_origins_configured_blocks_every_origin(make_client):
 
 def test_cors_origins_is_read_as_comma_separated_list(env_file, clean_env):
     path = env_file(
-        f"DATABASE_URL={VALID_DATABASE_URL}\n"
+        f"DATABASE_URL={VALID_DATABASE_URL}\nSUPABASE_URL={VALID_SUPABASE_URL}\n"
         "CORS_ORIGINS=http://localhost:8081, https://admin.example.com\n"
     )
 

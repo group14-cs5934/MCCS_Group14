@@ -9,7 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from pydantic import PostgresDsn, ValidationError, field_validator
+from pydantic import HttpUrl, PostgresDsn, SecretStr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # backend/.env, found the same way no matter which directory the server is started from.
@@ -24,13 +24,24 @@ class Settings(BaseSettings):
 
     # Required: no default, so startup fails if it's not set.
     database_url: PostgresDsn
+    # Project URL from Supabase: Project Settings -> API, e.g. https://abcd1234.supabase.co
+    supabase_url: HttpUrl
 
     # Optional
     app_env: Literal["development", "test", "production"] = "development"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    # Only for projects still on the legacy HS256 JWT secret. Newer projects sign tokens with
+    # asymmetric keys that are fetched from the project's JWKS endpoint, so leave this unset.
+    supabase_jwt_secret: SecretStr | None = None
+
     # Browser origins allowed to call the API (comma-separated in .env). Empty = none allowed.
     # The native app doesn't need this; it's for Expo web and any future web dashboard.
     cors_origins: Annotated[list[str], NoDecode] = []
+
+    @property
+    def supabase_auth_url(self) -> str:
+        """Supabase Auth base URL. This is also the `iss` claim of its access tokens."""
+        return f"{str(self.supabase_url).rstrip('/')}/auth/v1"
 
     @field_validator("cors_origins", mode="before")
     @classmethod

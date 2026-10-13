@@ -7,13 +7,16 @@ from fastapi.testclient import TestClient
 from app import main
 from app.core.config import ConfigError, load_settings
 from app.main import create_app
-from tests.conftest import VALID_DATABASE_URL
+from tests.conftest import VALID_DATABASE_URL, VALID_SUPABASE_URL
 
 pytestmark = pytest.mark.usefixtures("clean_env")
 
+# Every required variable, for tests that need an otherwise valid .env file.
+REQUIRED_VARS = f"DATABASE_URL={VALID_DATABASE_URL}\nSUPABASE_URL={VALID_SUPABASE_URL}\n"
+
 
 def test_valid_env_file_loads_and_app_runs(env_file):
-    path = env_file(f"DATABASE_URL={VALID_DATABASE_URL}\nAPP_ENV=test\nLOG_LEVEL=DEBUG\n")
+    path = env_file(f"{REQUIRED_VARS}APP_ENV=test\nLOG_LEVEL=DEBUG\n")
 
     settings = load_settings(_env_file=path)
 
@@ -27,7 +30,7 @@ def test_valid_env_file_loads_and_app_runs(env_file):
 
 
 def test_optional_variables_have_defaults(env_file):
-    settings = load_settings(_env_file=env_file(f"DATABASE_URL={VALID_DATABASE_URL}\n"))
+    settings = load_settings(_env_file=env_file(REQUIRED_VARS))
 
     assert settings.app_env == "development"
     assert settings.log_level == "INFO"
@@ -39,6 +42,7 @@ def test_missing_required_variable_fails_with_clear_message(env_file):
 
     message = str(exc_info.value)
     assert "DATABASE_URL is required but not set" in message
+    assert "SUPABASE_URL is required but not set" in message
     assert ".env.example" in message
 
 
@@ -54,9 +58,18 @@ def test_invalid_value_is_named_without_echoing_secrets(env_file):
     assert "s3cret-pw" not in message
 
 
+def test_invalid_supabase_url_is_rejected(env_file):
+    path = env_file(f"DATABASE_URL={VALID_DATABASE_URL}\nSUPABASE_URL=not-a-url\n")
+
+    with pytest.raises(ConfigError) as exc_info:
+        load_settings(_env_file=path)
+
+    assert "SUPABASE_URL is invalid" in str(exc_info.value)
+
+
 def test_environment_variables_override_env_file(env_file, monkeypatch):
     monkeypatch.setenv("APP_ENV", "production")
-    path = env_file(f"DATABASE_URL={VALID_DATABASE_URL}\nAPP_ENV=development\n")
+    path = env_file(f"{REQUIRED_VARS}APP_ENV=development\n")
 
     assert load_settings(_env_file=path).app_env == "production"
 
