@@ -215,6 +215,7 @@ payloads get `422` with every problem listed.
 | ------------------------------ | --------------------------------------------------------------------------- |
 | `GET /products/{id}`           | One `ProductRead` (with category and current price), or `404` if not found. |
 | `GET /products/barcode/{code}` | The same `ProductRead` for the product with this barcode, or `404`.         |
+| `GET /products/search`         | A list of `ProductRead` matching `q` and/or `category`; `[]` if none match. |
 | `POST /products/validate`      | The cleaned-up payload, or `422` listing every problem.                     |
 
 A missing product returns `404` with code `product_not_found`. Only digits match `{id}`, so
@@ -222,6 +223,12 @@ A missing product returns `404` with code `product_not_found`. Only digits match
 clashing. A barcode must match the stored one exactly (the app normalizes scans first, e.g.
 UPC-E to UPC-A), so anything else, including a code that isn't 8, 12, 13, or 14 digits, is a
 `404`. Full request/response details are in the interactive docs at `/docs`.
+
+Search takes `q` (words in the product name; small typos are fine, best match first),
+`category` (a category slug; only that category's products, sorted by name), or both, plus
+`limit` (1–50, default 20) and `offset` for paging. For example,
+`/products/search?q=coffe&category=coffee-tea`. No matches, a blank search, or an unknown
+category give `[]`, not an error.
 
 ### Errors
 
