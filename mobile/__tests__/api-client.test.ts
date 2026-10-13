@@ -148,7 +148,9 @@ describe('responses', () => {
   });
 
   it('returns a friendly http error with the server details', async () => {
-    respondWith(404, '{"detail":"Product not found"}', { 'x-request-id': 'req-123' });
+    respondWith(404, '{"code":"product_not_found","message":"Product not found"}', {
+      'x-request-id': 'req-123',
+    });
 
     await expect(api.get('/products/999')).resolves.toEqual({
       ok: false,
@@ -156,6 +158,7 @@ describe('responses', () => {
         kind: 'http',
         status: 404,
         message: "We couldn't find what you're looking for.",
+        code: 'product_not_found',
         serverMessage: 'Product not found',
         requestId: 'req-123',
       },

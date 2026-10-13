@@ -215,11 +215,35 @@ payloads get `422` with every problem listed.
 | `GET /products/barcode/{code}` | The same `ProductRead` for the product with this barcode, or `404`.         |
 | `POST /products/validate`      | The cleaned-up payload, or `422` listing every problem.                     |
 
-A missing product returns `404 {"detail": "Product not found"}`. Only digits match `{id}`, so
+A missing product returns `404` with code `product_not_found`. Only digits match `{id}`, so
 `/products/abc` is also a `404`, and named routes like `/products/search` can be added without
 clashing. A barcode must match the stored one exactly (the app normalizes scans first, e.g.
 UPC-E to UPC-A), so anything else, including a code that isn't 8, 12, 13, or 14 digits, is a
 `404`. Full request/response details are in the interactive docs at `/docs`.
+
+### Errors
+
+Every error response (4xx and 5xx, from any endpoint) has the same JSON body (`ErrorResponse`):
+
+```json
+{ "code": "product_not_found", "message": "Product not found" }
+```
+
+- `code` is stable and machine-readable; check it in code. `message` is for developers and logs,
+  not shoppers (the app shows its own friendly text, see the API client above).
+- Validation errors are `422` with code `validation_error` and a `details` list, one entry per
+  problem (`loc`, `msg`, `type`).
+- Unknown URLs are `not_found`, wrong methods `method_not_allowed`, and crashes
+  `internal_error` (the exception text is never sent).
+
+To return an error from a route, raise `ApiError` (`app/core/errors.py`) with its own code;
+a plain `HTTPException` also works and gets a code from its status (e.g. `403` → `forbidden`).
+Document error statuses with `error_response()` and give each new router
+`responses={422: error_response(...)}` so `/docs` shows this format instead of FastAPI's default.
+
+```python
+raise ApiError(404, "product_not_found", "Product not found")
+```
 
 ### Database access
 

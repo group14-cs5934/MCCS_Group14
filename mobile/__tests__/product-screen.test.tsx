@@ -97,7 +97,7 @@ it('says when a product has no price yet', async () => {
 });
 
 it('shows an error for a missing product, and Try Again loads it again', async () => {
-  respondWith(404, { detail: 'Product not found' });
+  respondWith(404, { code: 'product_not_found', message: 'Product not found' });
   renderRouter('src/app', { initialUrl: '/product/1' });
 
   expect(await screen.findByRole('alert')).toBeOnTheScreen();
