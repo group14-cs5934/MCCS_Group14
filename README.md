@@ -32,7 +32,7 @@ mobile/
       (tabs)/         #   bottom tabs: index (Home), scan, saved
       product/[id].tsx  # product details, e.g. /product/123
       product/barcode/[code].tsx  # same page, opened by barcode after a scan
-      search.tsx
+      search.tsx      # product search; searches once typing pauses (useProductSearch)
     theme/            # design tokens: colors, typography (Inter), spacing, radius, shadows,
                       #   and sharedStyles. The only place hex colors and font names live.
     components/       # reusable UI (buttons, cards, loaders, error banners)
