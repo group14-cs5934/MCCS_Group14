@@ -295,6 +295,11 @@ docker run -d --name mccs-test-db -e POSTGRES_PASSWORD=postgres -p 5433:5432 pos
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/postgres uv run pytest
 ```
 
+`tests/test_search_contract.py` checks that `mobile/__tests__/fixtures/search-api-response.json`
+is exactly what `GET /products/search` returns; the app's tests use that file as the API's
+response. If you change the search response on purpose, regenerate it with
+`UPDATE_SEARCH_FIXTURE=1` (plus `TEST_DATABASE_URL`) and run the mobile tests.
+
 For endpoint tests that should run without Postgres, swap the repository for an in-memory fake
 with `app.dependency_overrides[get_product_repository] = lambda: fake`, using `FakeProducts`
 from `tests/fakes.py` (see `tests/test_product_search_unit.py`). Keep a few database tests too,
@@ -327,7 +332,10 @@ Bash or macOS/Linux; run them from the repo root unless a step says otherwise.
    Wi-Fi as the computer), a simulator, or press `w` for the browser.
 6. **Check the result.** On Home, tap **Open a sample product** (development builds only). The
    product page shows Snacks, **Sample Chips**, 184g, and "No price yet".
-7. **Check the error path.** Stop the API (Ctrl+C) and open the product again: you should see
+7. **Check search.** Go back, tap **Search manually**, and type `sample chps` (with the typo). Once
+   you stop typing, **Sample Chips** appears with 184g and "No price yet", the same result as
+   <http://localhost:8000/products/search?q=sample%20chps>. Tap it to open its product page.
+8. **Check the error path.** Stop the API (Ctrl+C) and open the product again: you should see
    "Can't reach the server…" with **Try Again**. Start the API, tap Try Again, and the product
    loads.
 

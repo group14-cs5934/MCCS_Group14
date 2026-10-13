@@ -9,6 +9,7 @@ import SearchResultsList from '@/components/SearchResultsList';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import {
   SEARCH_DEBOUNCE_MS,
+  SEARCH_MAX_LENGTH,
   useProductSearch,
   type ProductSearchState,
 } from '@/hooks/useProductSearch';
@@ -37,6 +38,8 @@ export default function SearchScreen() {
           placeholder="Search products"
           placeholderTextColor={colors.textMuted}
           accessibilityLabel="Search products"
+          // Longer searches would only get a validation error from the API.
+          maxLength={SEARCH_MAX_LENGTH}
           autoFocus
           autoCorrect={false}
           autoCapitalize="none"
