@@ -6,6 +6,9 @@ import type { Product } from '@/types/product';
 /** How long typing has to pause before the search screen searches. */
 export const SEARCH_DEBOUNCE_MS = 300;
 
+/** Longest search the API accepts (the q parameter in backend/app/api/products.py). */
+export const SEARCH_MAX_LENGTH = 100;
+
 export type ProductSearchState = {
   /** What was searched for, trimmed; '' means nothing has been searched yet. */
   query: string;

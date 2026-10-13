@@ -227,6 +227,8 @@ it('shows each result’s name, price, and photo, and tapping one opens its prod
     uri: 'https://images.example.com/folgers.jpg',
   });
 
+  // The product page then loads the product; leave that request pending, it's not tested here.
+  fetchMock.mockReturnValue(new Promise(() => {}));
   fireEvent.press(screen.getByText('Folgers Classic Roast Coffee'));
   expect(screen).toHavePathname('/product/2');
 });
