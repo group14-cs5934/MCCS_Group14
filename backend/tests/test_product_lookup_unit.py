@@ -1,6 +1,7 @@
-"""Unit tests for GET /products/{id}.
+"""Unit tests for GET /products/{id} and GET /products/barcode/{code}.
 
 T019 acceptance: when the test suite runs, both found and not-found lookup cases pass.
+T031 acceptance: a known barcode returns the matching product; an unknown barcode returns 404.
 
 The product repository is replaced with an in-memory fake, so these run anywhere without
 Postgres. test_product_lookup.py runs the same endpoint against a real database.
@@ -47,11 +48,17 @@ class FakeProducts:
 
     def __init__(self, *products: ProductRead) -> None:
         self._by_id = {product.id: product for product in products}
+        self._by_barcode = {product.barcode: product for product in products}
         self.requested_ids: list[int] = []
+        self.requested_barcodes: list[str] = []
 
     def get_by_id(self, product_id: int) -> ProductRead | None:
         self.requested_ids.append(product_id)
         return self._by_id.get(product_id)
+
+    def get_by_barcode(self, barcode: str) -> ProductRead | None:
+        self.requested_barcodes.append(barcode)
+        return self._by_barcode.get(barcode)
 
 
 @pytest.fixture
@@ -130,3 +137,39 @@ def test_docs_show_the_path_and_its_404(client) -> None:
 
     assert "404" in operation["responses"]
     assert operation["parameters"][0]["schema"]["type"] == "integer"
+
+
+def test_known_barcode_returns_the_matching_product(client, products) -> None:
+    response = client.get("/products/barcode/036000291452")
+
+    assert response.status_code == 200
+    # Same body as looking the product up by ID.
+    assert response.json() == client.get("/products/7").json()
+    assert products.requested_barcodes == ["036000291452"]
+
+
+def test_barcode_lookup_returns_the_right_product(client) -> None:
+    product = client.get("/products/barcode/7394376616501").json()
+
+    assert (product["id"], product["name"]) == (8, "Oatly Oat Milk")
+
+
+def test_unknown_barcode_returns_404(client, products) -> None:
+    response = client.get("/products/barcode/012345678905")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Product not found"}
+    assert products.requested_barcodes == ["012345678905"]
+
+
+def test_barcode_route_is_not_mistaken_for_an_id(client, products) -> None:
+    client.get("/products/barcode/036000291452")
+
+    assert products.requested_ids == []
+
+
+def test_docs_show_the_barcode_path_and_its_404(client) -> None:
+    operation = client.app.openapi()["paths"]["/products/barcode/{code}"]["get"]
+
+    assert "404" in operation["responses"]
+    assert operation["parameters"][0]["schema"]["type"] == "string"
