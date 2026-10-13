@@ -1,11 +1,11 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { useState, type ComponentProps } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import AsyncContent from '@/components/AsyncContent';
-import Card from '@/components/Card';
 import IconBadge from '@/components/IconBadge';
+import SearchResultsList from '@/components/SearchResultsList';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import {
   SEARCH_DEBOUNCE_MS,
@@ -91,35 +91,9 @@ function SearchContent({
           text={`No products match "${query}". Check the spelling or try fewer words.`}
         />
       ) : (
-        <ResultsList results={results ?? []} onOpen={onOpen} />
+        <SearchResultsList results={results ?? []} onOpen={onOpen} />
       )}
     </AsyncContent>
-  );
-}
-
-/**
- * Plain list of result names. T038 replaces this with the full results list (name, price, and
- * photo for each product).
- */
-function ResultsList({
-  results,
-  onOpen,
-}: {
-  results: Product[];
-  onOpen: (product: Product) => void;
-}) {
-  return (
-    <FlatList
-      data={results}
-      keyExtractor={(product) => String(product.id)}
-      keyboardShouldPersistTaps="handled"
-      contentContainerStyle={styles.results}
-      renderItem={({ item }) => (
-        <Card onPress={() => onOpen(item)}>
-          <Text style={sharedStyles.body}>{item.name}</Text>
-        </Card>
-      )}
-    />
   );
 }
 
@@ -159,11 +133,6 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: spacing.md,
     color: colors.textPrimary,
-  },
-  results: {
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.xl,
-    gap: spacing.md,
   },
   message: {
     gap: spacing.md,
