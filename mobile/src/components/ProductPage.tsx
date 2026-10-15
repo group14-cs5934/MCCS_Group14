@@ -1,66 +1,405 @@
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+
+import { useEffect, useState } from 'react';
+import {
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { router } from 'expo-router';
 
 import AsyncContent from '@/components/AsyncContent';
-import Card from '@/components/Card';
 import type { ProductState } from '@/hooks/useProduct';
-import { colors, sharedStyles, spacing, textStyles } from '@/theme';
+import {
+  colors,
+  fonts,
+  radius,
+  sharedStyles,
+  spacing,
+  textStyles,
+} from '@/theme';
 import type { Product } from '@/types/product';
 import { formatPrice } from '@/utils/formatPrice';
 
 type Props = {
-  /** The product being loaded, from useProduct or useProductByBarcode. */
   state: ProductState;
 };
 
-/**
- * Body of the product page: the product's basic details, or a spinner or error while it loads.
- * This is the Sprint 1 version used for the app ↔ API ↔ database check (T025); T040 builds the
- * full page.
- */
-export default function ProductPage({ state: { product, loading, error, reload } }: Props) {
+export default function ProductPage({
+  state: { product, loading, error, reload },
+}: Props) {
+  function goBack() {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)');
+    }
+  }
+
   return (
     <View style={sharedStyles.screen}>
+      <View style={styles.header}>
+        <Pressable
+          onPress={goBack}
+          style={styles.circleButton}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <Text style={styles.headerIcon}>‹</Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => router.replace('/(tabs)')}
+          style={styles.circleButton}
+          accessibilityRole="button"
+          accessibilityLabel="Close product page"
+        >
+          <Text style={styles.closeIcon}>×</Text>
+        </Pressable>
+      </View>
+
       <AsyncContent
         loading={loading}
         error={error?.message}
         onRetry={reload}
         loadingMessage="Loading product…"
       >
-        {product && <ProductDetails product={product} />}
+        {product ? <ProductDetails product={product} /> : null}
       </AsyncContent>
     </View>
   );
 }
 
 function ProductDetails({ product }: { product: Product }) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [product.image_url]);
+
+  const brand = product.brand?.name;
+  const category = product.category?.name;
+  const subtitle = brand
+    ? [brand, category].filter(Boolean).join(' · ')
+    : category
+      ? `Category: ${category}`
+      : '';
   return (
-    <ScrollView contentContainerStyle={sharedStyles.screenContent}>
-      <Card style={styles.card}>
-        {product.category ? <Text style={styles.category}>{product.category.name}</Text> : null}
-        <Text style={sharedStyles.heading}>{product.name}</Text>
-        {product.size ? <Text style={sharedStyles.secondaryText}>{product.size}</Text> : null}
-        {product.price ? (
-          <Text style={sharedStyles.price}>{formatPrice(product.price)}</Text>
-        ) : (
-          <Text style={sharedStyles.secondaryText}>No price yet</Text>
-        )}
-        {product.description ? <Text style={sharedStyles.body}>{product.description}</Text> : null}
-        <Text style={styles.barcode}>Barcode {product.barcode}</Text>
-      </Card>
-    </ScrollView>
+    <View style={styles.page}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Product photo */}
+        <View style={styles.imageSection}>
+          <View style={styles.imageBox}>
+            {product.image_url && !imageFailed ? (
+              <Image
+                source={{ uri: product.image_url }}
+                style={styles.image}
+                resizeMode="contain"
+                onError={() => setImageFailed(true)}
+                accessibilityLabel={`${product.name} photo`}
+              />
+            ) : (
+              <View style={styles.imagePlaceholder}>
+                <Text style={styles.imageIcon}>▢</Text>
+                <Text style={styles.imageMessage}>
+                  No image available
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* Main information */}
+        <View style={styles.productInfo}>
+          {subtitle ? (
+            <Text style={styles.subtitle}>{subtitle}</Text>
+          ) : null}
+
+          <Text style={styles.productName}>
+            {product.name}
+          </Text>
+
+          {product.price ? (
+            <Text style={styles.price}>
+              {formatPrice(product.price)}
+            </Text>
+          ) : (
+            <Text style={styles.unavailable}>
+              No price yet
+            </Text>
+          )}
+        </View>
+
+        {/* Tabs: only Overview is implemented in T040 */}
+        <View style={styles.tabs}>
+          <View style={styles.activeTab}>
+            <Text style={styles.activeTabText}>Overview</Text>
+          </View>
+          <View style={styles.tab}>
+            <Text style={styles.inactiveTabText}>Reviews</Text>
+          </View>
+          <View style={styles.tab}>
+            <Text style={styles.inactiveTabText}>Nutrition</Text>
+          </View>
+        </View>
+
+        {/* Product details */}
+        <View style={styles.details}>
+          {brand ? (
+            <DetailRow icon="◇" label="Brand" value={brand} />
+          ) : null}
+
+          {category ? (
+            <DetailRow icon="⬡" label="Category" value={category} />
+          ) : null}
+
+          {product.size ? (
+            <DetailRow
+              icon="♧"
+              label="Size"
+              value={product.size}
+            />
+          ) : null}
+
+          <DetailRow
+            icon="▥"
+            label="UPC"
+            value={product.barcode}
+          />
+
+          {product.description ? (
+            <View style={styles.descriptionSection}>
+              <Text style={styles.descriptionTitle}>
+                Description
+              </Text>
+              <Text style={styles.description}>
+                {product.description}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      </ScrollView>
+
+      {/* Compare Prices will be enabled in its own feature */}
+      <View style={styles.bottomBar}>
+        <Pressable
+          style={styles.compareButton}
+          disabled
+          accessibilityRole="button"
+          accessibilityLabel="Compare Prices, coming soon"
+          accessibilityState={{ disabled: true }}
+        >
+          <Text style={styles.compareText}>
+            Compare Prices · Coming soon
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function DetailRow({
+  icon,
+  label,
+  value,
+}: {
+  icon: string;
+  label: string;
+  value: string;
+}) {
+  return (
+    <View style={styles.detailRow}>
+      <View style={styles.detailLeft}>
+        <Text style={styles.detailIcon}>{icon}</Text>
+        <Text style={styles.detailLabel}>{label}</Text>
+      </View>
+      <Text style={styles.detailValue}>{value}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
+  page: {
+    flex: 1,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  circleButton: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerIcon: {
+    fontSize: 34,
+    color: colors.primary,
+    lineHeight: 38,
+    marginTop: -4,
+  },
+  closeIcon: {
+    fontSize: 28,
+    color: colors.primary,
+    lineHeight: 34,
+  },
+  scroll: {
+    flex: 1,
+  },
+  content: {
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.xxl,
+  },
+  imageSection: {
+    alignItems: 'center',
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.xxl,
+  },
+  imageBox: {
+    width: 220,
+    height: 220,
+    borderRadius: radius.xl,
+    backgroundColor: colors.surfaceMuted,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  image: {
+    width: '100%',
+    height: '100%',
+  },
+  imagePlaceholder: {
+    alignItems: 'center',
     gap: spacing.sm,
   },
-  category: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
+  imageIcon: {
+    fontSize: 42,
+    color: colors.textMuted,
   },
-  barcode: {
+  imageMessage: {
     ...textStyles.caption,
     color: colors.textMuted,
+  },
+  productInfo: {
+    gap: spacing.sm,
+    marginBottom: spacing.xl,
+  },
+  subtitle: {
+    ...textStyles.bodyStrong,
+    color: colors.textSecondary,
+  },
+  productName: {
+    ...textStyles.title,
+    color: colors.textPrimary,
+  },
+  price: {
+    ...textStyles.price,
+    fontSize: 30,
+    lineHeight: 38,
+    color: colors.accent,
+  },
+  unavailable: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+  },
+  tabs: {
+    flexDirection: 'row',
+    gap: spacing.xxl,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  activeTab: {
+    paddingBottom: spacing.md,
+    borderBottomWidth: 2,
+    borderBottomColor: colors.accent,
+  },
+  tab: {
+    paddingBottom: spacing.md,
+  },
+  activeTabText: {
+    ...textStyles.label,
+    color: colors.accent,
+  },
+  inactiveTabText: {
+    ...textStyles.label,
+    color: colors.textSecondary,
+  },
+  details: {
+    paddingTop: spacing.xl,
+    gap: spacing.xl,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  detailLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    flexShrink: 0,
+  },
+  detailIcon: {
+    fontSize: 20,
+    color: colors.textSecondary,
+    width: 26,
+    textAlign: 'center',
+  },
+  detailLabel: {
+    ...textStyles.bodyStrong,
+    color: colors.textSecondary,
+  },
+  detailValue: {
+    ...textStyles.bodyStrong,
+    color: colors.textPrimary,
+    flexShrink: 1,
+    textAlign: 'right',
+  },
+  descriptionSection: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: spacing.lg,
+    gap: spacing.sm,
+  },
+  descriptionTitle: {
+    ...textStyles.subheading,
+    color: colors.textPrimary,
+  },
+  description: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+  },
+  bottomBar: {
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.background,
+  },
+  compareButton: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.lg,
+    alignItems: 'center',
+    opacity: 0.65,
+  },
+  compareText: {
+    fontFamily: fonts.bold,
+    fontSize: 17,
+    color: colors.textOnPrimary,
   },
 });
