@@ -1,25 +1,10 @@
-
-import { useEffect, useState } from 'react';
-import {
-  Image,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { useState } from 'react';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 
 import AsyncContent from '@/components/AsyncContent';
 import type { ProductState } from '@/hooks/useProduct';
-import {
-  colors,
-  fonts,
-  radius,
-  sharedStyles,
-  spacing,
-  textStyles,
-} from '@/theme';
+import { colors, fonts, radius, sharedStyles, spacing, textStyles } from '@/theme';
 import type { Product } from '@/types/product';
 import { formatPrice } from '@/utils/formatPrice';
 
@@ -27,9 +12,7 @@ type Props = {
   state: ProductState;
 };
 
-export default function ProductPage({
-  state: { product, loading, error, reload },
-}: Props) {
+export default function ProductPage({ state: { product, loading, error, reload } }: Props) {
   function goBack() {
     if (router.canGoBack()) {
       router.back();
@@ -73,11 +56,8 @@ export default function ProductPage({
 }
 
 function ProductDetails({ product }: { product: Product }) {
-  const [imageFailed, setImageFailed] = useState(false);
-
-  useEffect(() => {
-    setImageFailed(false);
-  }, [product.image_url]);
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
+  const imageFailed = !!product.image_url && failedImageUrl === product.image_url;
 
   const brand = product.brand?.name;
   const category = product.category?.name;
@@ -101,15 +81,13 @@ function ProductDetails({ product }: { product: Product }) {
                 source={{ uri: product.image_url }}
                 style={styles.image}
                 resizeMode="contain"
-                onError={() => setImageFailed(true)}
+                onError={() => setFailedImageUrl(product.image_url)}
                 accessibilityLabel={`${product.name} photo`}
               />
             ) : (
               <View style={styles.imagePlaceholder}>
                 <Text style={styles.imageIcon}>▢</Text>
-                <Text style={styles.imageMessage}>
-                  No image available
-                </Text>
+                <Text style={styles.imageMessage}>No image available</Text>
               </View>
             )}
           </View>
@@ -117,22 +95,14 @@ function ProductDetails({ product }: { product: Product }) {
 
         {/* Main information */}
         <View style={styles.productInfo}>
-          {subtitle ? (
-            <Text style={styles.subtitle}>{subtitle}</Text>
-          ) : null}
+          {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
 
-          <Text style={styles.productName}>
-            {product.name}
-          </Text>
+          <Text style={styles.productName}>{product.name}</Text>
 
           {product.price ? (
-            <Text style={styles.price}>
-              {formatPrice(product.price)}
-            </Text>
+            <Text style={styles.price}>{formatPrice(product.price)}</Text>
           ) : (
-            <Text style={styles.unavailable}>
-              No price yet
-            </Text>
+            <Text style={styles.unavailable}>No price yet</Text>
           )}
         </View>
 
@@ -151,36 +121,18 @@ function ProductDetails({ product }: { product: Product }) {
 
         {/* Product details */}
         <View style={styles.details}>
-          {brand ? (
-            <DetailRow icon="◇" label="Brand" value={brand} />
-          ) : null}
+          {brand ? <DetailRow icon="◇" label="Brand" value={brand} /> : null}
 
-          {category ? (
-            <DetailRow icon="⬡" label="Category" value={category} />
-          ) : null}
+          {category ? <DetailRow icon="⬡" label="Category" value={category} /> : null}
 
-          {product.size ? (
-            <DetailRow
-              icon="♧"
-              label="Size"
-              value={product.size}
-            />
-          ) : null}
+          {product.size ? <DetailRow icon="♧" label="Size" value={product.size} /> : null}
 
-          <DetailRow
-            icon="▥"
-            label="UPC"
-            value={product.barcode}
-          />
+          <DetailRow icon="▥" label="UPC" value={product.barcode} />
 
           {product.description ? (
             <View style={styles.descriptionSection}>
-              <Text style={styles.descriptionTitle}>
-                Description
-              </Text>
-              <Text style={styles.description}>
-                {product.description}
-              </Text>
+              <Text style={styles.descriptionTitle}>Description</Text>
+              <Text style={styles.description}>{product.description}</Text>
             </View>
           ) : null}
         </View>
@@ -195,24 +147,14 @@ function ProductDetails({ product }: { product: Product }) {
           accessibilityLabel="Compare Prices, coming soon"
           accessibilityState={{ disabled: true }}
         >
-          <Text style={styles.compareText}>
-            Compare Prices · Coming soon
-          </Text>
+          <Text style={styles.compareText}>Compare Prices · Coming soon</Text>
         </Pressable>
       </View>
     </View>
   );
 }
 
-function DetailRow({
-  icon,
-  label,
-  value,
-}: {
-  icon: string;
-  label: string;
-  value: string;
-}) {
+function DetailRow({ icon, label, value }: { icon: string; label: string; value: string }) {
   return (
     <View style={styles.detailRow}>
       <View style={styles.detailLeft}>
