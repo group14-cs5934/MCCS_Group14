@@ -4,7 +4,7 @@ from fastapi import APIRouter, Query
 
 from app.core.errors import ApiError, error_response
 from app.repositories import Products
-from app.schemas import ProductCreate, ProductRead
+from app.schemas import ErrorAction, ProductCreate, ProductRead
 
 # Most search results returned at once; page through more with offset.
 MAX_SEARCH_LIMIT = 50
@@ -17,8 +17,8 @@ router = APIRouter(
 )
 
 
-def _product_not_found() -> ApiError:
-    return ApiError(404, "product_not_found", "Product not found")
+def _product_not_found(actions: list[ErrorAction] | None = None) -> ApiError:
+    return ApiError(404, "product_not_found", "Product not found", actions=actions)
 
 
 @router.post("/validate")
@@ -63,16 +63,26 @@ def get_product(product_id: int, products: Products) -> ProductRead:
     return product
 
 
-@router.get("/barcode/{code}", responses={404: error_response("No product with this barcode")})
+@router.get(
+    "/barcode/{code}",
+    responses={
+        404: error_response(
+            "No product with this barcode; actions tells the app to offer scanning again "
+            "and searching by name"
+        )
+    },
+)
 def get_product_by_barcode(code: str, products: Products) -> ProductRead:
     """The product with this UPC/EAN barcode (e.g. 036000291452), as returned by GET /{id}.
 
     The app sends what the scanner read, already normalized (UPC-E expanded to UPC-A, iOS's
     leading 0 removed). Leading zeros are ignored when matching, so 012000001291 (UPC-A) finds a
     product stored as 0012000001291 (EAN-13). Anything else that isn't a stored barcode,
-    including codes that aren't 8, 12, 13, or 14 digits, is a 404.
+    including codes that aren't 8, 12, 13, or 14 digits, is a 404 whose "actions" are
+    ["retry_scan", "manual_search"]: the barcode may have been misread, or the product isn't in
+    the catalog yet, so the app should offer to scan again or search by name.
     """
     product = products.get_by_barcode(code)
     if product is None:
-        raise _product_not_found()
+        raise _product_not_found([ErrorAction.RETRY_SCAN, ErrorAction.MANUAL_SEARCH])
     return product

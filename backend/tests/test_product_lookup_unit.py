@@ -2,6 +2,8 @@
 
 T019 acceptance: when the test suite runs, both found and not-found lookup cases pass.
 T031 acceptance: a known barcode returns the matching product; an unknown barcode returns 404.
+T044 acceptance: when a scanned barcode is unknown, the response tells the app to offer retry and
+manual search.
 T033 acceptance: found, not-found, and empty-search cases pass (search is in
 test_product_search_unit.py).
 
@@ -109,12 +111,29 @@ def test_barcode_lookup_returns_the_right_product(client) -> None:
     assert (product["id"], product["name"]) == (8, "Oatly Oat Milk")
 
 
-def test_unknown_barcode_returns_404(client, products) -> None:
+def test_unknown_barcode_returns_404_offering_retry_and_manual_search(client, products) -> None:
     response = client.get("/products/barcode/012345678905")
 
     assert response.status_code == 404
-    assert response.json() == {"code": "product_not_found", "message": "Product not found"}
+    assert response.json() == {
+        "code": "product_not_found",
+        "message": "Product not found",
+        "actions": ["retry_scan", "manual_search"],
+    }
     assert products.requested_barcodes == ["012345678905"]
+
+
+@pytest.mark.parametrize("code", ["03600029145", "abc"])  # a partial read, and not digits at all
+def test_unreadable_barcode_also_offers_retry_and_manual_search(client, code) -> None:
+    response = client.get(f"/products/barcode/{code}")
+
+    assert response.status_code == 404
+    assert response.json()["actions"] == ["retry_scan", "manual_search"]
+
+
+def test_unknown_product_id_offers_no_actions(client) -> None:
+    # Only a scan can be retried; a missing ID (e.g. a deleted product) is a plain 404.
+    assert "actions" not in client.get("/products/999").json()
 
 
 @pytest.mark.parametrize("path", ["/products/barcode/", "/products/barcode"])
@@ -132,7 +151,11 @@ def test_blank_barcode_is_not_found(client, products) -> None:
     response = client.get("/products/barcode/%20")
 
     assert response.status_code == 404
-    assert response.json() == {"code": "product_not_found", "message": "Product not found"}
+    assert response.json() == {
+        "code": "product_not_found",
+        "message": "Product not found",
+        "actions": ["retry_scan", "manual_search"],
+    }
 
 
 def test_barcode_route_is_not_mistaken_for_an_id(client, products) -> None:
@@ -142,7 +165,11 @@ def test_barcode_route_is_not_mistaken_for_an_id(client, products) -> None:
 
 
 def test_docs_show_the_barcode_path_and_its_404(client) -> None:
-    operation = client.app.openapi()["paths"]["/products/barcode/{code}"]["get"]
+    schema = client.app.openapi()
+    operation = schema["paths"]["/products/barcode/{code}"]["get"]
 
     assert "404" in operation["responses"]
+    assert "actions" in operation["responses"]["404"]["description"]
     assert operation["parameters"][0]["schema"]["type"] == "string"
+    actions = schema["components"]["schemas"]["ErrorAction"]
+    assert actions["enum"] == ["retry_scan", "manual_search"]

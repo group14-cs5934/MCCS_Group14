@@ -13,6 +13,16 @@ export type ApiErrorKind =
   | 'invalid-response' // server answered 2xx but the body wasn't JSON
   | 'aborted'; // the caller cancelled the request through its signal
 
+/**
+ * What the server says the app should offer after an error, so the shopper isn't stuck. Mirrors
+ * ErrorAction in backend/app/schemas/error.py.
+ */
+export type ErrorAction =
+  | 'retry_scan' // scan the barcode again (it may have been misread)
+  | 'manual_search'; // look the product up by name instead
+
+const ERROR_ACTIONS: readonly ErrorAction[] = ['retry_scan', 'manual_search'];
+
 export type ApiError = {
   kind: ApiErrorKind;
   /** Friendly text that's safe to show the user, e.g. as AsyncContent's error prop. */
@@ -23,6 +33,11 @@ export type ApiError = {
   code?: string;
   /** The server's own error message, if any. For logs and screens that know what it means. */
   serverMessage?: string;
+  /**
+   * What to offer the shopper next, in the server's order, if it said. An unknown scanned
+   * barcode gives ['retry_scan', 'manual_search'].
+   */
+  actions?: ErrorAction[];
   /** The server's request ID. Include it in bug reports to find the matching server log line. */
   requestId?: string;
 };
@@ -59,18 +74,23 @@ function messageForStatus(status: number): string {
 }
 
 /**
- * Pulls the error code and message out of an error response body. Every backend error uses the
- * same body, {"code": "product_not_found", "message": "Product not found"} (see the backend
- * README: errors). Other bodies, e.g. a proxy's HTML error page, give neither.
+ * Pulls the error code, message, and actions out of an error response body. Every backend error
+ * uses the same body, {"code": "product_not_found", "message": "Product not found"}, plus
+ * "actions" when there's something to offer (see the backend README: errors). Other bodies, e.g.
+ * a proxy's HTML error page, give none of them.
  */
-function readServerError(body: unknown): Pick<ApiError, 'code' | 'serverMessage'> {
+function readServerError(body: unknown): Pick<ApiError, 'code' | 'serverMessage' | 'actions'> {
   if (typeof body !== 'object' || body === null) {
     return {};
   }
-  const { code, message } = body as Record<string, unknown>;
+  const { code, message, actions } = body as Record<string, unknown>;
   return {
     code: typeof code === 'string' ? code : undefined,
     serverMessage: typeof message === 'string' ? message : undefined,
+    // Actions this version of the app doesn't know how to offer are left out.
+    ...(Array.isArray(actions) && {
+      actions: actions.filter((action): action is ErrorAction => ERROR_ACTIONS.includes(action)),
+    }),
   };
 }
 

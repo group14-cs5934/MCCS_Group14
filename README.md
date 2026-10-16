@@ -79,7 +79,7 @@ appear on the dev **Theme preview** screen (link on Home in development builds).
 | `AsyncContent`         | Wraps a screen's content and shows a spinner or `ErrorState` in its place as needed. |
 | `IconBadge`            | Icon in a soft circle, for call-to-action, empty, and error states.                  |
 | `CameraPermissionGate` | Wraps anything that needs the camera; asks for access and handles "denied" for you.  |
-| `BarcodeScanner`       | Live camera that reads UPC/EAN barcodes; `onScanned` gets the digits of valid reads. |
+| `BarcodeScanner`       | Live camera for UPC/EAN barcodes; `onScanned` gets one once it stays in view 0.5s.   |
 | `ProductPage`          | Body of the product page; shared by the by-ID and by-barcode product routes.         |
 | `SearchResultsList`    | List of product cards (photo, name, size, price); `onOpen` gets the tapped product.  |
 
@@ -119,6 +119,8 @@ if (result.ok) {
 - `error.kind`: `network` (unreachable), `timeout`, `http` (4xx/5xx, see `error.status` and
   `error.code`), `invalid-response` (not JSON), or `aborted` (you cancelled via `signal`).
 - `error.requestId` matches the backend log line; include it in bug reports.
+- `error.actions` lists what to offer the shopper next, when the server says. An unknown scanned
+  barcode gives `['retry_scan', 'manual_search']`: show "Scan again" and "Search by name".
 - Response types live in `src/types/` and mirror the backend's `...Read` models.
 - Add one function per endpoint next to the client, like `checkHealth()` in `src/api/health.ts`.
 
@@ -243,11 +245,24 @@ Every error response (4xx and 5xx, from any endpoint) has the same JSON body (`E
   not shoppers (the app shows its own friendly text, see the API client above).
 - Validation errors are `422` with code `validation_error` and a `details` list, one entry per
   problem (`loc`, `msg`, `type`).
+- Errors the shopper can recover from add `actions`, what the app should offer next. A scanned
+  barcode that isn't found (`GET /products/barcode/{code}`) is a `404` with
+  `"actions": ["retry_scan", "manual_search"]`, since it may have been misread or the product
+  isn't in the catalog yet. Other errors leave `actions` out.
+
+  ```json
+  {
+    "code": "product_not_found",
+    "message": "Product not found",
+    "actions": ["retry_scan", "manual_search"]
+  }
+  ```
+
 - Unknown URLs are `not_found`, wrong methods `method_not_allowed`, and crashes
   `internal_error` (the exception text is never sent).
 
-To return an error from a route, raise `ApiError` (`app/core/errors.py`) with its own code;
-a plain `HTTPException` also works and gets a code from its status (e.g. `403` → `forbidden`).
+To return an error from a route, raise `ApiError` (`app/core/errors.py`) with its own code
+(and `actions=[ErrorAction...]` if the app should offer something); a plain `HTTPException` also works and gets a code from its status (e.g. `403` → `forbidden`).
 Document error statuses with `error_response()` and give each new router
 `responses={422: error_response(...)}` so `/docs` shows this format instead of FastAPI's default.
 

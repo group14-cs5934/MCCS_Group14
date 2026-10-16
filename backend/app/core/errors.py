@@ -2,8 +2,10 @@
 
     {"code": "product_not_found", "message": "Product not found"}
 
-Validation errors (422) add "details", one entry per problem. Routes raise ApiError to choose
-their own code; anything else (a plain HTTPException, an unknown URL, a crash) gets a code from
+Validation errors (422) add "details", one entry per problem. Errors the shopper can recover
+from add "actions", what the app should offer next (e.g. an unknown scanned barcode gives
+["retry_scan", "manual_search"]). Routes raise ApiError to choose their own code and actions;
+anything else (a plain HTTPException, an unknown URL, a crash) gets a code from
 its status, e.g. "not_found", "method_not_allowed", or "internal_error".
 """
 
@@ -17,17 +19,24 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.schemas.error import ErrorResponse
+from app.schemas.error import ErrorAction, ErrorResponse
 
 
 class ApiError(HTTPException):
-    """An error response with its own code, e.g. ApiError(404, "product_not_found", "...")."""
+    """An error response with its own code, e.g. ApiError(404, "product_not_found", "..."), and
+    optionally the actions the app should offer next."""
 
     def __init__(
-        self, status_code: int, code: str, message: str, headers: dict[str, str] | None = None
+        self,
+        status_code: int,
+        code: str,
+        message: str,
+        headers: dict[str, str] | None = None,
+        actions: list[ErrorAction] | None = None,
     ) -> None:
         super().__init__(status_code=status_code, detail=message, headers=headers)
         self.code = code
+        self.actions = actions
 
 
 def error_response(description: str) -> dict[str, Any]:
@@ -63,7 +72,9 @@ async def _http_error(request: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, StarletteHTTPException)
     code = getattr(exc, "code", None) or _code_for_status(exc.status_code)
     message = exc.detail if isinstance(exc.detail, str) else _phrase(exc.status_code)
-    return _error(exc.status_code, ErrorResponse(code=code, message=message), exc.headers)
+    actions = getattr(exc, "actions", None)
+    body = ErrorResponse(code=code, message=message, actions=actions)
+    return _error(exc.status_code, body, exc.headers)
 
 
 async def _validation_error(request: Request, exc: Exception) -> JSONResponse:
