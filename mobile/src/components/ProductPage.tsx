@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, Stack } from 'expo-router';
 
 import AsyncContent from '@/components/AsyncContent';
 import type { ProductState } from '@/hooks/useProduct';
@@ -23,6 +23,8 @@ export default function ProductPage({ state: { product, loading, error, reload }
 
   return (
     <View style={sharedStyles.screen}>
+      {/* The page draws its own back and close buttons, so the navigator's header is hidden. */}
+      <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.header}>
         <Pressable
           onPress={goBack}

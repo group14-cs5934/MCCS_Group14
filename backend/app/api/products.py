@@ -67,9 +67,10 @@ def get_product(product_id: int, products: Products) -> ProductRead:
 def get_product_by_barcode(code: str, products: Products) -> ProductRead:
     """The product with this UPC/EAN barcode (e.g. 036000291452), as returned by GET /{id}.
 
-    The code must match the stored barcode exactly. The app sends what the scanner read, already
-    normalized (UPC-E expanded to UPC-A, iOS's leading 0 removed). Anything that isn't a stored
-    barcode, including codes that aren't 8, 12, 13, or 14 digits, is a 404.
+    The app sends what the scanner read, already normalized (UPC-E expanded to UPC-A, iOS's
+    leading 0 removed). Leading zeros are ignored when matching, so 012000001291 (UPC-A) finds a
+    product stored as 0012000001291 (EAN-13). Anything else that isn't a stored barcode,
+    including codes that aren't 8, 12, 13, or 14 digits, is a 404.
     """
     product = products.get_by_barcode(code)
     if product is None:

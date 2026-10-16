@@ -221,9 +221,9 @@ payloads get `422` with every problem listed.
 
 A missing product returns `404` with code `product_not_found`. Only digits match `{id}`, so
 `/products/abc` is also a `404`, and named routes like `/products/search` can be added without
-clashing. A barcode must match the stored one exactly (the app normalizes scans first, e.g.
-UPC-E to UPC-A), so anything else, including a code that isn't 8, 12, 13, or 14 digits, is a
-`404`. Full request/response details are in the interactive docs at `/docs`.
+clashing. The app normalizes scans first (e.g. UPC-E to UPC-A), and leading zeros are ignored
+when matching a barcode, so `012000001291` (UPC-A) finds a product stored as `0012000001291`
+(EAN-13). Anything else, including a code that isn't 8, 12, 13, or 14 digits, is a `404`. Full request/response details are in the interactive docs at `/docs`.
 
 Search takes `q` (words in the product name; small typos are fine, best match first),
 `category` (a category slug; only that category's products, sorted by name), or both, plus
@@ -325,7 +325,9 @@ Bash or macOS/Linux; run them from the repo root unless a step says otherwise.
    `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mccs` and
    `CORS_ORIGINS=http://localhost:8081`.
 3. **Seed it**, from `backend/`: `uv run python -m scripts.seed_dev` → prints "Development seed
-   completed successfully." (It adds one product, Sample Chips, with no price.)
+   completed successfully." It adds Sample Chips (product 1, no price), then the real products in
+   `backend/scripts/sample_products.json` (e.g. Diet Pepsi 20 oz, `012000171741`, $1.59) with
+   their photos and prices, so you can scan them. Running it again skips products already there.
 4. **Start the API**, from `backend/`: `uv run fastapi dev app/main.py --host 0.0.0.0`. Check
    <http://localhost:8000/products/1> returns Sample Chips as JSON.
 5. **Start the app**, from `mobile/`: `npm start`, then open it on a phone with Expo Go (same
@@ -335,7 +337,11 @@ Bash or macOS/Linux; run them from the repo root unless a step says otherwise.
 7. **Check search.** Go back, tap **Search manually**, and type `sample chps` (with the typo). Once
    you stop typing, **Sample Chips** appears with 184g and "No price yet", the same result as
    <http://localhost:8000/products/search?q=sample%20chps>. Tap it to open its product page.
-8. **Check the error path.** Stop the API (Ctrl+C) and open the product again: you should see
+8. **Check scanning.** On the **Scan** tab, scan a product from `sample_products.json` (a
+   20 oz Pepsi or Diet Pepsi bottle, or 16.9 oz Coca-Cola, is easy to find). Its product page
+   opens with the same name and price as `http://localhost:8000/products/barcode/<its barcode>`.
+   No product at hand? Scan a picture of its barcode shown on another screen.
+9. **Check the error path.** Stop the API (Ctrl+C) and open the product again: you should see
    "Can't reach the server…" with **Try Again**. Start the API, tap Try Again, and the product
    loads.
 
