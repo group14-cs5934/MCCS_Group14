@@ -10,6 +10,18 @@ jest.mock('@/hooks/useProduct', () => ({
   useProduct: () => ({ loading: true, product: null, error: null, reload: () => {} }),
 }));
 
+// Search never calls the API either: it always has one result, Cheerios (ID 42).
+jest.mock('@/hooks/useProductSearch', () => ({
+  ...jest.requireActual('@/hooks/useProductSearch'),
+  useProductSearch: () => ({
+    query: 'cheerios',
+    loading: false,
+    results: [{ id: 42, name: 'Cheerios' }],
+    error: null,
+    reload: () => {},
+  }),
+}));
+
 /** Tab bar buttons are announced as e.g. "Scan, tab, 2 of 3". */
 const tab = (name: string) => screen.getByRole('button', { name: new RegExp(`^${name}, tab`) });
 
@@ -62,8 +74,8 @@ describe('navigation shell', () => {
 
     fireEvent.press(await screen.findByText('Search manually'));
     expect(screen).toHavePathname('/search');
-    fireEvent.press(screen.getByText('Open a search result'));
-    expect(screen).toHavePathname('/product/sample-cheerios');
+    fireEvent.press(screen.getByText('Cheerios'));
+    expect(screen).toHavePathname('/product/42');
 
     act(() => router.back());
     expect(screen).toHavePathname('/search');

@@ -149,7 +149,9 @@ describe('responses', () => {
   });
 
   it('returns a friendly http error with the server details', async () => {
-    respondWith(404, '{"detail":"Product not found"}', { 'x-request-id': 'req-123' });
+    respondWith(404, '{"code":"product_not_found","message":"Product not found"}', {
+      'x-request-id': 'req-123',
+    });
 
     await expect(api.get('/products/999')).resolves.toEqual({
       ok: false,
@@ -157,6 +159,7 @@ describe('responses', () => {
         kind: 'http',
         status: 404,
         message: "We couldn't find what you're looking for.",
+        code: 'product_not_found',
         serverMessage: 'Product not found',
         requestId: 'req-123',
       },
@@ -176,6 +179,35 @@ describe('responses', () => {
         serverMessage: 'Barcode check digit is wrong.',
       },
     });
+  });
+
+  // T044: an unknown scanned barcode tells the app to offer scanning again and manual search.
+  it('reads the actions the server says to offer for an unknown barcode', async () => {
+    respondWith(
+      404,
+      '{"code":"product_not_found","message":"Product not found","actions":["retry_scan","manual_search"]}',
+    );
+
+    expect(await api.get('/products/barcode/012345678905')).toMatchObject({
+      ok: false,
+      error: {
+        kind: 'http',
+        status: 404,
+        code: 'product_not_found',
+        actions: ['retry_scan', 'manual_search'],
+      },
+    });
+  });
+
+  it('leaves out actions the app does not know, and has none when the server sends none', async () => {
+    respondWith(404, '{"code":"x","message":"x","actions":["call_store","manual_search",7]}');
+    respondWith(404, '{"code":"product_not_found","message":"Product not found"}');
+
+    const withActions = await api.get('/products/barcode/012345678905');
+    const without = await api.get('/products/999');
+
+    expect(!withActions.ok && withActions.error.actions).toEqual(['manual_search']);
+    expect(!without.ok && 'actions' in without.error).toBe(false);
   });
 
   it('shows a generic message for server errors, even with a non-JSON body', async () => {

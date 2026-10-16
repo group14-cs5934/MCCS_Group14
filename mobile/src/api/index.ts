@@ -5,6 +5,7 @@ export type {
   ApiErrorKind,
   ApiResult,
   CallOptions,
+  ErrorAction,
   RequestOptions,
 } from './client';
 export { getApiBaseUrl } from './config';

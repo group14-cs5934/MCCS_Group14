@@ -2,6 +2,7 @@
 
 from app.schemas.brand import BrandCreate, BrandRead
 from app.schemas.category import CategoryCreate, CategoryRead
+from app.schemas.error import ErrorAction, ErrorResponse
 from app.schemas.price import PriceCreate, PriceRead
 from app.schemas.product import ProductCreate, ProductRead
 from app.schemas.user import Role, UserRead
@@ -11,6 +12,8 @@ __all__ = [
     "BrandRead",
     "CategoryCreate",
     "CategoryRead",
+    "ErrorAction",
+    "ErrorResponse",
     "PriceCreate",
     "PriceRead",
     "ProductCreate",

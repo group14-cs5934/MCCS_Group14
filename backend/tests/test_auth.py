@@ -112,6 +112,7 @@ def test_missing_token_is_401(client):
     response = client.get("/me")
     assert response.status_code == 401
     assert response.headers["WWW-Authenticate"] == "Bearer"
+    assert response.json() == {"code": "not_authenticated", "message": "Not authenticated"}
 
 
 @pytest.mark.parametrize(
@@ -152,7 +153,9 @@ def test_unreachable_jwks_is_503(client, private_key):
         raise jwt.PyJWKClientConnectionError("connection refused")
 
     client.app.state.token_verifier = TokenVerifier(ISSUER, key_resolver=down)
-    assert get_me(client, make_token(private_key)).status_code == 503
+    response = get_me(client, make_token(private_key))
+    assert response.status_code == 503
+    assert response.json()["code"] == "auth_unavailable"
 
 
 def get_admin_only(client, token):
@@ -172,7 +175,10 @@ def test_admin_route_is_403_for_users(client, private_key):
     response = get_admin_only(client, make_token(private_key))
 
     assert response.status_code == 403
-    assert response.json() == {"detail": "You don't have permission to do that."}
+    assert response.json() == {
+        "code": "forbidden",
+        "message": "You don't have permission to do that.",
+    }
 
 
 def test_admin_route_is_401_without_a_token(client):

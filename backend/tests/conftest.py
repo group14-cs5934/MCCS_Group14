@@ -57,6 +57,10 @@ def db_url() -> Iterator[str]:
     Needs TEST_DATABASE_URL (CI sets it); the test is skipped otherwise. Each test gets its own
     throwaway Postgres schema, dropped afterwards, so tests never see each other's rows or any
     real data, even if TEST_DATABASE_URL points at a development database.
+
+    public and extensions (Supabase's extension schema) come after it on the search path, only so
+    extension functions like pg_trgm's resolve wherever the extension is installed. Every table
+    is created in the test schema, which is searched first.
     """
     base_url = os.environ.get("TEST_DATABASE_URL")
     if not base_url:
@@ -68,13 +72,14 @@ def db_url() -> Iterator[str]:
     schema = sql.Identifier(schema_name)
     with psycopg.connect(base_url, autocommit=True) as connection:
         connection.execute(sql.SQL("CREATE SCHEMA {}").format(schema))
-        connection.execute(sql.SQL("SET search_path TO {}").format(schema))
+        connection.execute(sql.SQL("SET search_path TO {}, public, extensions").format(schema))
         for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
             connection.execute(migration.read_text(encoding="utf-8"))
 
     # libpq's "options" parameter makes every connection from this URL use the test schema.
     separator = "&" if "?" in base_url else "?"
-    yield f"{base_url}{separator}options={quote(f'-c search_path={schema_name}')}"
+    search_path = f"{schema_name},public,extensions"
+    yield f"{base_url}{separator}options={quote(f'-c search_path={search_path}')}"
 
     with psycopg.connect(base_url, autocommit=True) as connection:
         connection.execute(sql.SQL("DROP SCHEMA {} CASCADE").format(schema))

@@ -13,11 +13,12 @@ from typing import Annotated, Any, Self
 from uuid import UUID
 
 import jwt
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import Settings
+from app.core.errors import ApiError
 from app.repositories.users import Users
 from app.schemas import Role
 
@@ -102,10 +103,11 @@ def get_token_verifier(request: Request) -> TokenVerifier:
     return request.app.state.token_verifier
 
 
-def _unauthorized() -> HTTPException:
-    return HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Not authenticated",
+def _unauthorized() -> ApiError:
+    return ApiError(
+        status.HTTP_401_UNAUTHORIZED,
+        "not_authenticated",
+        "Not authenticated",
         headers={"WWW-Authenticate": "Bearer"},
     )
 
@@ -120,9 +122,10 @@ def get_token_user(
     try:
         return verifier.verify(credentials.credentials)
     except AuthUnavailableError:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Sign-in can't be checked right now. Please try again.",
+        raise ApiError(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "auth_unavailable",
+            "Sign-in can't be checked right now. Please try again.",
         ) from None
     except (jwt.PyJWTError, ValidationError):
         raise _unauthorized() from None
@@ -145,9 +148,8 @@ def require_role(*roles: Role) -> Callable[[AuthUser], AuthUser]:
 
     def check_role(user: CurrentUser) -> AuthUser:
         if user.role not in roles:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="You don't have permission to do that.",
+            raise ApiError(
+                status.HTTP_403_FORBIDDEN, "forbidden", "You don't have permission to do that."
             )
         return user
 

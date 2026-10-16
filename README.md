@@ -32,7 +32,8 @@ mobile/
                       #   sign-in/sign-up, signed-in users see the tabs and screens on top of them
       (tabs)/         #   bottom tabs: index (Home), scan, saved
       product/[id].tsx  # product details, e.g. /product/123
-      search.tsx
+      product/barcode/[code].tsx  # same page, opened by barcode after a scan
+      search.tsx      # product search; searches once typing pauses (useProductSearch)
       sign-in.tsx, sign-up.tsx  # email + password accounts (Supabase Auth)
     theme/            # design tokens: colors, typography (Inter), spacing, radius, shadows,
                       #   and sharedStyles. The only place hex colors and font names live.
@@ -82,6 +83,9 @@ appear on the dev **Theme preview** screen (link on Home in development builds).
 | `IconBadge`            | Icon in a soft circle, for call-to-action, empty, and error states.                  |
 | `TextField`            | Labeled text input with an optional `error` shown below it (forms, sign-in).         |
 | `CameraPermissionGate` | Wraps anything that needs the camera; asks for access and handles "denied" for you.  |
+| `BarcodeScanner`       | Live camera for UPC/EAN barcodes; `onScanned` gets one once it stays in view 0.5s.   |
+| `ProductPage`          | Body of the product page; shared by the by-ID and by-barcode product routes.         |
+| `SearchResultsList`    | List of product cards (photo, name, size, price); `onOpen` gets the tapped product.  |
 
 **Loading and error props.** `Card` and `AsyncContent` take `loading`, `error` (a message string),
 and `onRetry`. While `loading` is true they show a spinner instead of their content; when `error`
@@ -119,6 +123,9 @@ if (result.ok) {
 - `error.kind`: `network` (unreachable), `timeout`, `http` (4xx/5xx, see `error.status` and
   `error.code`), `invalid-response` (not JSON), or `aborted` (you cancelled via `signal`).
 - `error.requestId` matches the backend log line; include it in bug reports.
+- `error.actions` lists what to offer the shopper next, when the server says. An unknown scanned
+  barcode gives `['retry_scan', 'manual_search']`, which `ProductPage` shows as "Product not
+  found" with Retry (back to the scanner) and Search (opens the search screen).
 - Signed-in requests send the user's Supabase token (`Authorization: Bearer ...`) automatically.
   A `401` comes back as "Your session has expired. Please sign in again."
 - Response types live in `src/types/` and mirror the backend's `...Read` models.
@@ -229,6 +236,8 @@ payloads get `422` with every problem listed.
   (`"3.49"`) so it never loses cents.
 - `slug`: lowercase words joined by hyphens, e.g. `chips-snacks`.
 - IDs are integers. `ProductRead` includes the nested `brand`, `category`, and current `price`.
+- Product and category names have `pg_trgm` trigram indexes (migration 003) for typo-tolerant
+  search: `'coffe' <% name` matches "Ground Coffee". See the migration for how to query them.
 - Price is its own table so price history is kept (needed for the price-tracker stretch goal);
   per-store stock belongs in a separate store/product table (T047).
 
@@ -236,15 +245,62 @@ payloads get `422` with every problem listed.
 
 ### Endpoints
 
-| Endpoint                  | Returns                                                                     |
-| ------------------------- | --------------------------------------------------------------------------- |
-| `GET /me`                 | The signed-in user (`id`, `email`, `role`), or `401` without a valid token. |
-| `GET /products/{id}`      | One `ProductRead` (with category and current price), or `404` if not found. |
-| `POST /products/validate` | The cleaned-up payload, or `422` listing every problem.                     |
+| Endpoint                       | Returns                                                                     |
+| ------------------------------ | --------------------------------------------------------------------------- |
+| `GET /me`                      | The signed-in user (`id`, `email`, `role`), or `401` without a valid token. |
+| `GET /products/{id}`           | One `ProductRead` (with category and current price), or `404` if not found. |
+| `GET /products/barcode/{code}` | The same `ProductRead` for the product with this barcode, or `404`.         |
+| `GET /products/search`         | A list of `ProductRead` matching `q` and/or `category`; `[]` if none match. |
+| `POST /products/validate`      | The cleaned-up payload, or `422` listing every problem.                     |
 
-A missing product returns `404 {"detail": "Product not found"}`. Only digits match `{id}`, so
+A missing product returns `404` with code `product_not_found`. Only digits match `{id}`, so
 `/products/abc` is also a `404`, and named routes like `/products/search` can be added without
-clashing. Full request/response details are in the interactive docs at `/docs`.
+clashing. The app normalizes scans first (e.g. UPC-E to UPC-A), and leading zeros are ignored
+when matching a barcode, so `012000001291` (UPC-A) finds a product stored as `0012000001291`
+(EAN-13). Anything else, including a code that isn't 8, 12, 13, or 14 digits, is a `404`. Full request/response details are in the interactive docs at `/docs`.
+
+Search takes `q` (words in the product name; small typos are fine, best match first),
+`category` (a category slug; only that category's products, sorted by name), or both, plus
+`limit` (1–50, default 20) and `offset` for paging. For example,
+`/products/search?q=coffe&category=coffee-tea`. No matches, a blank search, or an unknown
+category give `[]`, not an error.
+
+### Errors
+
+Every error response (4xx and 5xx, from any endpoint) has the same JSON body (`ErrorResponse`):
+
+```json
+{ "code": "product_not_found", "message": "Product not found" }
+```
+
+- `code` is stable and machine-readable; check it in code. `message` is for developers and logs,
+  not shoppers (the app shows its own friendly text, see the API client above).
+- Validation errors are `422` with code `validation_error` and a `details` list, one entry per
+  problem (`loc`, `msg`, `type`).
+- Errors the shopper can recover from add `actions`, what the app should offer next. A scanned
+  barcode that isn't found (`GET /products/barcode/{code}`) is a `404` with
+  `"actions": ["retry_scan", "manual_search"]`, since it may have been misread or the product
+  isn't in the catalog yet. Other errors leave `actions` out.
+
+  ```json
+  {
+    "code": "product_not_found",
+    "message": "Product not found",
+    "actions": ["retry_scan", "manual_search"]
+  }
+  ```
+
+- Unknown URLs are `not_found`, wrong methods `method_not_allowed`, and crashes
+  `internal_error` (the exception text is never sent).
+
+To return an error from a route, raise `ApiError` (`app/core/errors.py`) with its own code
+(and `actions=[ErrorAction...]` if the app should offer something); a plain `HTTPException` also works and gets a code from its status (e.g. `403` → `forbidden`).
+Document error statuses with `error_response()` and give each new router
+`responses={422: error_response(...)}` so `/docs` shows this format instead of FastAPI's default.
+
+```python
+raise ApiError(404, "product_not_found", "Product not found")
+```
 
 ### Authentication
 
@@ -265,12 +321,13 @@ def delete_product(product_id: int, user: AdminUser) -> None:  # 403 for regular
     ...
 ```
 
-A missing, expired, or invalid token gets `401 {"detail": "Not authenticated"}`; if Supabase's keys
-can't be fetched, `503`. Product endpoints are still public. Tests swap in their own signing key
+A missing, expired, or invalid token gets `401` with code `not_authenticated`; a signed-in user
+without the right role gets `403` with code `forbidden`; if Supabase's keys can't be fetched,
+`503` with code `auth_unavailable`. Product endpoints are still public. Tests swap in their own signing key
 (see `tests/test_auth.py`), so they never call Supabase.
 
 **Users and roles.** Accounts live in Supabase Auth; the `users` table
-(`migrations/003_create_users.sql`) stores each user's role. A user's row is added with the
+(`migrations/004_create_users.sql`) stores each user's role. A user's row is added with the
 `user` role the first time they call the API. The app calls `GET /me` right after signing in, so
 this happens at sign-up, or at the first sign-in when email confirmation is on. There are two
 roles, `user` and `admin`. `require_role(...)` in `app/core/auth.py` builds a check for other
@@ -325,9 +382,15 @@ docker run -d --name mccs-test-db -e POSTGRES_PASSWORD=postgres -p 5433:5432 pos
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/postgres uv run pytest
 ```
 
+`tests/test_search_contract.py` checks that `mobile/__tests__/fixtures/search-api-response.json`
+is exactly what `GET /products/search` returns; the app's tests use that file as the API's
+response. If you change the search response on purpose, regenerate it with
+`UPDATE_SEARCH_FIXTURE=1` (plus `TEST_DATABASE_URL`) and run the mobile tests.
+
 For endpoint tests that should run without Postgres, swap the repository for an in-memory fake
-with `app.dependency_overrides[get_product_repository] = lambda: fake` (see
-`tests/test_product_lookup_unit.py`). Keep a few database tests too, so the real SQL is covered.
+with `app.dependency_overrides[get_product_repository] = lambda: fake`, using `FakeProducts`
+from `tests/fakes.py` (see `tests/test_product_search_unit.py`). Keep a few database tests too,
+so the real SQL is covered.
 
 ## Running the full stack (app ↔ API ↔ database)
 
@@ -349,7 +412,9 @@ Bash or macOS/Linux; run them from the repo root unless a step says otherwise.
    `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mccs`, the team's
    `SUPABASE_URL`, and `CORS_ORIGINS=http://localhost:8081`.
 3. **Seed it**, from `backend/`: `uv run python -m scripts.seed_dev` → prints "Development seed
-   completed successfully." (It adds one product, Sample Chips, with no price.)
+   completed successfully." It adds Sample Chips (product 1, no price), then the real products in
+   `backend/scripts/sample_products.json` (e.g. Diet Pepsi 20 oz, `012000171741`, $1.59) with
+   their photos and prices, so you can scan them. Running it again skips products already there.
 4. **Start the API**, from `backend/`: `uv run fastapi dev app/main.py --host 0.0.0.0`. Check
    <http://localhost:8000/products/1> returns Sample Chips as JSON.
 5. **Start the app**, from `mobile/`: set the Supabase variables in `mobile/.env` (see
@@ -357,7 +422,14 @@ Bash or macOS/Linux; run them from the repo root unless a step says otherwise.
    (same Wi-Fi as the computer), a simulator, or press `w` for the browser.
 6. **Check the result.** Sign in (or create an account). On Home, tap **Open a sample product** (development builds only). The
    product page shows Snacks, **Sample Chips**, 184g, and "No price yet".
-7. **Check the error path.** Stop the API (Ctrl+C) and open the product again: you should see
+7. **Check search.** Go back, tap **Search manually**, and type `sample chps` (with the typo). Once
+   you stop typing, **Sample Chips** appears with 184g and "No price yet", the same result as
+   <http://localhost:8000/products/search?q=sample%20chps>. Tap it to open its product page.
+8. **Check scanning.** On the **Scan** tab, scan a product from `sample_products.json` (a
+   20 oz Pepsi or Diet Pepsi bottle, or 16.9 oz Coca-Cola, is easy to find). Its product page
+   opens with the same name and price as `http://localhost:8000/products/barcode/<its barcode>`.
+   No product at hand? Scan a picture of its barcode shown on another screen.
+9. **Check the error path.** Stop the API (Ctrl+C) and open the product again: you should see
    "Can't reach the server…" with **Try Again**. Start the API, tap Try Again, and the product
    loads.
 

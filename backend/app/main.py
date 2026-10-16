@@ -12,6 +12,7 @@ from app.api import health, me, products
 from app.core.auth import TokenVerifier
 from app.core.config import ConfigError, Settings, get_settings
 from app.core.database import create_pool
+from app.core.errors import add_error_handlers
 from app.core.request_logging import REQUEST_ID_HEADER, add_request_logging
 
 logger = logging.getLogger("app")
@@ -50,6 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         expose_headers=[REQUEST_ID_HEADER],
     )
     add_request_logging(app)
+    add_error_handlers(app)
 
     app.state.token_verifier = TokenVerifier.from_settings(settings)
 

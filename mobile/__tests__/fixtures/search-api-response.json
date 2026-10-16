@@ -1,0 +1,79 @@
+{
+  "query": "coffe",
+  "results": [
+    {
+      "barcode": "012000000027",
+      "name": "Coffee Crisp Chocolate Bar",
+      "description": null,
+      "size": "50 g",
+      "image_url": null,
+      "brand_id": null,
+      "category_id": 2,
+      "id": 3,
+      "brand": null,
+      "category": {
+        "name": "Candy",
+        "slug": "candy",
+        "description": null,
+        "id": 2
+      },
+      "price": null,
+      "created_at": "2026-10-01T12:00:00Z",
+      "updated_at": "2026-10-01T12:00:00Z"
+    },
+    {
+      "barcode": "025500000015",
+      "name": "Folgers Classic Roast Ground Coffee",
+      "description": null,
+      "size": "25.9 oz",
+      "image_url": "https://images.example.com/folgers.jpg",
+      "brand_id": null,
+      "category_id": 1,
+      "id": 1,
+      "brand": null,
+      "category": {
+        "name": "Coffee & Tea",
+        "slug": "coffee-tea",
+        "description": null,
+        "id": 1
+      },
+      "price": {
+        "amount": "8.99",
+        "currency": "USD",
+        "source": "MCCS",
+        "id": 1,
+        "product_id": 1,
+        "observed_at": "2026-10-01T12:00:00Z"
+      },
+      "created_at": "2026-10-01T12:00:00Z",
+      "updated_at": "2026-10-01T12:00:00Z"
+    },
+    {
+      "barcode": "076211000016",
+      "name": "Starbucks Pike Place Coffee",
+      "description": null,
+      "size": "12 oz",
+      "image_url": null,
+      "brand_id": null,
+      "category_id": 1,
+      "id": 2,
+      "brand": null,
+      "category": {
+        "name": "Coffee & Tea",
+        "slug": "coffee-tea",
+        "description": null,
+        "id": 1
+      },
+      "price": {
+        "amount": "9.49",
+        "currency": "USD",
+        "source": "MCCS",
+        "id": 2,
+        "product_id": 2,
+        "observed_at": "2026-10-01T12:00:00Z"
+      },
+      "created_at": "2026-10-01T12:00:00Z",
+      "updated_at": "2026-10-01T12:00:00Z"
+    }
+  ]
+}

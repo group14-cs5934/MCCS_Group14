@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import load_settings
@@ -47,6 +48,78 @@ def test_get_by_barcode(connection) -> None:
     found = products.get_by_barcode(BARCODE)
     assert found is not None and found.id == product_id
     assert products.get_by_barcode("012345678905") is None
+
+
+@pytest.mark.parametrize(
+    "barcode", ["", "abc", "0360002914", "036000291452\x00", "０３６０００２９１４５２"]
+)
+def test_get_by_barcode_returns_none_for_a_malformed_barcode(connection, barcode) -> None:
+    add_product(connection)
+
+    assert ProductRepository(connection).get_by_barcode(barcode) is None
+
+
+@pytest.fixture
+def catalog(connection) -> ProductRepository:
+    """A repository over three products: two coffees (one in "coffee") and a snack."""
+    [(coffee_id,), (snacks_id,)] = connection.execute(
+        "INSERT INTO categories (name, slug) VALUES ('Coffee', 'coffee'), ('Snacks', 'snacks') "
+        "RETURNING id"
+    ).fetchall()
+    with connection.cursor() as cursor:
+        cursor.executemany(
+            "INSERT INTO products (barcode, name, category_id) VALUES (%s, %s, %s)",
+            [
+                ("012000000010", "Ground Coffee", coffee_id),
+                ("012000000027", "Instant Coffee Sticks", None),
+                ("012000000034", "Potato Chips", snacks_id),
+            ],
+        )
+    return ProductRepository(connection)
+
+
+def test_search_found_by_name(catalog) -> None:
+    found = catalog.search("coffee")
+
+    assert sorted(product.name for product in found) == ["Ground Coffee", "Instant Coffee Sticks"]
+    assert all(isinstance(product, ProductRead) for product in found)
+
+
+def test_search_found_by_category_includes_category_and_price(connection, catalog) -> None:
+    [product] = catalog.search(category="snacks")
+    add_price(connection, product.id, "2.99", "2026-10-01")
+
+    [product] = catalog.search(category="snacks")
+    assert product.name == "Potato Chips"
+    assert product.category is not None and product.category.slug == "snacks"
+    assert product.price is not None and product.price.amount == Decimal("2.99")
+
+
+def test_search_trims_the_query_and_ignores_category_case(catalog) -> None:
+    assert [p.name for p in catalog.search("  coffee  ", category=" Coffee ")] == ["Ground Coffee"]
+
+
+@pytest.mark.parametrize(
+    ("query", "category"),
+    [("tea", None), ("xqzvplmw", None), ("", "no-such-category"), ("chips", "coffee")],
+)
+def test_search_not_found_returns_an_empty_list(catalog, query, category) -> None:
+    assert catalog.search(query, category) == []
+
+
+@pytest.mark.parametrize(
+    ("query", "category"), [("", None), ("   ", None), ("", ""), ("  ", "  "), ("\x00", None)]
+)
+def test_empty_search_returns_an_empty_list(catalog, query, category) -> None:
+    assert catalog.search(query, category) == []
+
+
+def test_search_limit_and_offset(catalog) -> None:
+    everything = [product.name for product in catalog.search("coffee")]
+
+    assert [product.name for product in catalog.search("coffee", limit=1)] == everything[:1]
+    assert [product.name for product in catalog.search("coffee", offset=1)] == everything[1:]
+    assert catalog.search("coffee", offset=5) == []
 
 
 def test_routes_get_a_repository_through_depends(db_url: str, connection) -> None:
