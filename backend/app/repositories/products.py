@@ -47,6 +47,16 @@ def _pop_nested(row: dict[str, Any], field: str) -> dict[str, Any] | None:
     return nested if nested["id"] is not None else None
 
 
+def _same_barcode_forms(barcode: str) -> list[str]:
+    """Every length this barcode can be written at by adding or removing leading zeros.
+
+    GS1 pads shorter barcodes with zeros to compare them, so these all name the same product,
+    e.g. "012000001291" -> ["012000001291", "0012000001291", "00012000001291"].
+    """
+    digits = barcode.lstrip("0")
+    return [digits.zfill(length) for length in GTIN_LENGTHS if len(digits) <= length]
+
+
 def _to_product(row: dict[str, Any]) -> ProductRead:
     category = _pop_nested(row, "category")
     price = _pop_nested(row, "price")
@@ -66,12 +76,20 @@ class ProductRepository:
         return self._fetch_one("WHERE p.id = %s", (product_id,))
 
     def get_by_barcode(self, barcode: str) -> ProductRead | None:
-        """The product with this barcode, or None if there isn't one."""
+        """The product with this barcode, or None if there isn't one.
+
+        Leading zeros don't change which product a barcode means, so 012000001291 (UPC-A, what
+        the app sends) also finds a product stored as 0012000001291 (EAN-13, how many data sources
+        write it), and the other way round. An exact match wins if both forms are stored.
+        """
         # Stored barcodes are always 8, 12, 13, or 14 ASCII digits, so nothing else can match.
         # Checking first also keeps text Postgres rejects (like a NUL byte) out of the query.
         if not (barcode.isascii() and barcode.isdigit() and len(barcode) in GTIN_LENGTHS):
             return None
-        return self._fetch_one("WHERE p.barcode = %s", (barcode,))
+        return self._fetch_one(
+            "WHERE p.barcode = ANY(%s) ORDER BY p.barcode = %s DESC LIMIT 1",
+            (_same_barcode_forms(barcode), barcode),
+        )
 
     def search(
         self, query: str = "", category: str | None = None, limit: int = 20, offset: int = 0

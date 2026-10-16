@@ -1,8 +1,24 @@
-"""Seed the development database with a small sample product set."""
+"""Seed the development database with a small sample product set.
+
+Adds Sample Chips (always product 1 in a fresh database), then the real products collected by the
+T022 spike (sample_products.json) with their names, photos, categories, and prices, so scanning
+one of them in the app shows its product page. Safe to run again: products already in the
+database (by barcode) are skipped.
+"""
+
+import json
+import re
+from decimal import Decimal
+from pathlib import Path
+from typing import Any, NamedTuple
 
 import psycopg
 
 from app.core.config import get_settings
+from app.schemas import ProductCreate
+
+SAMPLE_CATALOG_FILE = Path(__file__).resolve().parent / "sample_products.json"
+SAMPLE_CATALOG_PRICE_SOURCE = "UPCitemdb"
 
 SAMPLE_CATEGORIES = [
     {
@@ -99,7 +115,98 @@ def seed() -> None:
                     ),
                 )
 
+            seed_sample_catalog(cursor)
+
         connection.commit()
+
+
+class CatalogProduct(NamedTuple):
+    """One sample_products.json entry, ready to store."""
+
+    product: ProductCreate
+    category: str | None
+    price: Decimal | None  # None if the source has no price
+
+
+def catalog_product(item: dict[str, Any]) -> CatalogProduct:
+    """Convert one sample_products.json entry. Raises ValueError if it isn't a valid product
+    (e.g. a wrong check digit)."""
+    ean = item["ean"]
+    # A 13-digit code starting with 0 is a UPC-A code with a 0 in front. Store the 12 digits
+    # printed on the package, which is also what the app sends after a scan.
+    barcode = ean[1:] if len(ean) == 13 and ean.startswith("0") else ean
+    # Phones block plain-http images by default, so only use an https photo.
+    image_url = next((url for url in item.get("images", []) if url.startswith("https://")), None)
+    product = ProductCreate(
+        barcode=barcode,
+        name=_clean(item["title"]),
+        description=_clean(item.get("description")) or None,
+        size=_clean(item.get("size")) or None,
+        image_url=image_url,
+    )
+    # "Food, Beverages & Tobacco > Beverages > Soda" -> "Soda"
+    category = _clean(item.get("category", "").split(">")[-1]) or None
+    price = Decimal(str(item.get("lowest_recorded_price") or 0)).quantize(Decimal("0.01"))
+    return CatalogProduct(product, category, price if price > 0 else None)
+
+
+def seed_sample_catalog(cursor: psycopg.Cursor) -> int:
+    """Insert every product in sample_products.json that isn't already stored; return how many
+    were added."""
+    items = json.loads(SAMPLE_CATALOG_FILE.read_text(encoding="utf-8"))
+    added = 0
+    for item in items:
+        product, category, price = catalog_product(item)
+
+        category_id = None
+        if category:
+            cursor.execute(
+                """
+                INSERT INTO categories (name, slug) VALUES (%s, %s)
+                ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug  -- no-op, so RETURNING
+                RETURNING id                                           -- gives the existing id
+                """,
+                (category, _slug(category)),
+            )
+            (category_id,) = cursor.fetchone()
+
+        cursor.execute(
+            """
+            INSERT INTO products (barcode, name, description, size, image_url, category_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (barcode) DO NOTHING
+            RETURNING id
+            """,
+            (
+                product.barcode,
+                product.name,
+                product.description,
+                product.size,
+                str(product.image_url) if product.image_url else None,
+                category_id,
+            ),
+        )
+        inserted = cursor.fetchone()
+        if inserted is None:
+            continue
+        added += 1
+
+        if price is not None:
+            cursor.execute(
+                "INSERT INTO prices (product_id, amount, source) VALUES (%s, %s, %s)",
+                (inserted[0], price, SAMPLE_CATALOG_PRICE_SOURCE),
+            )
+    return added
+
+
+def _clean(text: str | None) -> str:
+    """Text with runs of spaces and line breaks collapsed to single spaces."""
+    return " ".join((text or "").split())
+
+
+def _slug(name: str) -> str:
+    """Name as a category slug, e.g. "Cereal & Granola" -> "cereal-granola"."""
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
 
 if __name__ == "__main__":

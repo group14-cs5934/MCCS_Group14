@@ -1,4 +1,4 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 
 import ProductPage from '@/components/ProductPage';
 import { useProduct } from '@/hooks/useProduct';
@@ -9,13 +9,5 @@ import { useProduct } from '@/hooks/useProduct';
  */
 export default function ProductByIdScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-
-  const state = useProduct(id);
-
-  return (
-    <>
-      <Stack.Screen options={{ headerShown: false }} />
-      <ProductPage state={state} />
-    </>
-  );
+  return <ProductPage state={useProduct(id)} />;
 }

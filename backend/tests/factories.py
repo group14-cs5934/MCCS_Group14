@@ -8,7 +8,9 @@ import psycopg
 BARCODE = "036000291452"
 
 
-def add_product(connection: psycopg.Connection, category_slug: str | None = None) -> int:
+def add_product(
+    connection: psycopg.Connection, category_slug: str | None = None, barcode: str = BARCODE
+) -> int:
     """Insert "Sample Chips" (optionally in a new category with this slug); return its ID."""
     category_id = None
     if category_slug:
@@ -22,7 +24,7 @@ def add_product(connection: psycopg.Connection, category_slug: str | None = None
         VALUES (%s, 'Sample Chips', '184g', 'https://example.com/chips.jpg', %s)
         RETURNING id
         """,
-        (BARCODE, category_id),
+        (barcode, category_id),
     ).fetchone()
     return product_id
 
