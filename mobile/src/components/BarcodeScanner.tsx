@@ -1,15 +1,27 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { CameraView, type BarcodeScanningResult } from 'expo-camera';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, radius, spacing, textStyles } from '@/theme';
 import { PRODUCT_BARCODE_TYPES, readProductBarcode } from '@/utils/barcode';
 
+/**
+ * A barcode must stay in view this long before it's accepted. While you aim, the camera can pass
+ * over other barcodes nearby (e.g. on a shelf); waiting means only the one you settle on counts.
+ */
+export const SCAN_HOLD_MS = 500;
+
+/**
+ * A gap in reads longer than this means the barcode left the view, so the wait starts over. The
+ * camera reads a barcode in view several times a second, but can miss a few frames.
+ */
+export const SCAN_GAP_MS = 300;
+
 type Props = {
   /**
-   * Called with the barcode's digits every time the camera gets a complete, valid read. The
-   * camera reads many times a second, so this is called repeatedly while a barcode is in view.
+   * Called with the barcode's digits once the same barcode has stayed in view for SCAN_HOLD_MS,
+   * then again on every read while it stays in view (the camera reads many times a second).
    */
   onScanned: (barcode: string) => void;
 };
@@ -20,11 +32,25 @@ type Props = {
  */
 export default function BarcodeScanner({ onScanned }: Props) {
   const [torchOn, setTorchOn] = useState(false);
+  // The barcode being read right now, since when, and when it was last read. A ref (not state)
+  // because reads arrive faster than re-renders.
+  const current = useRef<{ barcode: string; since: number; lastRead: number } | null>(null);
 
   const handleBarcodeScanned = ({ type, data }: BarcodeScanningResult) => {
     // Blurry or partial reads come back null and are dropped; the camera just keeps looking.
     const barcode = readProductBarcode(type, data);
-    if (barcode) {
+    if (!barcode) {
+      return;
+    }
+    const now = Date.now();
+    const held = current.current;
+    if (held?.barcode !== barcode || now - held.lastRead > SCAN_GAP_MS) {
+      // A different barcode, or the same one back after leaving the view: start waiting again.
+      current.current = { barcode, since: now, lastRead: now };
+      return;
+    }
+    held.lastRead = now;
+    if (now - held.since >= SCAN_HOLD_MS) {
       onScanned(barcode);
     }
   };

@@ -1,7 +1,8 @@
 """T032 acceptance: when any endpoint returns an error, the body has the same code/message format.
 
-Each kind of error the API can produce is checked here: a route's own ApiError, a plain
-HTTPException, Starlette's 404 and 405, request validation (422), and an unhandled crash (500).
+Each kind of error the API can produce is checked here: a route's own ApiError (with or without
+actions for the app to offer), a plain HTTPException, Starlette's 404 and 405, request validation
+(422), and an unhandled crash (500).
 """
 
 import pytest
@@ -11,6 +12,7 @@ from fastapi.testclient import TestClient
 from app.core.config import load_settings
 from app.core.errors import ApiError
 from app.main import create_app
+from app.schemas import ErrorAction
 from tests.conftest import VALID_DATABASE_URL
 
 
@@ -22,6 +24,10 @@ def client() -> TestClient:
     @app.get("/test/api-error")
     def api_error() -> None:
         raise ApiError(409, "already_reviewed", "You already reviewed this product")
+
+    @app.get("/test/api-error-with-actions")
+    def api_error_with_actions() -> None:
+        raise ApiError(404, "product_not_found", "Product not found", actions=list(ErrorAction))
 
     @app.get("/test/http-exception")
     def http_exception() -> None:
@@ -45,6 +51,7 @@ def client() -> TestClient:
 
 ERROR_REQUESTS = [
     ("GET", "/test/api-error", 409),
+    ("GET", "/test/api-error-with-actions", 404),
     ("GET", "/test/http-exception", 403),
     ("GET", "/test/http-exception-without-message", 400),
     ("GET", "/test/crash", 500),
@@ -64,7 +71,7 @@ def test_every_error_has_a_code_and_message(client, method, path, status) -> Non
     body = response.json()
     assert isinstance(body["code"], str) and body["code"]
     assert isinstance(body["message"], str) and body["message"]
-    assert set(body) <= {"code", "message", "details"}
+    assert set(body) <= {"code", "message", "details", "actions"}
 
 
 def test_api_error_uses_its_own_code(client) -> None:
@@ -74,6 +81,20 @@ def test_api_error_uses_its_own_code(client) -> None:
         "code": "already_reviewed",
         "message": "You already reviewed this product",
     }
+
+
+def test_api_error_can_tell_the_app_what_to_offer_next(client) -> None:
+    response = client.get("/test/api-error-with-actions")
+
+    assert response.json() == {
+        "code": "product_not_found",
+        "message": "Product not found",
+        "actions": ["retry_scan", "manual_search"],
+    }
+
+
+def test_errors_without_actions_leave_the_field_out(client) -> None:
+    assert "actions" not in client.get("/test/api-error").json()
 
 
 def test_plain_http_exception_gets_a_code_from_its_status(client) -> None:

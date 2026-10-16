@@ -1,6 +1,7 @@
 import { fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 
 import { getApiBaseUrl } from '@/api';
+import { SCAN_HOLD_MS } from '@/components/BarcodeScanner';
 import type { Product } from '@/types/product';
 
 // T043 acceptance: when I scan a product in the catalog, its product page shows the correct name
@@ -97,10 +98,20 @@ afterAll(() => {
   globalThis.fetch = originalFetch;
 });
 
-/** Opens the Scan tab and points the camera at a barcode the scanner reports as `type`/`data`. */
+/**
+ * Opens the Scan tab and holds the camera on a barcode the scanner reports as `type`/`data`
+ * long enough for it to count.
+ */
 async function scan(type: string, data: string) {
   renderRouter('src/app', { initialUrl: '/scan' });
-  fireEvent(await screen.findByTestId('scanner-camera'), 'barcodeScanned', { type, data });
+  const camera = await screen.findByTestId('scanner-camera');
+  // The camera reads it every 100 ms. renderRouter turns on Jest's fake timers, which also fake
+  // the clock the scanner times with, so time only passes here.
+  fireEvent(camera, 'barcodeScanned', { type, data });
+  for (let waited = 0; waited < SCAN_HOLD_MS; waited += 100) {
+    jest.setSystemTime(Date.now() + 100);
+    fireEvent(camera, 'barcodeScanned', { type, data });
+  }
 }
 
 it('shows the scanned product’s name and price', async () => {

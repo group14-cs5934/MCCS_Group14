@@ -122,4 +122,8 @@ def test_unknown_barcode_returns_404(client, connection, code) -> None:
     response = client.get(f"/products/barcode/{code}")
 
     assert response.status_code == 404
-    assert response.json() == {"code": "product_not_found", "message": "Product not found"}
+    assert response.json() == {
+        "code": "product_not_found",
+        "message": "Product not found",
+        "actions": ["retry_scan", "manual_search"],
+    }
