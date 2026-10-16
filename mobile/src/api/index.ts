@@ -1,5 +1,6 @@
-export { DEFAULT_TIMEOUT_MS, api, request } from './client';
+export { DEFAULT_TIMEOUT_MS, api, request, setAccessTokenProvider } from './client';
 export type {
+  AccessTokenProvider,
   ApiError,
   ApiErrorKind,
   ApiResult,
@@ -9,3 +10,4 @@ export type {
 } from './client';
 export { getApiBaseUrl } from './config';
 export { checkHealth } from './health';
+export { getMe } from './me';

@@ -8,7 +8,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import health, products
+from app.api import health, me, products
+from app.core.auth import TokenVerifier
 from app.core.config import ConfigError, Settings, get_settings
 from app.core.database import create_pool
 from app.core.errors import add_error_handlers
@@ -52,7 +53,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     add_request_logging(app)
     add_error_handlers(app)
 
+    app.state.token_verifier = TokenVerifier.from_settings(settings)
+
     app.include_router(health.router)
+    app.include_router(me.router)
     app.include_router(products.router)
 
     @app.get("/")

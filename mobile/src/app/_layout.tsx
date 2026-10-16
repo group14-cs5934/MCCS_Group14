@@ -4,25 +4,40 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
+import { AuthProvider, useAuth } from '@/auth';
 import { colors, fontAssets, fonts } from '@/theme';
 
 // Keep the splash screen up until fonts load so text never flashes in the system font.
 SplashScreen.preventAutoHideAsync();
 
-/**
- * Root navigator. The bottom tabs live in the (tabs) group; every other screen here is
- * pushed on top of the tabs, so the back button returns to the tab it was opened from.
- */
 export default function RootLayout() {
+  return (
+    <AuthProvider>
+      <RootNavigator />
+    </AuthProvider>
+  );
+}
+
+/**
+ * Root navigator. Signed-out users only see sign-in and sign-up. Signed-in users get the bottom
+ * tabs (the (tabs) group), and every other screen here is pushed on top of the tabs, so the back
+ * button returns to the tab it was opened from. Signing in or out switches between the two
+ * automatically (Stack.Protected).
+ */
+function RootNavigator() {
   const [fontsLoaded, fontError] = useFonts(fontAssets);
+  const { session, initializing } = useAuth();
+  // Also wait for the saved session, so a signed-in user never sees the sign-in screen flash.
+  const ready = (fontsLoaded || !!fontError) && !initializing;
+  const signedIn = session !== null;
 
   useEffect(() => {
-    if (fontsLoaded || fontError) {
+    if (ready) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, fontError]);
+  }, [ready]);
 
-  if (!fontsLoaded && !fontError) {
+  if (!ready) {
     return null;
   }
 
@@ -38,11 +53,17 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: colors.background },
         }}
       >
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="product/[id]" options={{ title: 'Product' }} />
-        <Stack.Screen name="product/barcode/[code]" options={{ title: 'Product' }} />
-        <Stack.Screen name="search" options={{ title: 'Search' }} />
-        <Stack.Screen name="theme-preview" options={{ title: 'Theme preview' }} />
+        <Stack.Protected guard={signedIn}>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="product/[id]" options={{ title: 'Product' }} />
+          <Stack.Screen name="product/barcode/[code]" options={{ title: 'Product' }} />
+          <Stack.Screen name="search" options={{ title: 'Search' }} />
+          <Stack.Screen name="theme-preview" options={{ title: 'Theme preview' }} />
+        </Stack.Protected>
+        <Stack.Protected guard={!signedIn}>
+          <Stack.Screen name="sign-in" options={{ title: 'Sign in' }} />
+          <Stack.Screen name="sign-up" options={{ title: 'Create account' }} />
+        </Stack.Protected>
       </Stack>
       <StatusBar style="dark" />
     </>

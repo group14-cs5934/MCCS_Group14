@@ -2,6 +2,7 @@ import { useRouter, type Href } from 'expo-router';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useAuth } from '@/auth';
 import Button from '@/components/Button';
 import Card from '@/components/Card';
 import IconBadge from '@/components/IconBadge';
@@ -18,6 +19,7 @@ const devLinks: { label: string; href: Href }[] = [
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { user, isAdmin, signOut } = useAuth();
 
   return (
     <ScrollView
@@ -49,6 +51,14 @@ export default function HomeScreen() {
         />
         <Button title="Search manually" variant="text" onPress={() => router.push('/search')} />
       </Card>
+
+      <View style={styles.account}>
+        <Text style={[textStyles.caption, { color: colors.textMuted }]}>
+          Signed in as {user?.email}
+          {isAdmin ? ' · Admin' : ''}
+        </Text>
+        <Button title="Sign out" variant="text" onPress={signOut} />
+      </View>
 
       {__DEV__ && (
         <View style={styles.devLinks}>
@@ -85,6 +95,10 @@ const styles = StyleSheet.create({
   stretch: {
     alignSelf: 'stretch',
     marginTop: spacing.sm,
+  },
+  account: {
+    alignItems: 'center',
+    marginTop: spacing.xl,
   },
   devLinks: {
     alignItems: 'center',

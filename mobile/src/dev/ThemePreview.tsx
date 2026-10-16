@@ -5,6 +5,7 @@ import Card from '@/components/Card';
 import ErrorBanner from '@/components/ErrorBanner';
 import ErrorState from '@/components/ErrorState';
 import Loader from '@/components/Loader';
+import TextField from '@/components/TextField';
 import {
   colors,
   radius,
@@ -54,6 +55,12 @@ export default function ThemePreview() {
         <Button title="Text" variant="text" onPress={noop} />
         <Button title="Loading" loading onPress={noop} />
         <Button title="Disabled" disabled onPress={noop} />
+      </View>
+
+      <Text style={sharedStyles.heading}>Text fields</Text>
+      <View style={styles.stack}>
+        <TextField label="Email" placeholder="name@example.com" />
+        <TextField label="Password" secureTextEntry error="Use at least 6 characters." />
       </View>
 
       <Text style={sharedStyles.heading}>Loading and errors</Text>

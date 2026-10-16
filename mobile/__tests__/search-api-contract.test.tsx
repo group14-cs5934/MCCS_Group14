@@ -42,7 +42,8 @@ afterAll(() => {
 async function search(text: string) {
   renderRouter('src/app', { initialUrl: '/search' });
   fireEvent.changeText(await screen.findByLabelText('Search products'), text);
-  act(() => jest.advanceTimersByTime(SEARCH_DEBOUNCE_MS));
+  // Async act also lets the request read the sign-in token (T039) before calling fetch.
+  await act(async () => jest.advanceTimersByTime(SEARCH_DEBOUNCE_MS));
 }
 
 it('asks the API for the same query that was typed', async () => {

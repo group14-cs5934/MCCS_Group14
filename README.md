@@ -28,15 +28,18 @@ features like the camera won't work on web).
 mobile/
   src/
     app/              # screens (Expo Router): every file here is a route
-      _layout.tsx     #   root stack: loads fonts; screens pushed on top of the tabs
+      _layout.tsx     #   root stack: loads fonts and the session; signed-out users only see
+                      #   sign-in/sign-up, signed-in users see the tabs and screens on top of them
       (tabs)/         #   bottom tabs: index (Home), scan, saved
       product/[id].tsx  # product details, e.g. /product/123
       product/barcode/[code].tsx  # same page, opened by barcode after a scan
       search.tsx      # product search; searches once typing pauses (useProductSearch)
+      sign-in.tsx, sign-up.tsx  # email + password accounts (Supabase Auth)
     theme/            # design tokens: colors, typography (Inter), spacing, radius, shadows,
                       #   and sharedStyles. The only place hex colors and font names live.
     components/       # reusable UI (buttons, cards, loaders, error banners)
     api/              # API client for the FastAPI backend
+    auth/             # Supabase client, AuthProvider/useAuth, form validation
     hooks/            # shared React hooks
     types/            # shared TypeScript types (Product, Price, ...)
     utils/            # small helpers (formatting, validation)
@@ -78,6 +81,7 @@ appear on the dev **Theme preview** screen (link on Home in development builds).
 | `ErrorState`           | Full-screen error: icon, title, message, Try Again. Extra buttons go in `children`.  |
 | `AsyncContent`         | Wraps a screen's content and shows a spinner or `ErrorState` in its place as needed. |
 | `IconBadge`            | Icon in a soft circle, for call-to-action, empty, and error states.                  |
+| `TextField`            | Labeled text input with an optional `error` shown below it (forms, sign-in).         |
 | `CameraPermissionGate` | Wraps anything that needs the camera; asks for access and handles "denied" for you.  |
 | `BarcodeScanner`       | Live camera for UPC/EAN barcodes; `onScanned` gets one once it stays in view 0.5s.   |
 | `ProductPage`          | Body of the product page; shared by the by-ID and by-barcode product routes.         |
@@ -105,13 +109,13 @@ friendly sentence you can show as-is (e.g. as `AsyncContent`'s `error`). If the 
 you get a "Can't reach the server" error instead of a crash; requests time out after 10 seconds.
 
 ```tsx
-import { api } from '@/api';
-import type { Product } from '@/types/product';
+import { api } from "@/api";
+import type { Product } from "@/types/product";
 
 const result = await api.get<Product>(`/products/${id}`, { signal });
 if (result.ok) {
   setProduct(result.data);
-} else if (result.error.kind !== 'aborted') {
+} else if (result.error.kind !== "aborted") {
   setError(result.error.message);
 }
 ```
@@ -122,6 +126,8 @@ if (result.ok) {
 - `error.actions` lists what to offer the shopper next, when the server says. An unknown scanned
   barcode gives `['retry_scan', 'manual_search']`, which `ProductPage` shows as "Product not
   found" with Retry (back to the scanner) and Search (opens the search screen).
+- Signed-in requests send the user's Supabase token (`Authorization: Bearer ...`) automatically.
+  A `401` comes back as "Your session has expired. Please sign in again."
 - Response types live in `src/types/` and mirror the backend's `...Read` models.
 - Add one function per endpoint next to the client, like `checkHealth()` in `src/api/health.ts`.
 
@@ -131,6 +137,28 @@ backend with `--host 0.0.0.0` so it accepts connections from your network:
 `uv run fastapi dev app/main.py --host 0.0.0.0`. To use a different API (e.g. a deployed one, or
 when running Expo with `--tunnel`), copy `mobile/.env.example` to `mobile/.env` and set
 `EXPO_PUBLIC_API_URL`, then restart `npm start`.
+
+### Accounts (Supabase Auth)
+
+The app requires an account: it opens on **Sign in** until the user signs in or creates an
+account, and remembers the session on the device. Accounts live in the team's Supabase project.
+Before running the app, copy `mobile/.env.example` to `mobile/.env` and set:
+
+| Variable                   | Where to find it                                                 |
+| -------------------------- | ---------------------------------------------------------------- |
+| `EXPO_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API → Project URL                  |
+| `EXPO_PUBLIC_SUPABASE_KEY` | Same page: the **publishable** (anon) key. Never the secret key. |
+
+- In code, read the user with `const { user, role, isAdmin, signOut } = useAuth();` from `@/auth`.
+  `role` (`'user'` or `'admin'`) comes from the API's `GET /me` after sign-in, so it's `null`
+  while that loads or if the API is unreachable. Treat `null` as a regular user. Admins see
+  "· Admin" next to their email on Home.
+- If **Confirm email** is on in Supabase (Authentication → Sign In / Providers → Email), sign-up
+  shows "Check your email"; the user opens the link, then signs in. With it off, sign-up signs the
+  user straight in.
+- Tests never reach Supabase: `__mocks__/@supabase/supabase-js.ts` fakes it and starts signed in.
+  Tests about auth control it with `mockAuth` (see `__tests__/auth.test.tsx`). `jest.setup.ts`
+  stubs `getMe` so every signed-in test user is a `'user'` unless the test says otherwise.
 
 ### Lint, format & test
 
@@ -165,12 +193,14 @@ uv run fastapi dev app/main.py   # http://localhost:8000, API docs at /docs
 Settings are read from environment variables and `backend/.env` (real environment variables
 win). They're defined and validated in `app/core/config.py`; `.env.example` lists every variable.
 
-| Variable       | Required | Default       | Notes                                                         |
-| -------------- | -------- | ------------- | ------------------------------------------------------------- |
-| `DATABASE_URL` | yes      |               | Postgres connection string                                    |
-| `APP_ENV`      | no       | `development` | `development`, `test`, or `production`                        |
-| `LOG_LEVEL`    | no       | `INFO`        | `DEBUG`, `INFO`, `WARNING`, or `ERROR`                        |
-| `CORS_ORIGINS` | no       | _(none)_      | Comma-separated browser origins, e.g. `http://localhost:8081` |
+| Variable              | Required | Default       | Notes                                                         |
+| --------------------- | -------- | ------------- | ------------------------------------------------------------- |
+| `DATABASE_URL`        | yes      |               | Postgres connection string                                    |
+| `SUPABASE_URL`        | yes      |               | Supabase Project URL, used to verify sign-in tokens           |
+| `SUPABASE_JWT_SECRET` | no       |               | Only for projects on Supabase's legacy JWT secret             |
+| `APP_ENV`             | no       | `development` | `development`, `test`, or `production`                        |
+| `LOG_LEVEL`           | no       | `INFO`        | `DEBUG`, `INFO`, `WARNING`, or `ERROR`                        |
+| `CORS_ORIGINS`        | no       | _(none)_      | Comma-separated browser origins, e.g. `http://localhost:8081` |
 
 If a required variable is missing or a value is invalid, the server refuses to start and prints
 which variable is wrong. To add a variable: add a field to `Settings`, add it to `.env.example`,
@@ -217,6 +247,7 @@ payloads get `422` with every problem listed.
 
 | Endpoint                       | Returns                                                                     |
 | ------------------------------ | --------------------------------------------------------------------------- |
+| `GET /me`                      | The signed-in user (`id`, `email`, `role`), or `401` without a valid token. |
 | `GET /products/{id}`           | One `ProductRead` (with category and current price), or `404` if not found. |
 | `GET /products/barcode/{code}` | The same `ProductRead` for the product with this barcode, or `404`.         |
 | `GET /products/search`         | A list of `ProductRead` matching `q` and/or `category`; `[]` if none match. |
@@ -270,6 +301,46 @@ Document error statuses with `error_response()` and give each new router
 ```python
 raise ApiError(404, "product_not_found", "Product not found")
 ```
+
+### Authentication
+
+The app signs users in with Supabase directly and sends their access token as
+`Authorization: Bearer <token>`. The API checks the token's signature (with the public keys
+Supabase publishes for the project at `SUPABASE_URL`), audience, issuer, and expiry. To require a
+signed-in user, take a `CurrentUser` parameter; for admins only, take `AdminUser`:
+
+```python
+from app.core.auth import AdminUser, CurrentUser
+
+@router.get("/me")
+def read_me(user: CurrentUser) -> UserRead:  # user.id is the Supabase user's UUID, user.role
+    ...
+
+@router.delete("/products/{product_id}")
+def delete_product(product_id: int, user: AdminUser) -> None:  # 403 for regular users
+    ...
+```
+
+A missing, expired, or invalid token gets `401` with code `not_authenticated`; a signed-in user
+without the right role gets `403` with code `forbidden`; if Supabase's keys can't be fetched,
+`503` with code `auth_unavailable`. Product endpoints are still public. Tests swap in their own signing key
+(see `tests/test_auth.py`), so they never call Supabase.
+
+**Users and roles.** Accounts live in Supabase Auth; the `users` table
+(`migrations/004_create_users.sql`) stores each user's role. A user's row is added with the
+`user` role the first time they call the API. The app calls `GET /me` right after signing in, so
+this happens at sign-up, or at the first sign-in when email confirmation is on. There are two
+roles, `user` and `admin`. `require_role(...)` in `app/core/auth.py` builds a check for other
+combinations. To make someone an admin (after they've signed in once), run in the Supabase SQL
+editor, or locally with `docker exec -it mccs-db psql -U postgres -d mccs`:
+
+```sql
+UPDATE users SET role = 'admin' WHERE email = 'someone@example.com';
+```
+
+The app picks up the new role the next time the user signs in. Row level security is on for
+`users` with no policies, so the app's publishable key can't read it or change roles through
+Supabase's REST API; only the backend can.
 
 ### Database access
 
@@ -338,17 +409,18 @@ Bash or macOS/Linux; run them from the repo root unless a step says otherwise.
    Supabase's SQL editor). The seeded product may then not have ID 1.
 
 2. **Configure the backend.** In `backend/.env` (copy `backend/.env.example`):
-   `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mccs` and
-   `CORS_ORIGINS=http://localhost:8081`.
+   `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mccs`, the team's
+   `SUPABASE_URL`, and `CORS_ORIGINS=http://localhost:8081`.
 3. **Seed it**, from `backend/`: `uv run python -m scripts.seed_dev` → prints "Development seed
    completed successfully." It adds Sample Chips (product 1, no price), then the real products in
    `backend/scripts/sample_products.json` (e.g. Diet Pepsi 20 oz, `012000171741`, $1.59) with
    their photos and prices, so you can scan them. Running it again skips products already there.
 4. **Start the API**, from `backend/`: `uv run fastapi dev app/main.py --host 0.0.0.0`. Check
    <http://localhost:8000/products/1> returns Sample Chips as JSON.
-5. **Start the app**, from `mobile/`: `npm start`, then open it on a phone with Expo Go (same
-   Wi-Fi as the computer), a simulator, or press `w` for the browser.
-6. **Check the result.** On Home, tap **Open a sample product** (development builds only). The
+5. **Start the app**, from `mobile/`: set the Supabase variables in `mobile/.env` (see
+   [Accounts](#accounts-supabase-auth)), run `npm start`, then open it on a phone with Expo Go
+   (same Wi-Fi as the computer), a simulator, or press `w` for the browser.
+6. **Check the result.** Sign in (or create an account). On Home, tap **Open a sample product** (development builds only). The
    product page shows Snacks, **Sample Chips**, 184g, and "No price yet".
 7. **Check search.** Go back, tap **Search manually**, and type `sample chps` (with the typo). Once
    you stop typing, **Sample Chips** appears with 184g and "No price yet", the same result as

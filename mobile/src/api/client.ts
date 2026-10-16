@@ -6,6 +6,19 @@ export const DEFAULT_TIMEOUT_MS = 10_000;
 /** Response header with the server's request ID (see backend README: request logging). */
 const REQUEST_ID_HEADER = 'X-Request-ID';
 
+/** Returns the signed-in user's access token, or nothing when signed out. */
+export type AccessTokenProvider = () => Promise<string | null | undefined>;
+
+let getAccessToken: AccessTokenProvider | null = null;
+
+/**
+ * Set by AuthProvider so every request carries the signed-in user's token as
+ * `Authorization: Bearer <token>`. Pass null to stop sending it.
+ */
+export function setAccessTokenProvider(provider: AccessTokenProvider | null): void {
+  getAccessToken = provider;
+}
+
 export type ApiErrorKind =
   | 'network' // couldn't reach the server: offline, wrong address, or server down
   | 'timeout' // server didn't answer within timeoutMs
@@ -62,12 +75,14 @@ const messages = {
   timeout: 'The server is taking too long to respond. Please try again.',
   'invalid-response': 'The server sent an unexpected response. Please try again.',
   aborted: 'The request was cancelled.',
+  unauthorized: 'Your session has expired. Please sign in again.',
   notFound: "We couldn't find what you're looking for.",
   serverError: 'Something went wrong on our end. Please try again in a moment.',
   requestError: 'Something went wrong. Please try again.',
 } as const;
 
 function messageForStatus(status: number): string {
+  if (status === 401) return messages.unauthorized;
   if (status === 404) return messages.notFound;
   if (status >= 500) return messages.serverError;
   return messages.requestError;
@@ -141,11 +156,14 @@ export async function request<T>(
     let response: Response;
     let text: string;
     try {
+      // A failure to read the token just sends the request without one; the API answers 401.
+      const token = getAccessToken ? await getAccessToken().catch(() => null) : null;
       response = await fetch(`${getApiBaseUrl()}${path}`, {
         method,
         headers: {
           Accept: 'application/json',
           ...(body !== undefined && { 'Content-Type': 'application/json' }),
+          ...(token && { Authorization: `Bearer ${token}` }),
         },
         body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: controller.signal,

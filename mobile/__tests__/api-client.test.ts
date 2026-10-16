@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 
-import { DEFAULT_TIMEOUT_MS, api, checkHealth, getApiBaseUrl } from '@/api';
+import { DEFAULT_TIMEOUT_MS, api, checkHealth, getApiBaseUrl, setAccessTokenProvider } from '@/api';
 
 // T015 acceptance: when the API is unreachable, the client returns a friendly error instead of
 // crashing the app.
@@ -46,6 +46,7 @@ beforeEach(() => {
 
 afterEach(() => {
   jest.useRealTimers();
+  setAccessTokenProvider(null);
 });
 
 afterAll(() => {
@@ -229,6 +230,69 @@ describe('responses', () => {
       ok: false,
       error: { kind: 'invalid-response', status: 200 },
     });
+  });
+});
+
+// T039: requests carry the signed-in user's Supabase token so the API knows who's calling.
+describe('signed-in requests', () => {
+  /** Headers the last fetch was called with. */
+  const sentHeaders = () => fetchMock.mock.calls[0][1].headers as Record<string, string>;
+
+  it('sends the access token as a Bearer header', async () => {
+    setAccessTokenProvider(async () => 'abc123');
+    respondWith(200, '{}');
+
+    await api.get('/me');
+
+    expect(sentHeaders()).toEqual({ Accept: 'application/json', Authorization: 'Bearer abc123' });
+  });
+
+  it('sends no Authorization header when signed out', async () => {
+    setAccessTokenProvider(async () => undefined);
+    respondWith(200, '{}');
+
+    await api.get('/me');
+
+    expect(sentHeaders()).not.toHaveProperty('Authorization');
+  });
+
+  it('still sends the request when reading the token fails', async () => {
+    setAccessTokenProvider(() => Promise.reject(new Error('storage unavailable')));
+    respondWith(200, '{}');
+
+    const result = await api.get('/me');
+
+    expect(result.ok).toBe(true);
+    expect(sentHeaders()).not.toHaveProperty('Authorization');
+  });
+
+  it('asks the user to sign in again on 401', async () => {
+    respondWith(401, '{"detail":"Not authenticated"}');
+
+    const result = await api.get('/me');
+
+    expect(result).toEqual({
+      ok: false,
+      error: expect.objectContaining({
+        kind: 'http',
+        status: 401,
+        message: 'Your session has expired. Please sign in again.',
+      }),
+    });
+  });
+
+  it('getMe returns the signed-in account and role', async () => {
+    // jest.setup.ts stubs getMe for screen tests; this checks the real one.
+    const { getMe } = jest.requireActual<typeof import('@/api/me')>('@/api/me');
+    setAccessTokenProvider(async () => 'abc123');
+    const account = { id: 'user-1', email: 'shopper@example.com', role: 'admin' };
+    respondWith(200, JSON.stringify(account));
+
+    const result = await getMe();
+
+    expect(result).toEqual({ ok: true, status: 200, data: account });
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/me$/);
+    expect(sentHeaders()).toHaveProperty('Authorization', 'Bearer abc123');
   });
 });
 

@@ -61,9 +61,10 @@ function typeQuickly(text: string) {
   }
 }
 
-/** Waits long enough for the typing pause to count. */
-function pause() {
-  act(() => jest.advanceTimersByTime(SEARCH_DEBOUNCE_MS));
+/** Waits long enough for the typing pause to count, and for the search request to be sent. */
+async function pause() {
+  // Async act also lets the request read the sign-in token (T039) before calling fetch.
+  await act(async () => jest.advanceTimersByTime(SEARCH_DEBOUNCE_MS));
 }
 
 beforeEach(() => {
@@ -87,7 +88,7 @@ it('searches once, only after typing pauses, not on every keystroke', async () =
   typeQuickly('coffee');
   expect(fetchMock).not.toHaveBeenCalled();
 
-  pause();
+  await pause();
   expect(searchedFor()).toEqual(['coffee']);
 
   expect(await screen.findByText('Starbucks Ground Coffee')).toBeOnTheScreen();
@@ -101,11 +102,11 @@ it('searches again after each pause', async () => {
   respondWith(200, [FOLGERS]);
 
   typeQuickly('coffee');
-  pause();
+  await pause();
   await screen.findByText('Starbucks Ground Coffee');
 
   typeQuickly('coffee folgers');
-  pause();
+  await pause();
 
   expect(await screen.findByText('Folgers Classic Roast Coffee')).toBeOnTheScreen();
   expect(screen.queryByText('Starbucks Ground Coffee')).not.toBeOnTheScreen();
@@ -121,9 +122,9 @@ it('cancels a search that is still running when typing resumes', async () => {
   });
 
   typeQuickly('cof');
-  pause();
+  await pause();
   typeQuickly('coffee');
-  pause();
+  await pause();
 
   expect(searchedFor()).toEqual(['cof', 'coffee']);
   expect(signals.map((signal) => signal.aborted)).toEqual([true, false]);
@@ -134,7 +135,7 @@ it('sends the search text exactly as typed, trimmed', async () => {
   fetchMock.mockReturnValue(new Promise(() => {}));
 
   fireEvent.changeText(searchBox(), '  ground coffee & tea ');
-  pause();
+  await pause();
 
   expect(searchedFor()).toEqual(['ground coffee & tea']);
 });
@@ -143,7 +144,7 @@ it('does not search for blank text', async () => {
   await openSearch();
 
   fireEvent.changeText(searchBox(), '   ');
-  pause();
+  await pause();
 
   expect(fetchMock).not.toHaveBeenCalled();
   expect(screen.getByText('Find a product')).toBeOnTheScreen();
@@ -154,7 +155,7 @@ it('shows a spinner while searching', async () => {
   fetchMock.mockReturnValue(new Promise(() => {}));
 
   typeQuickly('coffee');
-  pause();
+  await pause();
 
   expect(screen.getByText('Searching…')).toBeOnTheScreen();
 });
@@ -164,7 +165,7 @@ it('says so when nothing matches', async () => {
   respondWith(200, []);
 
   typeQuickly('xqzv');
-  pause();
+  await pause();
 
   expect(await screen.findByText('No results')).toBeOnTheScreen();
   expect(screen.getByText(/No products match "xqzv"/)).toBeOnTheScreen();
@@ -176,7 +177,7 @@ it('shows an error with Try Again, which searches again', async () => {
   respondWith(200, [GROUND_COFFEE]);
 
   typeQuickly('coffee');
-  pause();
+  await pause();
   fireEvent.press(await screen.findByRole('button', { name: 'Try Again' }));
 
   expect(await screen.findByText('Starbucks Ground Coffee')).toBeOnTheScreen();
@@ -188,7 +189,7 @@ it('clearing the search clears the results right away', async () => {
   respondWith(200, [GROUND_COFFEE]);
 
   typeQuickly('coffee');
-  pause();
+  await pause();
   await screen.findByText('Starbucks Ground Coffee');
 
   fireEvent.press(screen.getByRole('button', { name: 'Clear search' }));
@@ -196,7 +197,7 @@ it('clearing the search clears the results right away', async () => {
   expect(searchBox()).toHaveDisplayValue('');
   expect(screen.queryByText('Starbucks Ground Coffee')).not.toBeOnTheScreen();
   expect(screen.getByText('Find a product')).toBeOnTheScreen();
-  pause();
+  await pause();
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
 
@@ -219,7 +220,7 @@ it('shows each result’s name, price, and photo, and tapping one opens its prod
   ]);
 
   typeQuickly('folgers');
-  pause();
+  await pause();
 
   expect(await screen.findByText('Folgers Classic Roast Coffee')).toBeOnTheScreen();
   expect(screen.getByText('$8.99')).toBeOnTheScreen();
