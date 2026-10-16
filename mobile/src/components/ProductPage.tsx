@@ -2,7 +2,10 @@ import { useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, Stack } from 'expo-router';
 
+import type { ErrorAction } from '@/api';
 import AsyncContent from '@/components/AsyncContent';
+import Button from '@/components/Button';
+import ErrorState from '@/components/ErrorState';
 import type { ProductState } from '@/hooks/useProduct';
 import { colors, fonts, radius, sharedStyles, spacing, textStyles } from '@/theme';
 import type { Product } from '@/types/product';
@@ -45,15 +48,56 @@ export default function ProductPage({ state: { product, loading, error, reload }
         </Pressable>
       </View>
 
-      <AsyncContent
-        loading={loading}
-        error={error?.message}
-        onRetry={reload}
-        loadingMessage="Loading product…"
-      >
-        {product ? <ProductDetails product={product} /> : null}
-      </AsyncContent>
+      {/* The API sends actions for a scanned barcode it doesn't know; other errors get Try Again. */}
+      {!loading && error?.actions?.length ? (
+        <ProductNotFound actions={error.actions} />
+      ) : (
+        <AsyncContent
+          loading={loading}
+          error={error?.message}
+          onRetry={reload}
+          loadingMessage="Loading product…"
+        >
+          {product ? <ProductDetails product={product} /> : null}
+        </AsyncContent>
+      )}
     </View>
+  );
+}
+
+/**
+ * Shown when a scanned barcode isn't in the catalog, offering what the API's actions say: Retry
+ * (back to the scanner, in case the barcode was misread) and Search (find it by name instead).
+ */
+function ProductNotFound({ actions }: { actions: ErrorAction[] }) {
+  function scanAgain() {
+    // This page was opened by the scanner, so Back returns to it, ready to scan again.
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/scan');
+    }
+  }
+
+  return (
+    <ErrorState
+      title="Product not found"
+      message="We couldn't find a product with this barcode. Scan it again, or search for it by name."
+      icon="barcode-outline"
+      onRetry={actions.includes('retry_scan') ? scanAgain : undefined}
+      retryLabel="Retry"
+      style={sharedStyles.centered}
+    >
+      {actions.includes('manual_search') ? (
+        <Button
+          title="Search"
+          variant="secondary"
+          icon="search"
+          // Replaces this page, so Back from the search screen returns to the scanner.
+          onPress={() => router.replace('/search')}
+        />
+      ) : null}
+    </ErrorState>
   );
 }
 
