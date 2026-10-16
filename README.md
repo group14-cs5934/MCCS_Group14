@@ -120,7 +120,8 @@ if (result.ok) {
   `error.code`), `invalid-response` (not JSON), or `aborted` (you cancelled via `signal`).
 - `error.requestId` matches the backend log line; include it in bug reports.
 - `error.actions` lists what to offer the shopper next, when the server says. An unknown scanned
-  barcode gives `['retry_scan', 'manual_search']`: show "Scan again" and "Search by name".
+  barcode gives `['retry_scan', 'manual_search']`, which `ProductPage` shows as "Product not
+  found" with Retry (back to the scanner) and Search (opens the search screen).
 - Response types live in `src/types/` and mirror the backend's `...Read` models.
 - Add one function per endpoint next to the client, like `checkHealth()` in `src/api/health.ts`.
 

@@ -1,4 +1,5 @@
-import { fireEvent, renderRouter, screen } from 'expo-router/testing-library';
+import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
+import { router } from 'expo-router';
 
 import { getApiBaseUrl } from '@/api';
 import { SCAN_HOLD_MS } from '@/components/BarcodeScanner';
@@ -6,6 +7,8 @@ import type { Product } from '@/types/product';
 
 // T043 acceptance: when I scan a product in the catalog, its product page shows the correct name
 // and price.
+// T050 acceptance: when a scan returns unknown, I see "Product not found" with Retry and Search
+// buttons; tapping Search opens the search screen.
 //
 // This runs the whole app side of a scan: the camera reads a barcode, the app asks the API for
 // that barcode, and the product page shows what came back. The API is faked with products from
@@ -72,18 +75,26 @@ const KNIFE = catalogProduct(
 );
 const CATALOG = [DIET_PEPSI, PEPSI, KNIFE];
 
+/** What the API answers for a barcode that isn't in the catalog (backend T044). */
+const UNKNOWN_BARCODE_RESPONSE = {
+  code: 'product_not_found',
+  message: 'Product not found',
+  actions: ['retry_scan', 'manual_search'],
+};
+/** A real, correctly formed barcode that isn't in CATALOG. */
+const UNKNOWN_UPC = '012345678905';
+
 const fetchMock = jest.fn<Promise<Response>, [string, RequestInit]>();
 const originalFetch = globalThis.fetch;
 
 beforeEach(() => {
   fetchMock.mockReset();
-  // The fake API: GET /products/barcode/{code} returns the catalog product with that barcode.
+  // The fake API: GET /products/barcode/{code} returns the catalog product with that barcode, or
+  // the real API's unknown-barcode 404, which tells the app to offer retry and manual search.
   fetchMock.mockImplementation(async (url) => {
     const code = url.match(/\/products\/barcode\/(\d+)$/)?.[1];
     const product = CATALOG.find((candidate) => candidate.barcode === code);
-    const [status, body] = product
-      ? [200, product]
-      : [404, { code: 'product_not_found', message: 'Product not found' }];
+    const [status, body] = product ? [200, product] : [404, UNKNOWN_BARCODE_RESPONSE];
     return {
       ok: status === 200,
       status,
@@ -98,20 +109,24 @@ afterAll(() => {
   globalThis.fetch = originalFetch;
 });
 
-/**
- * Opens the Scan tab and holds the camera on a barcode the scanner reports as `type`/`data`
- * long enough for it to count.
- */
-async function scan(type: string, data: string) {
-  renderRouter('src/app', { initialUrl: '/scan' });
+/** Holds the open camera on a barcode long enough for it to count; it reads it every 100 ms. */
+async function holdOn(type: string, data: string) {
   const camera = await screen.findByTestId('scanner-camera');
-  // The camera reads it every 100 ms. renderRouter turns on Jest's fake timers, which also fake
-  // the clock the scanner times with, so time only passes here.
+  // renderRouter turns on Jest's fake timers, which also fake the clock the scanner times with,
+  // so time only passes here.
   fireEvent(camera, 'barcodeScanned', { type, data });
   for (let waited = 0; waited < SCAN_HOLD_MS; waited += 100) {
     jest.setSystemTime(Date.now() + 100);
     fireEvent(camera, 'barcodeScanned', { type, data });
   }
+  // Let a request that settles right away (e.g. fails to connect) update the page inside act.
+  await act(async () => {});
+}
+
+/** Opens the Scan tab and scans a barcode the scanner reports as `type`/`data`. */
+async function scan(type: string, data: string) {
+  renderRouter('src/app', { initialUrl: '/scan' });
+  await holdOn(type, data);
 }
 
 it('shows the scanned product’s name and price', async () => {
@@ -146,4 +161,56 @@ it('shows a product with a 13-digit EAN barcode', async () => {
 
   expect(await screen.findByText(KNIFE.name)).toBeOnTheScreen();
   expect(screen.getByText('$12.99')).toBeOnTheScreen();
+});
+
+describe('when the scanned barcode is unknown', () => {
+  it('shows "Product not found" with Retry and Search buttons', async () => {
+    await scan('upc_a', UNKNOWN_UPC);
+
+    expect(await screen.findByText('Product not found')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Search' })).toBeOnTheScreen();
+    expect(screen.queryByRole('button', { name: 'Try Again' })).not.toBeOnTheScreen();
+    expect(fetchMock.mock.calls[0][0]).toBe(`${getApiBaseUrl()}/products/barcode/${UNKNOWN_UPC}`);
+  });
+
+  it('opens the search screen when Search is tapped, and Back returns to the scanner', async () => {
+    await scan('upc_a', UNKNOWN_UPC);
+
+    fireEvent.press(await screen.findByRole('button', { name: 'Search' }));
+
+    expect(screen).toHavePathname('/search');
+    expect(await screen.findByLabelText('Search products')).toBeOnTheScreen();
+
+    act(() => router.back());
+    expect(screen).toHavePathname('/scan');
+  });
+
+  it('goes back to the scanner to scan again when Retry is tapped', async () => {
+    await scan('upc_a', UNKNOWN_UPC);
+
+    fireEvent.press(await screen.findByRole('button', { name: 'Retry' }));
+
+    expect(screen).toHavePathname('/scan');
+    expect(screen.getByTestId('scanner-camera')).toBeOnTheScreen();
+  });
+
+  it('can scan a known product after Retry', async () => {
+    await scan('upc_a', UNKNOWN_UPC);
+    fireEvent.press(await screen.findByRole('button', { name: 'Retry' }));
+
+    await holdOn('upc_a', DIET_PEPSI.barcode);
+
+    expect(await screen.findByText(DIET_PEPSI.name)).toBeOnTheScreen();
+  });
+
+  it('still offers Try Again, not Retry and Search, when the server can’t be reached', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('Network request failed'));
+
+    await scan('upc_a', DIET_PEPSI.barcode);
+
+    expect(await screen.findByRole('button', { name: 'Try Again' })).toBeOnTheScreen();
+    expect(screen.queryByText('Product not found')).not.toBeOnTheScreen();
+    expect(screen.queryByRole('button', { name: 'Search' })).not.toBeOnTheScreen();
+  });
 });
