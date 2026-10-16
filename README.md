@@ -142,13 +142,16 @@ Before running the app, copy `mobile/.env.example` to `mobile/.env` and set:
 | `EXPO_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API → Project URL                  |
 | `EXPO_PUBLIC_SUPABASE_KEY` | Same page: the **publishable** (anon) key. Never the secret key. |
 
-- In code, read the user with `const { user, signOut } = useAuth();` from `@/auth`.
+- In code, read the user with `const { user, role, isAdmin, signOut } = useAuth();` from `@/auth`.
+  `role` (`'user'` or `'admin'`) comes from the API's `GET /me` after sign-in, so it's `null`
+  while that loads or if the API is unreachable. Treat `null` as a regular user. Admins see
+  "· Admin" next to their email on Home.
 - If **Confirm email** is on in Supabase (Authentication → Sign In / Providers → Email), sign-up
   shows "Check your email"; the user opens the link, then signs in. With it off, sign-up signs the
   user straight in.
 - Tests never reach Supabase: `__mocks__/@supabase/supabase-js.ts` fakes it and starts signed in.
-  Tests about auth control it with `mockAuth` (see `__tests__/auth.test.tsx`).
-- User roles come later in T039.
+  Tests about auth control it with `mockAuth` (see `__tests__/auth.test.tsx`). `jest.setup.ts`
+  stubs `getMe` so every signed-in test user is a `'user'` unless the test says otherwise.
 
 ### Lint, format & test
 
@@ -235,7 +238,7 @@ payloads get `422` with every problem listed.
 
 | Endpoint                  | Returns                                                                     |
 | ------------------------- | --------------------------------------------------------------------------- |
-| `GET /me`                 | The signed-in user (`id`, `email`), or `401` without a valid token.         |
+| `GET /me`                 | The signed-in user (`id`, `email`, `role`), or `401` without a valid token. |
 | `GET /products/{id}`      | One `ProductRead` (with category and current price), or `404` if not found. |
 | `POST /products/validate` | The cleaned-up payload, or `422` listing every problem.                     |
 
@@ -248,19 +251,39 @@ clashing. Full request/response details are in the interactive docs at `/docs`.
 The app signs users in with Supabase directly and sends their access token as
 `Authorization: Bearer <token>`. The API checks the token's signature (with the public keys
 Supabase publishes for the project at `SUPABASE_URL`), audience, issuer, and expiry. To require a
-signed-in user, take a `CurrentUser` parameter:
+signed-in user, take a `CurrentUser` parameter; for admins only, take `AdminUser`:
 
 ```python
-from app.core.auth import CurrentUser
+from app.core.auth import AdminUser, CurrentUser
 
 @router.get("/me")
-def read_me(user: CurrentUser) -> UserRead:  # user.id is the Supabase user's UUID
+def read_me(user: CurrentUser) -> UserRead:  # user.id is the Supabase user's UUID, user.role
+    ...
+
+@router.delete("/products/{product_id}")
+def delete_product(product_id: int, user: AdminUser) -> None:  # 403 for regular users
     ...
 ```
 
 A missing, expired, or invalid token gets `401 {"detail": "Not authenticated"}`; if Supabase's keys
 can't be fetched, `503`. Product endpoints are still public. Tests swap in their own signing key
-(see `tests/test_auth.py`), so they never call Supabase. User roles come later in T039.
+(see `tests/test_auth.py`), so they never call Supabase.
+
+**Users and roles.** Accounts live in Supabase Auth; the `users` table
+(`migrations/003_create_users.sql`) stores each user's role. A user's row is added with the
+`user` role the first time they call the API. The app calls `GET /me` right after signing in, so
+this happens at sign-up, or at the first sign-in when email confirmation is on. There are two
+roles, `user` and `admin`. `require_role(...)` in `app/core/auth.py` builds a check for other
+combinations. To make someone an admin (after they've signed in once), run in the Supabase SQL
+editor, or locally with `docker exec -it mccs-db psql -U postgres -d mccs`:
+
+```sql
+UPDATE users SET role = 'admin' WHERE email = 'someone@example.com';
+```
+
+The app picks up the new role the next time the user signs in. Row level security is on for
+`users` with no policies, so the app's publishable key can't read it or change roles through
+Supabase's REST API; only the backend can.
 
 ### Database access
 

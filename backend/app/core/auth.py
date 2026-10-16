@@ -1,8 +1,11 @@
 """Supabase access-token verification and the CurrentUser dependency.
 
 The mobile app signs users in with Supabase directly and sends the access token as
-`Authorization: Bearer <token>`. Routes that need a signed-in user take a CurrentUser parameter.
-Tokens are never logged.
+`Authorization: Bearer <token>`. Routes that need a signed-in user take a CurrentUser parameter,
+and admin-only routes take AdminUser. Tokens are never logged.
+
+Each user's role is kept in our users table. Their row is added with the "user" role the first
+time they call the API (the app calls GET /me right after signing in).
 """
 
 from collections.abc import Callable
@@ -15,6 +18,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ValidationError
 
 from app.core.config import Settings
+from app.repositories.users import Users
+from app.schemas import Role
 
 # Supabase gives signed-in users' tokens this audience.
 AUDIENCE = "authenticated"
@@ -25,11 +30,17 @@ JWKS_TIMEOUT_SECONDS = 5
 KeyResolver = Callable[[str], Any]
 
 
-class AuthUser(BaseModel):
-    """The user a request's token belongs to. Roles are added here later in T039."""
+class TokenUser(BaseModel):
+    """Who a request's token says the caller is."""
 
     id: UUID
     email: str | None = None
+
+
+class AuthUser(TokenUser):
+    """The signed-in user, with their role from the users table."""
+
+    role: Role
 
 
 class AuthUnavailableError(Exception):
@@ -61,7 +72,7 @@ class TokenVerifier:
         secret = settings.supabase_jwt_secret
         return cls(settings.supabase_auth_url, secret.get_secret_value() if secret else None)
 
-    def verify(self, token: str) -> AuthUser:
+    def verify(self, token: str) -> TokenUser:
         """The token's user. Raises jwt.PyJWTError if the token is invalid."""
         if jwt.get_unverified_header(token).get("alg") == "HS256":
             if self._jwt_secret is None:
@@ -81,7 +92,7 @@ class TokenVerifier:
             issuer=self._issuer,
             options={"require": ["exp", "sub", "aud", "iss"]},
         )
-        return AuthUser(id=claims["sub"], email=claims.get("email"))
+        return TokenUser(id=claims["sub"], email=claims.get("email"))
 
 
 _bearer = HTTPBearer(auto_error=False)
@@ -99,11 +110,11 @@ def _unauthorized() -> HTTPException:
     )
 
 
-def get_current_user(
+def get_token_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
     verifier: Annotated[TokenVerifier, Depends(get_token_verifier)],
-) -> AuthUser:
-    """FastAPI dependency: the signed-in user, or 401 if the token is missing or invalid."""
+) -> TokenUser:
+    """FastAPI dependency: the token's user, or 401 if the token is missing or invalid."""
     if credentials is None:
         raise _unauthorized()
     try:
@@ -117,5 +128,31 @@ def get_current_user(
         raise _unauthorized() from None
 
 
+def get_current_user(
+    token_user: Annotated[TokenUser, Depends(get_token_user)], users: Users
+) -> AuthUser:
+    """FastAPI dependency: the signed-in user and their role, adding their row on first use."""
+    account = users.get_or_create(token_user.id, token_user.email)
+    return AuthUser(id=account.id, email=account.email, role=account.role)
+
+
 # Use as a route parameter: def get_thing(user: CurrentUser) -> ...
 CurrentUser = Annotated[AuthUser, Depends(get_current_user)]
+
+
+def require_role(*roles: Role) -> Callable[[AuthUser], AuthUser]:
+    """FastAPI dependency factory: the signed-in user, or 403 unless they have one of `roles`."""
+
+    def check_role(user: CurrentUser) -> AuthUser:
+        if user.role not in roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You don't have permission to do that.",
+            )
+        return user
+
+    return check_role
+
+
+# Use as a route parameter for admin-only routes: def delete_thing(user: AdminUser) -> ...
+AdminUser = Annotated[AuthUser, Depends(require_role("admin"))]

@@ -9,3 +9,4 @@ export type {
 } from './client';
 export { getApiBaseUrl } from './config';
 export { checkHealth } from './health';
+export { getMe } from './me';

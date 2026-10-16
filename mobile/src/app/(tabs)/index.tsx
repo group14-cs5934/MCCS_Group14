@@ -19,7 +19,7 @@ const devLinks: { label: string; href: Href }[] = [
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, signOut } = useAuth();
+  const { user, isAdmin, signOut } = useAuth();
 
   return (
     <ScrollView
@@ -55,6 +55,7 @@ export default function HomeScreen() {
       <View style={styles.account}>
         <Text style={[textStyles.caption, { color: colors.textMuted }]}>
           Signed in as {user?.email}
+          {isAdmin ? ' · Admin' : ''}
         </Text>
         <Button title="Sign out" variant="text" onPress={signOut} />
       </View>

@@ -248,6 +248,20 @@ describe('signed-in requests', () => {
       }),
     });
   });
+
+  it('getMe returns the signed-in account and role', async () => {
+    // jest.setup.ts stubs getMe for screen tests; this checks the real one.
+    const { getMe } = jest.requireActual<typeof import('@/api/me')>('@/api/me');
+    setAccessTokenProvider(async () => 'abc123');
+    const account = { id: 'user-1', email: 'shopper@example.com', role: 'admin' };
+    respondWith(200, JSON.stringify(account));
+
+    const result = await getMe();
+
+    expect(result).toEqual({ ok: true, status: 200, data: account });
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/me$/);
+    expect(sentHeaders()).toHaveProperty('Authorization', 'Bearer abc123');
+  });
 });
 
 describe('getApiBaseUrl', () => {

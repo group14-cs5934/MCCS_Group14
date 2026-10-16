@@ -1,7 +1,8 @@
 import type { Session, User } from '@supabase/supabase-js';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { setAccessTokenProvider } from '@/api';
+import { getMe, setAccessTokenProvider } from '@/api';
+import type { Role } from '@/types/user';
 
 import { authErrorMessage } from './errors';
 import { supabase } from './supabase';
@@ -12,6 +13,12 @@ export type AuthResult = { ok: true; needsConfirmation: boolean } | { ok: false;
 type AuthContextValue = {
   session: Session | null;
   user: User | null;
+  /**
+   * The user's role from GET /me, or null while it loads or if the API can't be reached. Treat
+   * null like 'user': it never grants admin features.
+   */
+  role: Role | null;
+  isAdmin: boolean;
   /** True until the saved session has been loaded from the device. */
   initializing: boolean;
   signIn: (email: string, password: string) => Promise<AuthResult>;
@@ -51,6 +58,8 @@ async function signOut(): Promise<void> {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [initializing, setInitializing] = useState(true);
+  // Kept with the user ID it belongs to, so a previous user's role is never shown for the next.
+  const [loadedRole, setLoadedRole] = useState<{ userId: string; role: Role | null } | null>(null);
 
   useEffect(() => {
     // Fires INITIAL_SESSION right away with the saved session (or null), then on every change.
@@ -69,9 +78,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => setAccessTokenProvider(null);
   }, []);
 
+  const userId = session?.user.id;
+  useEffect(() => {
+    if (!userId) return;
+    // GET /me also adds the user's row (with the 'user' role) the first time they sign in.
+    const controller = new AbortController();
+    getMe({ signal: controller.signal }).then((result) => {
+      if (!controller.signal.aborted) {
+        setLoadedRole({ userId, role: result.ok ? result.data.role : null });
+      }
+    });
+    return () => controller.abort();
+  }, [userId]);
+  const role = loadedRole && loadedRole.userId === userId ? loadedRole.role : null;
+
   const value = useMemo(
-    () => ({ session, user: session?.user ?? null, initializing, signIn, signUp, signOut }),
-    [session, initializing],
+    () => ({
+      session,
+      user: session?.user ?? null,
+      role,
+      isAdmin: role === 'admin',
+      initializing,
+      signIn,
+      signUp,
+      signOut,
+    }),
+    [session, role, initializing],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

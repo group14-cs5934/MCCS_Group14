@@ -1,7 +1,10 @@
 import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 
+import { getMe } from '@/api/me';
+
 // T039 acceptance: users must create an account or sign in before using the app, and can sign
-// out again. Supabase is faked by __mocks__/@supabase/supabase-js.ts.
+// out again. Supabase is faked by __mocks__/@supabase/supabase-js.ts, and GET /me (which gives
+// the user's role) is stubbed in jest.setup.ts.
 
 // A plain require gets the same mock instance the app imports (jest.requireMock makes its own).
 type SupabaseMock = typeof import('../__mocks__/@supabase/supabase-js');
@@ -171,5 +174,48 @@ describe('signed in', () => {
     expect(await screen.findByText('Welcome back.')).toBeOnTheScreen();
     expect(screen).toHavePathname('/sign-in');
     expect(mockAuth.signOut).toHaveBeenCalled();
+  });
+});
+
+describe('roles', () => {
+  const getMeMock = jest.mocked(getMe);
+
+  beforeEach(() => {
+    getMeMock.mockClear();
+    mockAuth.reset(makeSession(EMAIL));
+  });
+
+  it('loads the role from GET /me after signing in', async () => {
+    mockAuth.reset(null);
+    await openSignIn();
+    expect(getMeMock).not.toHaveBeenCalled();
+
+    fillIn({ Email: EMAIL, Password: PASSWORD });
+    fireEvent.press(screen.getByText('Sign In'));
+
+    expect(await screen.findByText(`Signed in as ${EMAIL}`)).toBeOnTheScreen();
+    expect(getMeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks admins on Home', async () => {
+    getMeMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      data: { id: 'user-1', email: EMAIL, role: 'admin' },
+    });
+    renderRouter('src/app');
+
+    expect(await screen.findByText(`Signed in as ${EMAIL} · Admin`)).toBeOnTheScreen();
+  });
+
+  it("still opens Home when the role can't be loaded", async () => {
+    getMeMock.mockResolvedValueOnce({
+      ok: false,
+      error: { kind: 'network', message: "Can't reach the server." },
+    });
+    renderRouter('src/app');
+
+    expect(await screen.findByText(`Signed in as ${EMAIL}`)).toBeOnTheScreen();
+    expect(getMeMock).toHaveBeenCalledTimes(1);
   });
 });
