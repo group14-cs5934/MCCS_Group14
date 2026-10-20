@@ -207,3 +207,40 @@ def test_docs_show_the_summary_is_public(client) -> None:
 
     assert "404" in operation["responses"]
     assert "401" not in operation["responses"]
+
+
+def test_removing_my_rating_deletes_it(client, ratings) -> None:
+    rate(client, {"stars": 4})
+
+    response = client.delete(f"/products/{PRODUCT_ID}/ratings/me")
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert ratings.ratings == {}
+    assert client.get(f"/products/{PRODUCT_ID}/ratings/me").status_code == 404
+
+
+def test_removing_a_rating_i_never_made_is_404(client) -> None:
+    response = client.delete(f"/products/{PRODUCT_ID}/ratings/me")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "rating_not_found"
+
+
+def test_removing_my_rating_leaves_other_ratings(client, ratings) -> None:
+    add_ratings(ratings, 2)
+    rate(client, {"stars": 4})
+
+    client.delete(f"/products/{PRODUCT_ID}/ratings/me")
+
+    summary = client.get(f"/products/{PRODUCT_ID}/ratings").json()
+    assert (summary["average"], summary["count"]) == (2.0, 1)
+
+
+def test_removing_a_rating_needs_sign_in(make_client, ratings) -> None:
+    client = make_client()  # the real token check, and no token is sent
+    client.app.dependency_overrides[get_rating_repository] = lambda: ratings
+
+    response = client.delete(f"/products/{PRODUCT_ID}/ratings/me")
+
+    assert response.status_code == 401

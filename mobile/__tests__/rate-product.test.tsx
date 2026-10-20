@@ -4,7 +4,7 @@ import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-librar
 import type { Product } from '@/types/product';
 
 // T057 acceptance: when I submit a rating, the average on the page updates. When I am not signed
-// in, I am asked to sign in before rating.
+// in, I am asked to sign in before rating. A rating can also be removed again.
 //
 // The app only shows products to signed-in users, so "not signed in" here means the API rejects
 // the user's session (401), e.g. because it expired or was revoked.
@@ -69,6 +69,11 @@ async function fakeApi(url: string, init: RequestInit): Promise<Response> {
   if (path === '/products/1/ratings' && init.method === 'GET') return jsonResponse(200, summary());
   if (api.failWith) {
     return jsonResponse(api.failWith.status, { code: api.failWith.code, message: 'Failed' });
+  }
+  if (path === '/products/1/ratings/me' && init.method === 'DELETE') {
+    if (api.mine === null) return jsonResponse(404, { code: 'rating_not_found', message: 'None' });
+    api.mine = null;
+    return jsonResponse(204, null);
   }
   if (path === '/products/1/ratings/me') {
     return api.mine === null
@@ -201,5 +206,84 @@ describe('when not signed in', () => {
     expect(await screen.findByText('Welcome back.')).toBeOnTheScreen();
     expect(screen).toHavePathname('/sign-in');
     expect(mockAuth.signOut).toHaveBeenCalled();
+  });
+});
+
+describe('removing a rating', () => {
+  const removeButton = () => screen.queryByRole('button', { name: 'Remove rating' });
+
+  it('only offers to remove a rating once I have one', async () => {
+    await openProduct();
+    await screen.findByText('Tap a star to rate this product.');
+    expect(removeButton()).not.toBeOnTheScreen();
+
+    await act(async () => fireEvent.press(star(3)));
+
+    expect(await screen.findByRole('button', { name: 'Remove rating' })).toBeOnTheScreen();
+  });
+
+  it('clears my stars and takes my rating out of the average', async () => {
+    api.others = [2];
+    api.mine = 4;
+    await openProduct();
+    expect(await screen.findByText('3.0')).toBeOnTheScreen();
+
+    await act(async () => fireEvent.press(removeButton()!));
+
+    expect(await screen.findByText('Your rating was removed.')).toBeOnTheScreen();
+    expect(await screen.findByText('2.0')).toBeOnTheScreen();
+    expect(screen.getByText('(1 rating)')).toBeOnTheScreen();
+    expect(myStars()).toHaveLength(0);
+    expect(removeButton()).not.toBeOnTheScreen();
+    expect(api.mine).toBeNull();
+  });
+
+  it('shows "No ratings yet" again when mine was the only rating', async () => {
+    api.mine = 5;
+    await openProduct();
+    await screen.findByText('5.0');
+
+    await act(async () => fireEvent.press(removeButton()!));
+
+    expect(await screen.findByText('No ratings yet')).toBeOnTheScreen();
+  });
+
+  it('can rate again after removing', async () => {
+    api.mine = 5;
+    await openProduct();
+    await screen.findByText('5.0');
+    await act(async () => fireEvent.press(removeButton()!));
+    await screen.findByText('No ratings yet');
+
+    await act(async () => fireEvent.press(star(2)));
+
+    expect(await screen.findByText('2.0')).toBeOnTheScreen();
+    expect(star(2)).toBeChecked();
+  });
+
+  it('keeps my rating and says so when it can’t be removed', async () => {
+    api.mine = 4;
+    await openProduct();
+    await screen.findByText('4.0');
+    api.failWith = { status: 500, code: 'internal_error' };
+
+    await act(async () => fireEvent.press(removeButton()!));
+
+    expect(
+      await screen.findByText("Couldn't remove your rating. Please try again."),
+    ).toBeOnTheScreen();
+    expect(star(4)).toBeChecked();
+    expect(removeButton()).toBeOnTheScreen();
+  });
+
+  it('asks me to sign in if my session is rejected', async () => {
+    api.mine = 4;
+    await openProduct();
+    await screen.findByText('4.0');
+    api.failWith = { status: 401, code: 'not_authenticated' };
+
+    await act(async () => fireEvent.press(removeButton()!));
+
+    expect(await screen.findByText('Sign in to rate this product.')).toBeOnTheScreen();
   });
 });

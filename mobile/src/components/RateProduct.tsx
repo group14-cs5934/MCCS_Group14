@@ -18,6 +18,9 @@ const hints: Record<Exclude<MyRatingStatus, 'signed-out'>, string> = {
   saving: 'Saving your rating…',
   saved: 'Thanks! Your rating was saved.',
   failed: "Couldn't save your rating. Please try again.",
+  removing: 'Removing your rating…',
+  removed: 'Your rating was removed.',
+  'remove-failed': "Couldn't remove your rating. Please try again.",
 };
 
 /**
@@ -25,7 +28,9 @@ const hints: Record<Exclude<MyRatingStatus, 'signed-out'>, string> = {
  * If the API says they're not signed in (e.g. their session expired), it asks them to sign in.
  */
 export default function RateProduct({ productId, onSaved }: Props) {
-  const { stars, status, rate } = useMyRating(productId, onSaved);
+  const { stars, status, rate, remove } = useMyRating(productId, onSaved);
+  const busy = status === 'loading' || status === 'saving' || status === 'removing';
+  const failed = status === 'failed' || status === 'remove-failed';
   const { signOut } = useAuth();
 
   if (status === 'signed-out') {
@@ -44,19 +49,24 @@ export default function RateProduct({ productId, onSaved }: Props) {
   return (
     <View style={styles.section}>
       <Text style={styles.title}>Your rating</Text>
-      <StarRating
-        value={stars}
-        onChange={rate}
-        disabled={status === 'loading' || status === 'saving'}
-        size={32}
-      />
+      <StarRating value={stars} onChange={rate} disabled={busy} size={32} />
       <Text
-        style={[styles.hint, status === 'failed' && styles.error]}
+        style={[styles.hint, failed && styles.error]}
         accessibilityLiveRegion="polite"
-        accessibilityRole={status === 'failed' ? 'alert' : undefined}
+        accessibilityRole={failed ? 'alert' : undefined}
       >
         {hint}
       </Text>
+      {stars > 0 || status === 'remove-failed' ? (
+        <Button
+          title="Remove rating"
+          variant="text"
+          icon="close-circle-outline"
+          onPress={remove}
+          disabled={busy}
+          style={styles.remove}
+        />
+      ) : null}
     </View>
   );
 }
@@ -78,5 +88,8 @@ const styles = StyleSheet.create({
   },
   error: {
     color: colors.danger,
+  },
+  remove: {
+    alignSelf: 'flex-start',
   },
 });

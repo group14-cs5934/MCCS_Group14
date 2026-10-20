@@ -11,3 +11,8 @@ export function getMyRating(productId: number, options?: CallOptions) {
 export function rateProduct(productId: number, stars: number, options?: CallOptions) {
   return api.post<MyRating>(`/products/${productId}/ratings`, { stars }, options);
 }
+
+/** DELETE /products/{id}/ratings/me: removes the signed-in user's rating (404 if they had none). */
+export function removeMyRating(productId: number, options?: CallOptions) {
+  return api.delete(`/products/${productId}/ratings/me`, options);
+}

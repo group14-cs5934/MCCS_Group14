@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { getMyRating, rateProduct } from '@/api';
+import { getMyRating, rateProduct, removeMyRating } from '@/api';
 
 export type MyRatingStatus =
   | 'loading' // loading the user's current rating
@@ -8,6 +8,9 @@ export type MyRatingStatus =
   | 'saving'
   | 'saved'
   | 'failed' // the last rating couldn't be saved; stars are back to what they were
+  | 'removing'
+  | 'removed'
+  | 'remove-failed' // the rating couldn't be removed; it's still there
   | 'signed-out'; // the API says the user isn't signed in (e.g. their session expired)
 
 export type MyRatingState = {
@@ -16,11 +19,13 @@ export type MyRatingState = {
   status: MyRatingStatus;
   /** Save a 1-5 star rating. The stars change right away and go back if saving fails. */
   rate: (stars: number) => void;
+  /** Remove the user's rating, so it no longer counts in the average. */
+  remove: () => void;
 };
 
 /**
  * The signed-in user's rating of a product: loads it, and saves a new one when they tap a star.
- * `onSaved` runs after each successful save, e.g. to reload the product's average.
+ * `onSaved` runs after each successful save or removal, e.g. to reload the product's average.
  */
 export function useMyRating(productId: number, onSaved?: () => void): MyRatingState {
   const [stars, setStars] = useState(0);
@@ -75,5 +80,25 @@ export function useMyRating(productId: number, onSaved?: () => void): MyRatingSt
     [productId, onSaved],
   );
 
-  return { stars, status, rate };
+  const remove = useCallback(() => {
+    pending.current?.abort();
+    const controller = new AbortController();
+    pending.current = controller;
+    setStatus('removing');
+
+    removeMyRating(productId, { signal: controller.signal }).then((result) => {
+      if (controller.signal.aborted) return;
+      // 404: there was no rating to remove (e.g. removed on another device), which is the goal.
+      if (result.ok || result.error.status === 404) {
+        savedStars.current = 0;
+        setStars(0);
+        setStatus('removed');
+        onSaved?.();
+        return;
+      }
+      setStatus(result.error.status === 401 ? 'signed-out' : 'remove-failed');
+    });
+  }, [productId, onSaved]);
+
+  return { stars, status, rate, remove };
 }

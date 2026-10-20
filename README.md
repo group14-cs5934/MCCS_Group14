@@ -270,11 +270,12 @@ a valid token):
 | `GET /products/{id}/ratings`        | Average and count, e.g. `{"product_id": 7, "average": 3.0, "count": 2}`.     |
 | `POST /products/{id}/ratings`       | Saves your rating, body `{"stars": 4}`. Rating again changes your stars.     |
 | `GET /products/{id}/ratings/me`     | Your rating of the product, or `404` with code `rating_not_found` if none.   |
+| `DELETE /products/{id}/ratings/me`  | Removes your rating (`204`, no body), or `404` `rating_not_found` if none.   |
 
 `average` is rounded to 2 decimal places and is `null` (with `count` 0) until someone rates the
-product. The other two return `{"product_id", "stars", "created_at", "updated_at"}`. `stars`
-must be a whole number from 1 to 5; anything else (`0`, `6`, `4.5`, `"4"`) is a `422`. An unknown
-product is a `404` with code `product_not_found`.
+product. `POST` and `GET .../me` return `{"product_id", "stars", "created_at",
+"updated_at"}`. `stars` must be a whole number from 1 to 5; anything else (`0`, `6`, `4.5`,
+`"4"`) is a `422`. An unknown product is a `404` with code `product_not_found`.
 
 Search takes `q` (words in the product name; small typos are fine, best match first),
 `category` (a category slug; only that category's products, sorted by name), or both, plus
