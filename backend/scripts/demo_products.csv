@@ -1,0 +1,48 @@
+name,brand,category,size,retailers,product_data,demo_notes
+Doritos Nacho Cheese Tortilla Chips,Doritos (Frito-Lay),Snacks,9.25 oz bag,Walmart; Target; Amazon; Kroger; CVS,Open Food Facts; UPCitemdb,Instantly recognizable; full nutrition and ingredients
+Lay's Classic Potato Chips,Lay's (Frito-Lay),Snacks,8 oz bag,Walmart; Target; Amazon; Kroger,Open Food Facts; UPCitemdb,Pairs with Doritos to show search and similar products
+Oreo Chocolate Sandwich Cookies,Oreo (Nabisco),Snacks,13.29 oz pack,Walmart; Target; Amazon; Kroger; Costco,Open Food Facts; UPCitemdb,Thousands of reviews; sold in many sizes
+Goldfish Cheddar Crackers,Pepperidge Farm,Snacks,6.6 oz carton,Walmart; Target; Amazon; Kroger,Open Food Facts; UPCitemdb,Popular family snack
+Nature Valley Crunchy Oats 'n Honey Granola Bars,Nature Valley (General Mills),Snacks,12-bar box,Walmart; Target; Amazon; Kroger; Costco,Open Food Facts; UPCitemdb,Multipack; good for price-per-unit comparison
+Reese's Peanut Butter Cups,Reese's (Hershey),Snacks,1.5 oz 2-cup pack,Walmart; Target; Amazon; CVS; Walgreens,Open Food Facts; UPCitemdb,Cheap single item sold almost everywhere; allergen info (peanuts)
+Cheerios,Cheerios (General Mills),Pantry,8.9 oz box,Walmart; Target; Amazon; Kroger; Costco,Open Food Facts; UPCitemdb,Classic cereal; health claims on box
+Kraft Macaroni & Cheese Original,Kraft Heinz,Pantry,7.25 oz box,Walmart; Target; Amazon; Kroger,Open Food Facts; UPCitemdb,Cheap; very recognizable blue box
+Barilla Spaghetti,Barilla,Pantry,16 oz box,Walmart; Target; Amazon; Kroger,Open Food Facts; UPCitemdb,Simple ingredient list; international brand
+Jif Creamy Peanut Butter,Jif (J.M. Smucker),Pantry,16 oz jar,Walmart; Target; Amazon; Kroger; Costco,Open Food Facts; UPCitemdb,Allergen info; competes with Skippy for comparisons
+Heinz Tomato Ketchup,Heinz (Kraft Heinz),Pantry,20 oz squeeze bottle,Walmart; Target; Amazon; Kroger; Costco,Open Food Facts; UPCitemdb,Iconic packaging; easy to scan
+Coca-Cola Classic,Coca-Cola,Beverages,12 x 12 oz cans,Walmart; Target; Amazon; Kroger; Costco; CVS,Open Food Facts; UPCitemdb,Already partly in sample_products.json; good overlap test
+Gatorade Thirst Quencher Lemon-Lime,Gatorade (PepsiCo),Beverages,28 oz bottle,Walmart; Target; Amazon; Kroger; CVS; Costco,Open Food Facts; UPCitemdb,Single bottle vs multipack price comparison
+Folgers Classic Roast Ground Coffee,Folgers,Beverages,25.9 oz canister,Walmart; Target; Amazon; Kroger,Open Food Facts; UPCitemdb,Large canister; price varies a lot by store
+Starbucks Pike Place Roast K-Cup Pods,Starbucks,Beverages,22-count box,Walmart; Target; Amazon; Costco; Kroger,Open Food Facts; UPCitemdb,Premium brand; many pack sizes
+Celsius Sparkling Orange Energy Drink,Celsius,Beverages,12 oz can,Walmart; Target; Amazon; Costco; CVS,Open Food Facts; UPCitemdb,Trendy with students; caffeine content
+Crest 3D White Toothpaste,Crest (Procter & Gamble),Personal Care,3.8 oz tube,Walmart; Target; Amazon; CVS; Walgreens,Open Beauty Facts; UPCitemdb,Pharmacy vs big-box price comparison
+Dove Beauty Bar,Dove (Unilever),Personal Care,4-bar pack,Walmart; Target; Amazon; CVS; Walgreens; Costco,Open Beauty Facts; UPCitemdb,Very high review count
+Head & Shoulders Classic Clean Shampoo,Head & Shoulders (Procter & Gamble),Personal Care,13.5 oz bottle,Walmart; Target; Amazon; CVS; Walgreens,Open Beauty Facts; UPCitemdb,Common household item
+Old Spice Swagger Deodorant,Old Spice (Procter & Gamble),Personal Care,3 oz stick,Walmart; Target; Amazon; CVS; Walgreens,Open Beauty Facts; UPCitemdb,Recognizable brand; many scents
+CeraVe Moisturizing Cream,CeraVe,Personal Care,16 oz tub,Walmart; Target; Amazon; CVS; Walgreens; Ulta; Costco,Open Beauty Facts; UPCitemdb,Huge review count; sold at many types of store
+Advil Ibuprofen Tablets 200 mg,Advil,Health,100-count bottle,Walmart; Target; Amazon; CVS; Walgreens; Costco,UPCitemdb; manufacturer site,Store-brand alternatives make good comparisons
+Band-Aid Flexible Fabric Bandages,Band-Aid (Kenvue),Health,30-count box,Walmart; Target; Amazon; CVS; Walgreens,UPCitemdb; manufacturer site,Cheap and easy to have on hand for demos
+Tide Original Liquid Laundry Detergent,Tide (Procter & Gamble),Household,92 oz bottle,Walmart; Target; Amazon; Kroger; Costco; Home Depot,UPCitemdb; manufacturer site,Big price swings between stores
+Dawn Ultra Original Dish Soap,Dawn (Procter & Gamble),Household,19.4 oz bottle,Walmart; Target; Amazon; Kroger; Costco,UPCitemdb; manufacturer site,Very common; easy to find for live scanning
+Bounty Select-A-Size Paper Towels,Bounty (Procter & Gamble),Household,6 double rolls,Walmart; Target; Amazon; Costco; Home Depot,UPCitemdb; manufacturer site,Bulk vs small pack price-per-roll comparison
+Clorox Disinfecting Wipes,Clorox,Household,75-count canister,Walmart; Target; Amazon; CVS; Costco; Home Depot,UPCitemdb; manufacturer site,Sold at many types of store
+Ziploc Storage Bags Gallon,Ziploc (SC Johnson),Household,38-count box,Walmart; Target; Amazon; Kroger; Costco,UPCitemdb; manufacturer site,Common kitchen item
+Duracell Coppertop AA Batteries,Duracell,Household,8-pack,Walmart; Target; Amazon; Best Buy; Home Depot; Costco; CVS,UPCitemdb; manufacturer site,Sold almost everywhere; wide price range
+Apple AirPods Pro (2nd generation; USB-C),Apple,Electronics,1 unit,Apple; Best Buy; Amazon; Walmart; Target; Costco,UPCitemdb; manufacturer site,High-value item; frequent sales; huge review count
+Logitech M185 Wireless Mouse,Logitech,Electronics,1 unit,Best Buy; Amazon; Walmart; Target; Staples,UPCitemdb; manufacturer site,Cheap electronics; specs to display
+Anker Nano USB-C Charger 20W,Anker,Electronics,1 unit,Amazon; Best Buy; Walmart,UPCitemdb; manufacturer site,Mostly sold online; shows when few retailers carry an item
+Amazon Echo Dot (5th generation),Amazon,Electronics,1 unit,Amazon; Best Buy; Target; Kohl's,UPCitemdb; manufacturer site,Discount-heavy; Amazon vs other retailers
+JBL Flip 6 Bluetooth Speaker,JBL,Electronics,1 unit,Best Buy; Amazon; Target; Walmart,UPCitemdb; manufacturer site,Mid-range price; many colors
+SanDisk Ultra microSDXC Card 128GB,SanDisk,Electronics,1 card,Best Buy; Amazon; Walmart; Target; Costco,UPCitemdb; manufacturer site,Small item; many capacities
+Stanley Quencher H2.0 FlowState Tumbler 40 oz,Stanley,Kitchen,1 tumbler,Target; Amazon; Dick's Sporting Goods; Stanley (stanley1913.com),UPCitemdb; manufacturer site,Trending product; many colors
+Contigo West Loop Autoseal Travel Mug 16 oz,Contigo,Kitchen,1 mug,Amazon; Walmart; Target; Costco,UPCitemdb; manufacturer site,Practical item for students
+Brita Standard Replacement Water Filters,Brita,Kitchen,3-pack,Walmart; Target; Amazon; Home Depot; Costco,UPCitemdb; manufacturer site,Replacement-part style product
+BIC Round Stic Ballpoint Pens Black,BIC,Office,10-count pack,Staples; Office Depot; Amazon; Walmart; Target,UPCitemdb; manufacturer site,Cheap and easy to bring to a demo
+Scotch Magic Tape,Scotch (3M),Office,3/4 in x 1000 in roll,Staples; Office Depot; Amazon; Walmart; Target,UPCitemdb; manufacturer site,Common office item
+Sharpie Permanent Markers Fine Point Black,Sharpie,Office,12-count pack,Staples; Office Depot; Amazon; Walmart; Target,UPCitemdb; manufacturer site,Very recognizable; school supply
+Five Star Spiral Notebook 1-Subject,Five Star (ACCO),Office,100 sheets,Staples; Office Depot; Amazon; Walmart; Target,UPCitemdb; manufacturer site,Back-to-school item
+Post-it Notes 3 x 3 in Canary Yellow,Post-it (3M),Office,12-pad pack,Staples; Office Depot; Amazon; Walmart; Target; Costco,UPCitemdb; manufacturer site,Recognizable brand; bulk packs
+Greenies Original Regular Dental Dog Treats,Greenies,Pet Supplies,12 oz pack,Chewy; Petco; PetSmart; Amazon; Walmart; Target,UPCitemdb; manufacturer site,Pet store vs big-box price comparison
+Temptations Classic Cat Treats Tasty Chicken,Temptations,Pet Supplies,3 oz pouch,Chewy; Petco; PetSmart; Amazon; Walmart; Target,UPCitemdb; manufacturer site,Cheap; very high review count
+LEGO Classic Medium Creative Brick Box 10696,LEGO,Toys,484 pieces,LEGO (lego.com); Target; Walmart; Amazon,UPCitemdb; manufacturer site,Set number makes the product easy to look up
+UNO Card Game,Mattel,Toys,1 deck,Target; Walmart; Amazon; Barnes & Noble,UPCitemdb; manufacturer site,Cheap; easy to keep in a bag for live demos
