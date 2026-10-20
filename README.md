@@ -389,6 +389,11 @@ different leading zeros (`012000001291` and `0012000001291`). A `category_id` th
 category is `422 category_not_found`; an unknown product is `404 product_not_found`. Prices
 entered here are recorded with source `admin`.
 
+New admin endpoints go under `/admin` and take an `AdminUser` parameter.
+`tests/test_admin_access.py` finds every `/admin` route by itself and checks that regular
+users get `403`, missing or bad tokens `401`, and deactivated admins `403`, so a route that
+forgets the check fails CI.
+
 **Ratings and reviews.** `migrations/005_create_ratings_and_reviews.sql` adds two tables, each
 linked to a product and a user and deleted along with either (row level security on, like
 `users`):

@@ -237,3 +237,19 @@ def test_regular_users_cant_change_products(session, connection, product_id) -> 
     product = client.get(f"/products/{product_id}").json()
     assert product["name"] == "Sample Chips"
     assert client.get("/products/barcode/049000418347").status_code == 404
+
+
+def test_demoted_admin_loses_product_access_on_their_next_request(
+    session, connection, product_id
+) -> None:
+    # T088: the role is read from the database on every request, not from the sign-in token, so
+    # an admin who is demoted can't keep using a token they already have.
+    client = session.client
+    renamed = client.patch(f"/admin/products/{product_id}", json={"name": "Renamed"})
+    assert renamed.status_code == 200
+
+    connection.execute("UPDATE users SET role = 'user' WHERE id = %s", (ADMIN.id,))
+    connection.commit()
+
+    assert client.delete(f"/admin/products/{product_id}").status_code == 403
+    assert client.get(f"/products/{product_id}").json()["name"] == "Renamed"
