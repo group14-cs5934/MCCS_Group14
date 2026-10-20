@@ -342,6 +342,21 @@ The app picks up the new role the next time the user signs in. Row level securit
 `users` with no policies, so the app's publishable key can't read it or change roles through
 Supabase's REST API; only the backend can.
 
+**Ratings and reviews.** `migrations/005_create_ratings_and_reviews.sql` adds two tables, each
+linked to a product and a user and deleted along with either (row level security on, like
+`users`):
+
+| Table     | Columns                                              | Rules                                          |
+| --------- | ---------------------------------------------------- | ---------------------------------------------- |
+| `ratings` | `product_id`, `user_id`, `stars`                     | 1–5 stars; one per user per product            |
+| `reviews` | `product_id`, `user_id`, `title` (optional), `body` | body ≤ 2000 chars, title ≤ 100, neither blank; one per user per product |
+
+Both have `created_at` and `updated_at`. Because of the one-per-user rule, save a rating with
+`INSERT ... ON CONFLICT (product_id, user_id) DO UPDATE`, so rating again changes the stars.
+`reviews` has an index for listing a product's reviews newest first (`ORDER BY created_at DESC,
+id DESC`). A user's row must exist before they rate or review, which `GET /me` (or any
+signed-in request) takes care of.
+
 ### Database access
 
 The app opens a connection pool at startup (`app/core/database.py`). Routes never connect or
