@@ -5,7 +5,7 @@ from app.schemas.category import CategoryCreate, CategoryRead
 from app.schemas.error import ErrorAction, ErrorResponse
 from app.schemas.price import PriceCreate, PriceRead
 from app.schemas.product import ProductCreate, ProductRead
-from app.schemas.rating import RatingCreate, RatingRead
+from app.schemas.rating import RatingCreate, RatingRead, RatingSummary
 from app.schemas.user import Role, UserRead
 
 __all__ = [
@@ -21,6 +21,7 @@ __all__ = [
     "ProductRead",
     "RatingCreate",
     "RatingRead",
+    "RatingSummary",
     "Role",
     "UserRead",
 ]

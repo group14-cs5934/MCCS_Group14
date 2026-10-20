@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from app.schemas import CategoryRead, PriceRead, ProductRead, RatingRead
+from app.schemas import CategoryRead, PriceRead, ProductRead, RatingRead, RatingSummary
 
 CREATED = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
 CHIPS = CategoryRead(id=3, name="Chips & Snacks", slug="chips-snacks")
@@ -119,3 +119,10 @@ class FakeRatings:
 
     def get(self, product_id: int, user_id: UUID) -> RatingRead | None:
         return self.ratings.get((product_id, user_id))
+
+    def summary(self, product_id: int) -> RatingSummary | None:
+        if product_id not in self._product_ids:
+            return None
+        stars = [r.stars for (pid, _), r in self.ratings.items() if pid == product_id]
+        average = round(sum(stars) / len(stars), 2) if stars else None
+        return RatingSummary(product_id=product_id, average=average, count=len(stars))
