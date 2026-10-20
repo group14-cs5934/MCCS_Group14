@@ -86,6 +86,7 @@ appear on the dev **Theme preview** screen (link on Home in development builds).
 | `BarcodeScanner`       | Live camera for UPC/EAN barcodes; `onScanned` gets one once it stays in view 0.5s.   |
 | `ProductPage`          | Body of the product page; shared by the by-ID and by-barcode product routes.         |
 | `SearchResultsList`    | List of product cards (photo, name, size, price); `onOpen` gets the tapped product.  |
+| `StarRating`           | Five stars. With `onChange`, tap to rate 1–5; without, shows e.g. an average (½s).   |
 
 **Loading and error props.** `Card` and `AsyncContent` take `loading`, `error` (a message string),
 and `onRetry`. While `loading` is true they show a spinner instead of their content; when `error`

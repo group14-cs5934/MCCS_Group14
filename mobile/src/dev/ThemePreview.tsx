@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import Button from '@/components/Button';
@@ -5,6 +6,7 @@ import Card from '@/components/Card';
 import ErrorBanner from '@/components/ErrorBanner';
 import ErrorState from '@/components/ErrorState';
 import Loader from '@/components/Loader';
+import StarRating from '@/components/StarRating';
 import TextField from '@/components/TextField';
 import {
   colors,
@@ -39,7 +41,7 @@ export default function ThemePreview() {
         </Text>
         <Text style={sharedStyles.heading}>Lay&apos;s Sour Cream &amp; Onion</Text>
         <View style={[sharedStyles.row, styles.ratingRow]}>
-          <Text style={[textStyles.bodyStrong, { color: colors.rating }]}>★</Text>
+          <StarRating value={4.6} size={16} />
           <Text style={[textStyles.bodyStrong, { color: colors.textPrimary }]}>4.6</Text>
           <Text style={sharedStyles.secondaryText}>(1,234 reviews)</Text>
         </View>
@@ -56,6 +58,9 @@ export default function ThemePreview() {
         <Button title="Loading" loading onPress={noop} />
         <Button title="Disabled" disabled onPress={noop} />
       </View>
+
+      <Text style={sharedStyles.heading}>Star rating</Text>
+      <RatingDemo />
 
       <Text style={sharedStyles.heading}>Text fields</Text>
       <View style={styles.stack}>
@@ -106,6 +111,21 @@ export default function ThemePreview() {
         ))}
       </View>
     </ScrollView>
+  );
+}
+
+/** Tappable stars that remember the rating, plus read-only averages. */
+function RatingDemo() {
+  const [stars, setStars] = useState(0);
+  return (
+    <View style={styles.stack}>
+      <StarRating value={stars} onChange={setStars} size={32} />
+      <Text style={sharedStyles.secondaryText}>
+        {stars ? `You picked ${stars} of 5` : 'Tap a star to rate'}
+      </Text>
+      <StarRating value={3.67} size={16} />
+      <StarRating value={0} size={16} />
+    </View>
   );
 }
 
