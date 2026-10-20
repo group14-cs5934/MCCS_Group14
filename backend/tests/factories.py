@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from uuid import UUID, uuid4
 
 import psycopg
 
@@ -35,3 +36,12 @@ def add_price(connection: psycopg.Connection, product_id: int, amount: str, obse
         "INSERT INTO prices (product_id, amount, observed_at) VALUES (%s, %s, %s)",
         (product_id, Decimal(amount), datetime.fromisoformat(observed).replace(tzinfo=UTC)),
     )
+
+
+def add_user(connection: psycopg.Connection, user_id: UUID | None = None) -> UUID:
+    """Insert a user (as the API does on their first signed-in request); return their ID."""
+    user_id = user_id or uuid4()
+    connection.execute(
+        "INSERT INTO users (id, email) VALUES (%s, %s)", (user_id, f"{user_id.hex[:8]}@example.com")
+    )
+    return user_id
