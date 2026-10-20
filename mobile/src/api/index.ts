@@ -11,3 +11,4 @@ export type {
 export { getApiBaseUrl } from './config';
 export { checkHealth } from './health';
 export { getMe } from './me';
+export { getMyRating, rateProduct } from './ratings';

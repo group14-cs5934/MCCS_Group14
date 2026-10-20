@@ -6,9 +6,10 @@ import type { ErrorAction } from '@/api';
 import AsyncContent from '@/components/AsyncContent';
 import Button from '@/components/Button';
 import ErrorState from '@/components/ErrorState';
+import RateProduct from '@/components/RateProduct';
 import StarRating from '@/components/StarRating';
 import type { ProductState } from '@/hooks/useProduct';
-import { useRatingSummary } from '@/hooks/useRatingSummary';
+import { useRatingSummary, type RatingSummaryState } from '@/hooks/useRatingSummary';
 import { colors, fonts, radius, sharedStyles, spacing, textStyles } from '@/theme';
 import type { Product } from '@/types/product';
 import { formatPrice } from '@/utils/formatPrice';
@@ -104,6 +105,7 @@ function ProductNotFound({ actions }: { actions: ErrorAction[] }) {
 }
 
 function ProductDetails({ product }: { product: Product }) {
+  const ratings = useRatingSummary(product.id);
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   const imageFailed = !!product.image_url && failedImageUrl === product.image_url;
 
@@ -147,7 +149,7 @@ function ProductDetails({ product }: { product: Product }) {
 
           <Text style={styles.productName}>{product.name}</Text>
 
-          <RatingLine productId={product.id} />
+          <RatingLine ratings={ratings} />
 
           {product.price ? (
             <Text style={styles.price}>{formatPrice(product.price)}</Text>
@@ -155,6 +157,9 @@ function ProductDetails({ product }: { product: Product }) {
             <Text style={styles.unavailable}>No price yet</Text>
           )}
         </View>
+
+        {/* Saving a rating reloads the average above, so it includes the new one. */}
+        <RateProduct productId={product.id} onSaved={ratings.reload} />
 
         {/* Tabs: only Overview is implemented in T040 */}
         <View style={styles.tabs}>
@@ -208,9 +213,7 @@ function ProductDetails({ product }: { product: Product }) {
  * The product's average rating and how many people rated it, e.g. ★★★½ 3.7 (2 ratings), or
  * "No ratings yet". Loads separately from the product, so a ratings problem never hides the page.
  */
-function RatingLine({ productId }: { productId: number }) {
-  const { loading, summary, failed } = useRatingSummary(productId);
-
+function RatingLine({ ratings: { loading, summary, failed } }: { ratings: RatingSummaryState }) {
   if (loading) {
     // Same height as the loaded line, so the price below doesn't jump when it appears.
     return <View style={styles.ratingRow} />;
