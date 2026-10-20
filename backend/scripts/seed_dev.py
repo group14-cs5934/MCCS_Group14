@@ -46,6 +46,20 @@ SAMPLE_PRODUCTS = [
 ]
 
 
+SAMPLE_STORES = [
+    {
+        "name": "Camp Lejeune MCX",
+        "slug": "camp-lejeune-mcx",
+        "address": "Bldg. 1231 Birch St., Camp Lejeune, NC 28547",
+    },
+    {
+        "name": "New River MCX",
+        "slug": "new-river-mcx",
+        "address": "Bldg. AS-4040 Curtis Rd., MCAS New River, NC 28540",
+    },
+]
+
+
 def seed() -> None:
     """Insert development sample data into the database."""
     settings = get_settings()
@@ -116,8 +130,34 @@ def seed() -> None:
                 )
 
             seed_sample_catalog(cursor)
+            seed_store_locations(cursor)
 
         connection.commit()
+
+
+def seed_store_locations(cursor: psycopg.Cursor) -> int:
+    """Insert demo MCCS stores; skip existing store slugs."""
+    added = 0
+
+    for store in SAMPLE_STORES:
+        cursor.execute(
+            """
+            INSERT INTO store_locations (name, slug, address)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (slug) DO NOTHING
+            RETURNING id
+            """,
+            (
+                store["name"],
+                store["slug"],
+                store["address"],
+            ),
+        )
+
+        if cursor.fetchone() is not None:
+            added += 1
+
+    return added
 
 
 class CatalogProduct(NamedTuple):
