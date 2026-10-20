@@ -1,7 +1,9 @@
+from decimal import Decimal
 from typing import Annotated, Any
 
 import psycopg
 from fastapi import Depends
+from psycopg import sql
 from psycopg.rows import dict_row
 
 from app.core.database import DbConnection
@@ -55,6 +57,21 @@ def _same_barcode_forms(barcode: str) -> list[str]:
     """
     digits = barcode.lstrip("0")
     return [digits.zfill(length) for length in GTIN_LENGTHS if len(digits) <= length]
+
+
+# Product columns an admin can set (T087). Updates only ever name columns from this list.
+_EDITABLE_COLUMNS = (
+    "barcode",
+    "name",
+    "description",
+    "size",
+    "image_url",
+    "brand_id",
+    "category_id",
+)
+
+# Prices an admin enters are recorded with this source.
+ADMIN_PRICE_SOURCE = "admin"
 
 
 def _to_product(row: dict[str, Any]) -> ProductRead:
@@ -117,6 +134,74 @@ class ProductRepository:
         return self._fetch_all(
             f"WHERE {' AND '.join(conditions)} ORDER BY {order} LIMIT %(limit)s OFFSET %(offset)s",
             params,
+        )
+
+    # --- Admin changes (T087) ---
+
+    def barcode_in_use(self, barcode: str, except_id: int | None = None) -> bool:
+        """True if another product already has this barcode, counting forms that differ only in
+        leading zeros (012000001291 and 0012000001291 are the same product)."""
+        row = self._connection.execute(
+            "SELECT 1 FROM products WHERE barcode = ANY(%s) AND id IS DISTINCT FROM %s",
+            (_same_barcode_forms(barcode), except_id),
+        ).fetchone()
+        return row is not None
+
+    def category_exists(self, category_id: int) -> bool:
+        if not 0 < category_id <= _MAX_ID:
+            return False
+        row = self._connection.execute(
+            "SELECT 1 FROM categories WHERE id = %s", (category_id,)
+        ).fetchone()
+        return row is not None
+
+    def create(self, fields: dict[str, Any], price: Decimal | None = None) -> int:
+        """Add a product (and its first price, if given); return its ID. `fields` maps product
+        columns to values."""
+        columns = [column for column in _EDITABLE_COLUMNS if column in fields]
+        query = sql.SQL("INSERT INTO products ({}) VALUES ({}) RETURNING id").format(
+            sql.SQL(", ").join(map(sql.Identifier, columns)),
+            sql.SQL(", ").join(sql.Placeholder() * len(columns)),
+        )
+        (product_id,) = self._connection.execute(
+            query, [fields[column] for column in columns]
+        ).fetchone()
+        if price is not None:
+            self._add_price(product_id, price)
+        return product_id
+
+    def update(self, product_id: int, fields: dict[str, Any], price: Decimal | None = None) -> bool:
+        """Change the given product columns and/or record a new current price. False if there's
+        no product with this ID."""
+        if not 0 < product_id <= _MAX_ID:
+            return False
+        columns = [column for column in _EDITABLE_COLUMNS if column in fields]
+        assignments = [
+            sql.SQL("{} = {}").format(sql.Identifier(column), sql.Placeholder())
+            for column in columns
+        ]
+        query = sql.SQL("UPDATE products SET {} WHERE id = {} RETURNING id").format(
+            sql.SQL(", ").join([*assignments, sql.SQL("updated_at = NOW()")]),
+            sql.Placeholder(),
+        )
+        params = [fields[column] for column in columns] + [product_id]
+        if self._connection.execute(query, params).fetchone() is None:
+            return False
+        if price is not None:
+            self._add_price(product_id, price)
+        return True
+
+    def delete(self, product_id: int) -> bool:
+        """Remove the product, with its prices, ratings, and reviews. False if there's none."""
+        if not 0 < product_id <= _MAX_ID:
+            return False
+        cursor = self._connection.execute("DELETE FROM products WHERE id = %s", (product_id,))
+        return cursor.rowcount > 0
+
+    def _add_price(self, product_id: int, amount: Decimal) -> None:
+        self._connection.execute(
+            "INSERT INTO prices (product_id, amount, source) VALUES (%s, %s, %s)",
+            (product_id, amount, ADMIN_PRICE_SOURCE),
         )
 
     def _fetch_one(self, where: str, params: tuple[Any, ...]) -> ProductRead | None:
