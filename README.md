@@ -131,6 +131,8 @@ if (result.ok) {
   A `401` comes back as "Your session has expired. Please sign in again."
 - Response types live in `src/types/` and mirror the backend's `...Read` models.
 - Add one function per endpoint next to the client, like `checkHealth()` in `src/api/health.ts`.
+- To load something when a screen opens, use `useApiGet<T>(path)` (`src/hooks/useApiGet.ts`): it gives
+  `{ loading, data, error, reload }` and cancels the request if the screen closes first.
 
 **Which backend the app calls:** in development, port 8000 on the computer running Expo, so it
 works on simulators, emulators, and phones on the same Wi-Fi. For a phone or emulator, start the

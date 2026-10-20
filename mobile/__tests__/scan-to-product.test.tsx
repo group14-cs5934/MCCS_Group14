@@ -92,6 +92,15 @@ beforeEach(() => {
   // The fake API: GET /products/barcode/{code} returns the catalog product with that barcode, or
   // the real API's unknown-barcode 404, which tells the app to offer retry and manual search.
   fetchMock.mockImplementation(async (url) => {
+    // The product page also asks for the product's ratings once it loads (T056).
+    if (/\/products\/\d+\/ratings$/.test(url)) {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        text: async () => JSON.stringify({ product_id: 0, average: null, count: 0 }),
+      } as unknown as Response;
+    }
     const code = url.match(/\/products\/barcode\/(\d+)$/)?.[1];
     const product = CATALOG.find((candidate) => candidate.barcode === code);
     const [status, body] = product ? [200, product] : [404, UNKNOWN_BARCODE_RESPONSE];
@@ -134,7 +143,7 @@ it('shows the scanned product’s name and price', async () => {
 
   expect(await screen.findByText(DIET_PEPSI.name)).toBeOnTheScreen();
   expect(screen.getByText('$1.59')).toBeOnTheScreen();
-  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(fetchMock.mock.calls.filter(([url]) => url.includes('/barcode/'))).toHaveLength(1);
   expect(fetchMock.mock.calls[0][0]).toBe(`${getApiBaseUrl()}/products/barcode/012000171741`);
 });
 
