@@ -136,6 +136,13 @@ class ProductRepository:
             params,
         )
 
+    def list_all(self, limit: int = 50, offset: int = 0) -> list[ProductRead]:
+        """Every product, sorted by name, a page at a time (the admin product list, T090)."""
+        return self._fetch_all(
+            "ORDER BY p.name, p.id LIMIT %(limit)s OFFSET %(offset)s",
+            {"limit": limit, "offset": offset},
+        )
+
     # --- Admin changes (T087) ---
 
     def barcode_in_use(self, barcode: str, except_id: int | None = None) -> bool:
