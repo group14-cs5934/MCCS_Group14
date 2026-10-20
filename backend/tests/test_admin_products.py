@@ -74,6 +74,38 @@ def prices(connection: psycopg.Connection, product_id: int) -> list[tuple]:
     ).fetchall()
 
 
+# --- List (T090) ---
+
+
+def test_admin_product_list_shows_every_product_by_name(client, connection) -> None:
+    add_product(connection, barcode="012000171741")  # "Sample Chips"
+    client.post("/admin/products", json={"barcode": "049000418347", "name": "Apple Juice"})
+    connection.commit()
+
+    response = client.get("/admin/products")
+
+    assert response.status_code == 200
+    assert [product["name"] for product in response.json()] == ["Apple Juice", "Sample Chips"]
+
+
+def test_admin_product_list_pages_and_searches(client) -> None:
+    for barcode, name in [("049000418347", "Coca-Cola"), ("012000171741", "Diet Pepsi")]:
+        client.post("/admin/products", json={"barcode": barcode, "name": name})
+
+    first = client.get("/admin/products", params={"limit": 1}).json()
+    second = client.get("/admin/products", params={"limit": 1, "offset": 1}).json()
+    found = client.get("/admin/products", params={"q": "pepsi"}).json()
+
+    assert [p["name"] for p in first + second] == ["Coca-Cola", "Diet Pepsi"]
+    assert [p["name"] for p in found] == ["Diet Pepsi"]
+
+
+def test_regular_users_cant_list_admin_products(session) -> None:
+    session.user = SHOPPER
+
+    assert session.client.get("/admin/products").status_code == 403
+
+
 # --- Create ---
 
 

@@ -37,6 +37,7 @@ ADMIN_ID = UUID("a0000000-0000-4000-8000-000000000001")
 # automatic discovery below can't silently find nothing.
 KNOWN_ADMIN_ROUTES = {
     ("GET", "/admin/users"),
+    ("GET", "/admin/products"),
     ("PATCH", "/admin/users/{user_id}"),
     ("POST", "/admin/products"),
     ("PATCH", "/admin/products/{product_id}"),

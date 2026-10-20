@@ -1,10 +1,13 @@
-"""Admin product management (US11, T087): create, edit, and delete products.
+"""Admin product management (US11): list products (T090), and create, edit, and delete them
+(T087).
 
 Every route needs a signed-in admin: 401 without a valid token, 403 for anyone else. The app reads
 products fresh on every request, so changes show up there right away.
 """
 
-from fastapi import APIRouter, Response, status
+from typing import Annotated
+
+from fastapi import APIRouter, Query, Response, status
 
 from app.core.auth import AdminUser
 from app.core.errors import ApiError, error_response
@@ -21,6 +24,8 @@ router = APIRouter(
         422: error_response("Invalid request, or category_id isn't a category"),
     },
 )
+
+MAX_PRODUCTS_PER_PAGE = 100
 
 _NOT_FOUND = error_response("No product with this ID")
 _BARCODE_TAKEN = error_response("Another product already has this barcode")
@@ -46,6 +51,23 @@ def _check_new_values(
             "category_not_found",
             "There's no category with this ID",
         )
+
+
+@router.get("")
+def list_products(
+    admin: AdminUser,
+    products: Products,
+    q: Annotated[
+        str, Query(max_length=100, description="Words in the product name; small typos are OK")
+    ] = "",
+    limit: Annotated[int, Query(ge=1, le=MAX_PRODUCTS_PER_PAGE)] = 50,
+    offset: Annotated[int, Query(ge=0, le=10_000, description="Products to skip, for paging")] = 0,
+) -> list[ProductRead]:
+    """Every product, sorted by name, for the admin product list. With q, only products whose
+    name matches, best match first (the same search shoppers use)."""
+    if q.strip():
+        return products.search(q, limit=limit, offset=offset)
+    return products.list_all(limit=limit, offset=offset)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, responses={409: _BARCODE_TAKEN})

@@ -52,6 +52,15 @@ export default function HomeScreen() {
         <Button title="Search manually" variant="text" onPress={() => router.push('/search')} />
       </Card>
 
+      {isAdmin ? (
+        <Button
+          title="Admin"
+          variant="secondary"
+          icon="shield-checkmark-outline"
+          onPress={() => router.push('/admin')}
+        />
+      ) : null}
+
       <View style={styles.account}>
         <Text style={[textStyles.caption, { color: colors.textMuted }]}>
           Signed in as {user?.email}

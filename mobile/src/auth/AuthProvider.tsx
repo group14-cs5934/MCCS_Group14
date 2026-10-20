@@ -18,6 +18,8 @@ type AuthContextValue = {
    * null like 'user': it never grants admin features.
    */
   role: Role | null;
+  /** True while a signed-in user's role is still loading, so screens can wait before deciding. */
+  roleLoading: boolean;
   isAdmin: boolean;
   /** True until the saved session has been loaded from the device. */
   initializing: boolean;
@@ -90,20 +92,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     return () => controller.abort();
   }, [userId]);
-  const role = loadedRole && loadedRole.userId === userId ? loadedRole.role : null;
+  const roleLoaded = !!loadedRole && loadedRole.userId === userId;
+  const role = roleLoaded ? loadedRole.role : null;
+  const roleLoading = !!userId && !roleLoaded;
 
   const value = useMemo(
     () => ({
       session,
       user: session?.user ?? null,
       role,
+      roleLoading,
       isAdmin: role === 'admin',
       initializing,
       signIn,
       signUp,
       signOut,
     }),
-    [session, role, initializing],
+    [session, role, roleLoading, initializing],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

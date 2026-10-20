@@ -34,6 +34,7 @@ mobile/
       product/[id].tsx  # product details, e.g. /product/123
       product/barcode/[code].tsx  # same page, opened by barcode after a scan
       search.tsx      # product search; searches once typing pauses (useProductSearch)
+      admin.tsx       # admin area (admins only): product list; others see "Admins only"
       sign-in.tsx, sign-up.tsx  # email + password accounts (Supabase Auth)
     theme/            # design tokens: colors, typography (Inter), spacing, radius, shadows,
                       #   and sharedStyles. The only place hex colors and font names live.
@@ -380,6 +381,7 @@ left.
 
 | Endpoint                         | Does                                                                       |
 | -------------------------------- | -------------------------------------------------------------------------- |
+| `GET /admin/products`            | Every product sorted by name (`q` searches names), with `limit` (1–100, default 50) and `offset`. |
 | `POST /admin/products`           | Adds a product (`201`): `barcode` and `name` required; `description`, `size`, `image_url`, `category_id`, and `price` (e.g. `"3.49"`) optional. |
 | `PATCH /admin/products/{id}`     | Changes only the fields sent; `null` clears an optional field. A new `price` becomes the current one (older prices are kept as history). |
 | `DELETE /admin/products/{id}`    | Removes the product with its prices, ratings, and reviews (`204`).         |
