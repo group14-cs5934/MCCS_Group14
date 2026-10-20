@@ -9,3 +9,12 @@ export type RatingSummary = {
   /** How many users rated the product. */
   count: number;
 };
+
+/** The signed-in user's own rating of a product (GET /products/{id}/ratings/me, and POST). */
+export type MyRating = {
+  product_id: number;
+  /** Whole stars, 1 to 5. */
+  stars: number;
+  created_at: string;
+  updated_at: string;
+};

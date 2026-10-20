@@ -51,19 +51,27 @@ function respondWith(status: number, body: unknown) {
 }
 
 const RATINGS_PATH = /\/products\/\d+\/ratings$/;
+const MY_RATING_PATH = /\/products\/\d+\/ratings\/me$/;
 
 /** What GET /products/{id}/ratings answers; each test starts with no ratings. */
 let ratings: RatingSummary | Error = { product_id: 1, average: null, count: 0 };
 
 /** The product requests made (the page also asks for the product's ratings once it loads). */
-const productRequests = () => fetchMock.mock.calls.filter(([url]) => !RATINGS_PATH.test(url));
+const productRequests = () =>
+  fetchMock.mock.calls.filter(([url]) => !RATINGS_PATH.test(url) && !MY_RATING_PATH.test(url));
+
+/** The URLs requested, in order. */
+const requestedUrls = () => fetchMock.mock.calls.map(([url]) => url);
 
 beforeEach(() => {
   fetchMock.mockReset();
   ratings = { product_id: 1, average: null, count: 0 };
   // Product responses are queued by each test with respondWith; the product loads first, so the
-  // ratings request that follows gets `ratings`.
+  // ratings requests that follow get `ratings`, and "not rated yet" for the user's own rating.
   fetchMock.mockImplementation(async (url) => {
+    if (MY_RATING_PATH.test(url)) {
+      return jsonResponse(404, { code: 'rating_not_found', message: 'Not rated' });
+    }
     if (!RATINGS_PATH.test(url)) {
       return jsonResponse(500, { code: 'internal_error', message: 'Not set up by this test' });
     }
@@ -160,7 +168,7 @@ describe('ratings', () => {
     expect(screen.getByText('(2 ratings)')).toBeOnTheScreen();
     expect(screen.getByLabelText('Rated 3.0 out of 5 from 2 ratings')).toBeOnTheScreen();
     expect(screen.queryByText('No ratings yet')).not.toBeOnTheScreen();
-    expect(fetchMock.mock.calls[1][0]).toMatch(/\/products\/1\/ratings$/);
+    expect(requestedUrls()).toContainEqual(expect.stringMatching(/\/products\/1\/ratings$/));
   });
 
   it('shows "No ratings yet" when nobody has rated the product', async () => {
@@ -197,7 +205,7 @@ describe('ratings', () => {
     renderRouter('src/app', { initialUrl: '/product/barcode/036000291452' });
 
     await screen.findByText('No ratings yet');
-    expect(fetchMock.mock.calls[1][0]).toMatch(/\/products\/42\/ratings$/);
+    expect(requestedUrls()).toContainEqual(expect.stringMatching(/\/products\/42\/ratings$/));
   });
 
   it('still shows the product when the ratings can’t be loaded', async () => {
