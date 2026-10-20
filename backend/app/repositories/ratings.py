@@ -6,7 +6,7 @@ from fastapi import Depends
 from psycopg.rows import dict_row
 
 from app.core.database import DbConnection
-from app.schemas import RatingRead
+from app.schemas import RatingRead, RatingSummary
 
 # products.id is a Postgres INTEGER; larger IDs can't exist, and querying one raises an error.
 _MAX_ID = 2**31 - 1
@@ -22,6 +22,18 @@ SELECT id, %(user_id)s, %(stars)s FROM products WHERE id = %(product_id)s
 ON CONFLICT (product_id, user_id)
 DO UPDATE SET stars = EXCLUDED.stars, updated_at = NOW()
 RETURNING {_COLUMNS}
+"""
+
+
+# A product's average and count. Starting from products means an unknown product gives no row,
+# while a product with no ratings gives count 0 and a NULL average. The (product_id, user_id)
+# unique index from migration 005 finds a product's ratings.
+_SUMMARY = """
+SELECT p.id AS product_id, round(avg(r.stars), 2) AS average, count(r.stars) AS count
+FROM products AS p
+LEFT JOIN ratings AS r ON r.product_id = p.id
+WHERE p.id = %(product_id)s
+GROUP BY p.id
 """
 
 
@@ -48,6 +60,16 @@ class RatingRepository:
             "AND user_id = %(user_id)s",
             {"product_id": product_id, "user_id": user_id},
         )
+
+    def summary(self, product_id: int) -> RatingSummary | None:
+        """The product's average rating and number of ratings, or None if there's no product
+        with this ID. A product nobody has rated has count 0 and average None."""
+        if not 0 < product_id <= _MAX_ID:
+            return None
+        with self._connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(_SUMMARY, {"product_id": product_id})
+            row = cursor.fetchone()
+        return RatingSummary.model_validate(row) if row is not None else None
 
     def _fetch_one(self, query: str, params: dict) -> RatingRead | None:
         # `query` is always a constant from this module; values only ever go in `params`.

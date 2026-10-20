@@ -1,7 +1,9 @@
 """Rating endpoints against a real database (skipped without TEST_DATABASE_URL).
 
 T053 acceptance: when I submit a rating of 1-5, it is saved; when I submit a rating of 0 or 6, it
-is rejected with a 422. Unit tests that need no database are in test_ratings_api_unit.py.
+is rejected with a 422. T054 acceptance: when a product has ratings of 4 and 2, the API returns
+an average of 3.0 and a count of 2. Unit tests that need no database are in
+test_ratings_api_unit.py.
 """
 
 from collections.abc import Iterator
@@ -14,7 +16,7 @@ from fastapi.testclient import TestClient
 from app.core.auth import TokenUser, get_token_user
 from app.core.config import load_settings
 from app.main import create_app
-from tests.factories import add_product
+from tests.factories import add_product, add_user
 
 ALICE = TokenUser(id=UUID("8f14e45f-ceea-467f-a8f0-3b7b2b1c1f00"), email="alice@example.com")
 BOB = TokenUser(id=UUID("c9f0f895-fb98-4ab2-9a3e-4b1b2f0c7a11"), email="bob@example.com")
@@ -121,3 +123,78 @@ def test_my_rating_is_404_until_i_rate(client, product_id) -> None:
     response = client.get(f"/products/{product_id}/ratings/me")
     assert response.status_code == 200
     assert (response.json()["product_id"], response.json()["stars"]) == (product_id, 3)
+
+
+def add_ratings(connection: psycopg.Connection, product_id: int, *stars: int) -> None:
+    """Each of these ratings of the product comes from a different (new) user."""
+    for count in stars:
+        connection.execute(
+            "INSERT INTO ratings (product_id, user_id, stars) VALUES (%s, %s, %s)",
+            (product_id, add_user(connection), count),
+        )
+    connection.commit()
+
+
+def test_ratings_of_4_and_2_average_3_with_a_count_of_2(session, product_id) -> None:
+    # Rated through the API by two users.
+    session.client.post(f"/products/{product_id}/ratings", json={"stars": 4})
+    session.user = BOB
+    session.client.post(f"/products/{product_id}/ratings", json={"stars": 2})
+
+    response = session.client.get(f"/products/{product_id}/ratings")
+
+    assert response.status_code == 200
+    assert response.json() == {"product_id": product_id, "average": 3.0, "count": 2}
+
+
+@pytest.mark.parametrize(
+    ("stars", "average"),
+    [
+        ([5], 5.0),
+        ([4, 4, 5], 4.33),  # rounded to 2 decimal places
+        ([1, 2, 2], 1.67),
+        ([1, 2, 3, 4, 5], 3.0),
+    ],
+)
+def test_average_is_the_mean_rounded_to_2_places(
+    client, connection, product_id, stars, average
+) -> None:
+    add_ratings(connection, product_id, *stars)
+
+    summary = client.get(f"/products/{product_id}/ratings").json()
+
+    assert (summary["average"], summary["count"]) == (average, len(stars))
+
+
+def test_product_nobody_rated_has_no_average(client, product_id) -> None:
+    response = client.get(f"/products/{product_id}/ratings")
+
+    assert response.json() == {"product_id": product_id, "average": None, "count": 0}
+
+
+def test_only_this_products_ratings_count(client, connection, product_id) -> None:
+    other_id = add_product(connection, barcode="012000171741")
+    add_ratings(connection, product_id, 4, 2)
+    add_ratings(connection, other_id, 1, 1, 1)
+
+    summary = client.get(f"/products/{product_id}/ratings").json()
+
+    assert (summary["average"], summary["count"]) == (3.0, 2)
+
+
+def test_changing_my_rating_changes_the_average(client, connection, product_id) -> None:
+    add_ratings(connection, product_id, 4)
+    client.post(f"/products/{product_id}/ratings", json={"stars": 2})
+    client.post(f"/products/{product_id}/ratings", json={"stars": 4})  # changed my mind
+
+    summary = client.get(f"/products/{product_id}/ratings").json()
+
+    assert (summary["average"], summary["count"]) == (4.0, 2)
+
+
+@pytest.mark.parametrize("unknown_id", [999, 2**31])
+def test_summary_of_an_unknown_product_is_404(client, product_id, unknown_id) -> None:
+    response = client.get(f"/products/{unknown_id}/ratings")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "product_not_found"

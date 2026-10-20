@@ -1,14 +1,15 @@
 """Unit tests for POST /products/{id}/ratings and GET /products/{id}/ratings/me.
 
 T053 acceptance: when I submit a rating of 1-5, it is saved; when I submit a rating of 0 or 6, it
-is rejected with a 422.
+is rejected with a 422. T054 acceptance (GET /products/{id}/ratings): when a product has ratings
+of 4 and 2, the API returns an average of 3.0 and a count of 2.
 
 The signed-in user and the rating repository are replaced with in-memory stand-ins, so these run
 anywhere without Postgres or Supabase. test_ratings_api.py runs the same endpoints against a real
 database.
 """
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -152,3 +153,57 @@ def test_docs_describe_the_rating_endpoints(client) -> None:
     assert {"401", "404"} <= set(get["responses"])
     stars = schema["components"]["schemas"]["RatingCreate"]["properties"]["stars"]
     assert (stars["minimum"], stars["maximum"]) == (1, 5)
+
+
+def add_ratings(ratings: FakeRatings, *stars: int) -> None:
+    """Each of these ratings of PRODUCT_ID comes from a different user."""
+    for count in stars:
+        ratings.save(PRODUCT_ID, uuid4(), count)
+
+
+def test_ratings_of_4_and_2_average_3_with_a_count_of_2(client, ratings) -> None:
+    add_ratings(ratings, 4, 2)
+
+    response = client.get(f"/products/{PRODUCT_ID}/ratings")
+
+    assert response.status_code == 200
+    assert response.json() == {"product_id": PRODUCT_ID, "average": 3.0, "count": 2}
+
+
+def test_product_nobody_rated_has_no_average(client) -> None:
+    response = client.get(f"/products/{PRODUCT_ID}/ratings")
+
+    assert response.json() == {"product_id": PRODUCT_ID, "average": None, "count": 0}
+
+
+def test_summary_of_an_unknown_product_is_404(client) -> None:
+    response = client.get("/products/999/ratings")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "product_not_found"
+
+
+def test_summary_needs_no_sign_in(make_client, ratings) -> None:
+    client = make_client()  # the real token check, and no token is sent
+    client.app.dependency_overrides[get_rating_repository] = lambda: ratings
+    add_ratings(ratings, 5)
+
+    response = client.get(f"/products/{PRODUCT_ID}/ratings")
+
+    assert response.status_code == 200
+    assert response.json()["average"] == 5.0
+
+
+def test_my_new_rating_counts_towards_the_summary(client, ratings) -> None:
+    add_ratings(ratings, 4)
+
+    rate(client, {"stars": 2})
+
+    assert client.get(f"/products/{PRODUCT_ID}/ratings").json()["count"] == 2
+
+
+def test_docs_show_the_summary_is_public(client) -> None:
+    operation = client.app.openapi()["paths"]["/products/{product_id}/ratings"]["get"]
+
+    assert "404" in operation["responses"]
+    assert "401" not in operation["responses"]

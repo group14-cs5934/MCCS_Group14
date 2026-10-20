@@ -22,3 +22,14 @@ class RatingRead(BaseModel):
     stars: int = Field(ge=1, le=5, examples=[4])
     created_at: datetime = Field(description="When the product was first rated")
     updated_at: datetime = Field(description="When the stars last changed")
+
+
+class RatingSummary(BaseModel):
+    """A product's average rating and how many users rated it."""
+
+    product_id: int
+    average: float | None = Field(
+        description="Mean stars, rounded to 2 decimal places; null until someone rates it",
+        examples=[3.0],
+    )
+    count: int = Field(ge=0, description="How many users rated the product", examples=[2])
