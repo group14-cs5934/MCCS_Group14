@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import admin, health, me, products, ratings
+from app.api import admin, admin_products, health, me, products, ratings
 from app.core.auth import TokenVerifier
 from app.core.config import ConfigError, Settings, get_settings
 from app.core.database import create_pool
@@ -60,6 +60,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(products.router)
     app.include_router(ratings.router)
     app.include_router(admin.router)
+    app.include_router(admin_products.router)
 
     @app.get("/")
     def root() -> dict[str, str]:

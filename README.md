@@ -375,6 +375,20 @@ Changes apply to the user's next request. A deactivated user (`deactivated_at` s
 admin role or deactivate themselves (`409 cannot_change_own_account`), so there's always an admin
 left.
 
+**Managing products (admins only)**, same `401`/`403` rules. Each returns the product as
+`GET /products/{id}` does, and the app shows the change on its next request:
+
+| Endpoint                         | Does                                                                       |
+| -------------------------------- | -------------------------------------------------------------------------- |
+| `POST /admin/products`           | Adds a product (`201`): `barcode` and `name` required; `description`, `size`, `image_url`, `category_id`, and `price` (e.g. `"3.49"`) optional. |
+| `PATCH /admin/products/{id}`     | Changes only the fields sent; `null` clears an optional field. A new `price` becomes the current one (older prices are kept as history). |
+| `DELETE /admin/products/{id}`    | Removes the product with its prices, ratings, and reviews (`204`).         |
+
+A barcode another product already has is `409 barcode_taken`, including the same barcode with
+different leading zeros (`012000001291` and `0012000001291`). A `category_id` that isn't a
+category is `422 category_not_found`; an unknown product is `404 product_not_found`. Prices
+entered here are recorded with source `admin`.
+
 **Ratings and reviews.** `migrations/005_create_ratings_and_reviews.sql` adds two tables, each
 linked to a product and a user and deleted along with either (row level security on, like
 `users`):
