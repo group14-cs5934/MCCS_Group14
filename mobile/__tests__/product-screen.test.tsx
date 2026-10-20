@@ -1,10 +1,13 @@
 import { fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 
 import type { Product } from '@/types/product';
+import type { RatingSummary } from '@/types/rating';
 
 // T025: when the app requests a seeded product, the API returns it and the app displays it.
 // This covers the app half with the API response faked; the API ↔ database half is covered by
 // backend/tests/test_product_lookup.py, and the full stack is checked by hand (README: full stack).
+// T056: when a product has ratings, its page shows the average and count; with no ratings it
+// shows "No ratings yet".
 
 /** The dev seed script's product (backend/scripts/seed_dev.py), with a price added. */
 const SAMPLE_CHIPS: Product = {
@@ -33,18 +36,42 @@ const SAMPLE_CHIPS: Product = {
 const fetchMock = jest.fn<Promise<Response>, [string, RequestInit]>();
 const originalFetch = globalThis.fetch;
 
-/** The next API request gets this response. */
-function respondWith(status: number, body: unknown) {
-  fetchMock.mockResolvedValueOnce({
+function jsonResponse(status: number, body: unknown): Response {
+  return {
     ok: status >= 200 && status < 300,
     status,
     headers: { get: () => null },
     text: async () => JSON.stringify(body),
-  } as unknown as Response);
+  } as unknown as Response;
 }
+
+/** The next product request gets this response. */
+function respondWith(status: number, body: unknown) {
+  fetchMock.mockResolvedValueOnce(jsonResponse(status, body));
+}
+
+const RATINGS_PATH = /\/products\/\d+\/ratings$/;
+
+/** What GET /products/{id}/ratings answers; each test starts with no ratings. */
+let ratings: RatingSummary | Error = { product_id: 1, average: null, count: 0 };
+
+/** The product requests made (the page also asks for the product's ratings once it loads). */
+const productRequests = () => fetchMock.mock.calls.filter(([url]) => !RATINGS_PATH.test(url));
 
 beforeEach(() => {
   fetchMock.mockReset();
+  ratings = { product_id: 1, average: null, count: 0 };
+  // Product responses are queued by each test with respondWith; the product loads first, so the
+  // ratings request that follows gets `ratings`.
+  fetchMock.mockImplementation(async (url) => {
+    if (!RATINGS_PATH.test(url)) {
+      return jsonResponse(500, { code: 'internal_error', message: 'Not set up by this test' });
+    }
+    if (ratings instanceof Error) {
+      throw ratings;
+    }
+    return jsonResponse(200, ratings);
+  });
   globalThis.fetch = fetchMock as unknown as typeof fetch;
 });
 
@@ -74,7 +101,7 @@ it('requests the product from the API and displays it', async () => {
   expect(await screen.findByText('Sample Chips')).toBeOnTheScreen();
   expect(screen.getByText('$3.49')).toBeOnTheScreen();
   expect(screen.getByText('Snacks')).toBeOnTheScreen();
-  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(productRequests()).toHaveLength(1);
   expect(fetchMock.mock.calls[0][0]).toMatch(/\/products\/1$/);
 });
 
@@ -84,7 +111,7 @@ it('looks the product up by barcode when opened from a scan', async () => {
   renderRouter('src/app', { initialUrl: '/product/barcode/036000291452' });
 
   expect(await screen.findByText('Sample Chips')).toBeOnTheScreen();
-  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(productRequests()).toHaveLength(1);
   expect(fetchMock.mock.calls[0][0]).toMatch(/\/products\/barcode\/036000291452$/);
 });
 
@@ -107,7 +134,7 @@ it('shows an error for a missing product, and Try Again loads it again', async (
   fireEvent.press(screen.getByRole('button', { name: 'Try Again' }));
 
   expect(await screen.findByText('Sample Chips')).toBeOnTheScreen();
-  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(productRequests()).toHaveLength(2);
 });
 
 it('shows a friendly error instead of crashing when the API is unreachable', async () => {
@@ -120,4 +147,67 @@ it('shows a friendly error instead of crashing when the API is unreachable', asy
       "Can't reach the server. Check your internet connection and try again.",
     ),
   ).toBeOnTheScreen();
+});
+
+describe('ratings', () => {
+  it('shows the average and count when the product has ratings', async () => {
+    ratings = { product_id: 1, average: 3, count: 2 };
+    respondWith(200, SAMPLE_CHIPS);
+
+    renderRouter('src/app', { initialUrl: '/product/1' });
+
+    expect(await screen.findByText('3.0')).toBeOnTheScreen();
+    expect(screen.getByText('(2 ratings)')).toBeOnTheScreen();
+    expect(screen.getByLabelText('Rated 3.0 out of 5 from 2 ratings')).toBeOnTheScreen();
+    expect(screen.queryByText('No ratings yet')).not.toBeOnTheScreen();
+    expect(fetchMock.mock.calls[1][0]).toMatch(/\/products\/1\/ratings$/);
+  });
+
+  it('shows "No ratings yet" when nobody has rated the product', async () => {
+    respondWith(200, SAMPLE_CHIPS);
+
+    renderRouter('src/app', { initialUrl: '/product/1' });
+
+    expect(await screen.findByText('No ratings yet')).toBeOnTheScreen();
+  });
+
+  it('says "1 rating" for a single rating, and rounds the average to one decimal', async () => {
+    ratings = { product_id: 1, average: 4, count: 1 };
+    respondWith(200, SAMPLE_CHIPS);
+
+    renderRouter('src/app', { initialUrl: '/product/1' });
+
+    expect(await screen.findByText('(1 rating)')).toBeOnTheScreen();
+    expect(screen.getByText('4.0')).toBeOnTheScreen();
+  });
+
+  it('shows large counts with separators and a rounded average', async () => {
+    ratings = { product_id: 1, average: 4.57, count: 1234 };
+    respondWith(200, SAMPLE_CHIPS);
+
+    renderRouter('src/app', { initialUrl: '/product/1' });
+
+    expect(await screen.findByText('4.6')).toBeOnTheScreen();
+    expect(screen.getByText('(1,234 ratings)')).toBeOnTheScreen();
+  });
+
+  it('loads the ratings of the scanned product by its ID', async () => {
+    respondWith(200, { ...SAMPLE_CHIPS, id: 42 });
+
+    renderRouter('src/app', { initialUrl: '/product/barcode/036000291452' });
+
+    await screen.findByText('No ratings yet');
+    expect(fetchMock.mock.calls[1][0]).toMatch(/\/products\/42\/ratings$/);
+  });
+
+  it('still shows the product when the ratings can’t be loaded', async () => {
+    ratings = new TypeError('Network request failed');
+    respondWith(200, SAMPLE_CHIPS);
+
+    renderRouter('src/app', { initialUrl: '/product/1' });
+
+    expect(await screen.findByText('Ratings unavailable')).toBeOnTheScreen();
+    expect(screen.getByText('Sample Chips')).toBeOnTheScreen();
+    expect(screen.getByText('$3.49')).toBeOnTheScreen();
+  });
 });

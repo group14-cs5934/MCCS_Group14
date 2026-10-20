@@ -6,7 +6,9 @@ import type { ErrorAction } from '@/api';
 import AsyncContent from '@/components/AsyncContent';
 import Button from '@/components/Button';
 import ErrorState from '@/components/ErrorState';
+import StarRating from '@/components/StarRating';
 import type { ProductState } from '@/hooks/useProduct';
+import { useRatingSummary } from '@/hooks/useRatingSummary';
 import { colors, fonts, radius, sharedStyles, spacing, textStyles } from '@/theme';
 import type { Product } from '@/types/product';
 import { formatPrice } from '@/utils/formatPrice';
@@ -145,6 +147,8 @@ function ProductDetails({ product }: { product: Product }) {
 
           <Text style={styles.productName}>{product.name}</Text>
 
+          <RatingLine productId={product.id} />
+
           {product.price ? (
             <Text style={styles.price}>{formatPrice(product.price)}</Text>
           ) : (
@@ -196,6 +200,39 @@ function ProductDetails({ product }: { product: Product }) {
           <Text style={styles.compareText}>Compare Prices · Coming soon</Text>
         </Pressable>
       </View>
+    </View>
+  );
+}
+
+/**
+ * The product's average rating and how many people rated it, e.g. ★★★½ 3.7 (2 ratings), or
+ * "No ratings yet". Loads separately from the product, so a ratings problem never hides the page.
+ */
+function RatingLine({ productId }: { productId: number }) {
+  const { loading, summary, failed } = useRatingSummary(productId);
+
+  if (loading) {
+    // Same height as the loaded line, so the price below doesn't jump when it appears.
+    return <View style={styles.ratingRow} />;
+  }
+  if (failed || !summary) {
+    return <Text style={[styles.ratingRow, styles.ratingNote]}>Ratings unavailable</Text>;
+  }
+  if (summary.average === null || summary.count === 0) {
+    return <Text style={[styles.ratingRow, styles.ratingNote]}>No ratings yet</Text>;
+  }
+
+  const average = summary.average.toFixed(1);
+  const count = `${summary.count.toLocaleString('en-US')} ${summary.count === 1 ? 'rating' : 'ratings'}`;
+  return (
+    <View
+      style={[styles.ratingRow, styles.ratingLine]}
+      accessible
+      accessibilityLabel={`Rated ${average} out of 5 from ${count}`}
+    >
+      <StarRating value={summary.average} size={18} />
+      <Text style={styles.ratingAverage}>{average}</Text>
+      <Text style={styles.ratingNote}>({count})</Text>
     </View>
   );
 }
@@ -292,6 +329,22 @@ const styles = StyleSheet.create({
   productName: {
     ...textStyles.title,
     color: colors.textPrimary,
+  },
+  ratingRow: {
+    minHeight: 24,
+  },
+  ratingLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  ratingAverage: {
+    ...textStyles.bodyStrong,
+    color: colors.textPrimary,
+  },
+  ratingNote: {
+    ...textStyles.body,
+    color: colors.textSecondary,
   },
   price: {
     ...textStyles.price,
