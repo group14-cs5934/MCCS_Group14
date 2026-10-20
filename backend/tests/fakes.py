@@ -6,8 +6,9 @@ Swap one in with app.dependency_overrides[get_product_repository] = lambda: Fake
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+from uuid import UUID
 
-from app.schemas import CategoryRead, PriceRead, ProductRead
+from app.schemas import CategoryRead, PriceRead, ProductRead, RatingRead
 
 CREATED = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
 CHIPS = CategoryRead(id=3, name="Chips & Snacks", slug="chips-snacks")
@@ -94,3 +95,27 @@ class FakeProducts:
             and (not category or (product.category and product.category.slug == category))
         ]
         return found[offset : offset + limit]
+
+
+class FakeRatings:
+    """Stands in for RatingRepository: ratings are kept in a dict, one per (product, user).
+
+    Only the product IDs given exist, like the products in a database.
+    """
+
+    def __init__(self, *product_ids: int) -> None:
+        self._product_ids = set(product_ids)
+        self.ratings: dict[tuple[int, UUID], RatingRead] = {}
+
+    def save(self, product_id: int, user_id: UUID, stars: int) -> RatingRead | None:
+        if product_id not in self._product_ids:
+            return None
+        key = (product_id, user_id)
+        created = self.ratings[key].created_at if key in self.ratings else CREATED
+        self.ratings[key] = RatingRead(
+            product_id=product_id, stars=stars, created_at=created, updated_at=CREATED
+        )
+        return self.ratings[key]
+
+    def get(self, product_id: int, user_id: UUID) -> RatingRead | None:
+        return self.ratings.get((product_id, user_id))

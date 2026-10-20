@@ -259,6 +259,17 @@ clashing. The app normalizes scans first (e.g. UPC-E to UPC-A), and leading zero
 when matching a barcode, so `012000001291` (UPC-A) finds a product stored as `0012000001291`
 (EAN-13). Anything else, including a code that isn't 8, 12, 13, or 14 digits, is a `404`. Full request/response details are in the interactive docs at `/docs`.
 
+**Ratings** need a signed-in user (`401` without a valid token):
+
+| Endpoint                            | Does                                                                         |
+| ----------------------------------- | ---------------------------------------------------------------------------- |
+| `POST /products/{id}/ratings`       | Saves your rating, body `{"stars": 4}`. Rating again changes your stars.     |
+| `GET /products/{id}/ratings/me`     | Your rating of the product, or `404` with code `rating_not_found` if none.   |
+
+Both return `{"product_id", "stars", "created_at", "updated_at"}`. `stars` must be a whole number
+from 1 to 5; anything else (`0`, `6`, `4.5`, `"4"`) is a `422`. An unknown product is a `404`
+with code `product_not_found`.
+
 Search takes `q` (words in the product name; small typos are fine, best match first),
 `category` (a category slug; only that category's products, sorted by name), or both, plus
 `limit` (1–50, default 20) and `offset` for paging. For example,
