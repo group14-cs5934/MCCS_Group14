@@ -120,6 +120,9 @@ class FakeRatings:
     def get(self, product_id: int, user_id: UUID) -> RatingRead | None:
         return self.ratings.get((product_id, user_id))
 
+    def delete(self, product_id: int, user_id: UUID) -> bool:
+        return self.ratings.pop((product_id, user_id), None) is not None
+
     def summary(self, product_id: int) -> RatingSummary | None:
         if product_id not in self._product_ids:
             return None

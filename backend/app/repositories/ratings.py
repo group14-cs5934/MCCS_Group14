@@ -61,6 +61,16 @@ class RatingRepository:
             {"product_id": product_id, "user_id": user_id},
         )
 
+    def delete(self, product_id: int, user_id: UUID) -> bool:
+        """Remove the user's rating of the product. False if they hadn't rated it."""
+        if not 0 < product_id <= _MAX_ID:
+            return False
+        with self._connection.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM ratings WHERE product_id = %s AND user_id = %s", (product_id, user_id)
+            )
+            return cursor.rowcount > 0
+
     def summary(self, product_id: int) -> RatingSummary | None:
         """The product's average rating and number of ratings, or None if there's no product
         with this ID. A product nobody has rated has count 0 and average None."""

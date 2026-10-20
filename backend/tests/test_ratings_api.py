@@ -198,3 +198,34 @@ def test_summary_of_an_unknown_product_is_404(client, product_id, unknown_id) ->
 
     assert response.status_code == 404
     assert response.json()["code"] == "product_not_found"
+
+
+def test_removing_my_rating_takes_it_out_of_the_average(session, connection, product_id) -> None:
+    add_ratings(connection, product_id, 2)
+    session.client.post(f"/products/{product_id}/ratings", json={"stars": 4})
+
+    response = session.client.delete(f"/products/{product_id}/ratings/me")
+
+    assert response.status_code == 204
+    summary = session.client.get(f"/products/{product_id}/ratings").json()
+    assert (summary["average"], summary["count"]) == (2.0, 1)
+    assert ALICE.id not in [user_id for _, user_id, _ in stored(connection)]
+
+
+def test_removing_only_removes_my_own_rating(session, connection, product_id) -> None:
+    session.client.post(f"/products/{product_id}/ratings", json={"stars": 2})
+    session.user = BOB
+
+    response = session.client.delete(f"/products/{product_id}/ratings/me")
+
+    assert response.status_code == 404  # Bob never rated it
+    assert stored(connection) == [(product_id, ALICE.id, 2)]
+
+
+def test_can_rate_again_after_removing(client, connection, product_id) -> None:
+    client.post(f"/products/{product_id}/ratings", json={"stars": 2})
+    client.delete(f"/products/{product_id}/ratings/me")
+
+    client.post(f"/products/{product_id}/ratings", json={"stars": 5})
+
+    assert stored(connection) == [(product_id, ALICE.id, 5)]

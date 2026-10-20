@@ -1,10 +1,10 @@
 """Product ratings (US08): a signed-in user rates a product 1 to 5 stars, and anyone can see a
 product's average rating and how many people rated it.
 
-Each user has one rating per product; rating it again changes the stars.
+Each user has one rating per product; rating it again changes the stars, and they can remove it.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response, status
 
 from app.core.auth import CurrentUser
 from app.core.errors import ApiError, error_response
@@ -67,3 +67,21 @@ def get_my_rating(product_id: int, user: CurrentUser, ratings: Ratings) -> Ratin
     if rating is None:
         raise ApiError(404, "rating_not_found", "You haven't rated this product")
     return rating
+
+
+@router.delete(
+    "/{product_id:int}/ratings/me",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        401: _NOT_SIGNED_IN,
+        404: error_response("You haven't rated this product (or it doesn't exist)"),
+    },
+)
+def remove_my_rating(product_id: int, user: CurrentUser, ratings: Ratings) -> Response:
+    """Remove the signed-in user's rating of a product, so it no longer counts in the average.
+
+    204 (no body) when removed; 404 with code rating_not_found if they hadn't rated it.
+    """
+    if not ratings.delete(product_id, user.id):
+        raise ApiError(404, "rating_not_found", "You haven't rated this product")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
