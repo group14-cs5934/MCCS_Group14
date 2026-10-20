@@ -134,8 +134,18 @@ def get_token_user(
 def get_current_user(
     token_user: Annotated[TokenUser, Depends(get_token_user)], users: Users
 ) -> AuthUser:
-    """FastAPI dependency: the signed-in user and their role, adding their row on first use."""
+    """FastAPI dependency: the signed-in user and their role, adding their row on first use.
+
+    The role and status are read on every request, so an admin's change takes effect on the
+    user's next request. A deactivated user gets 403 with code account_deactivated.
+    """
     account = users.get_or_create(token_user.id, token_user.email)
+    if not account.active:
+        raise ApiError(
+            status.HTTP_403_FORBIDDEN,
+            "account_deactivated",
+            "This account has been deactivated.",
+        )
     return AuthUser(id=account.id, email=account.email, role=account.role)
 
 

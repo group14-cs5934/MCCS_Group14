@@ -349,16 +349,31 @@ without the right role gets `403` with code `forbidden`; if Supabase's keys can'
 `user` role the first time they call the API. The app calls `GET /me` right after signing in, so
 this happens at sign-up, or at the first sign-in when email confirmation is on. There are two
 roles, `user` and `admin`. `require_role(...)` in `app/core/auth.py` builds a check for other
-combinations. To make someone an admin (after they've signed in once), run in the Supabase SQL
+combinations. To make the first admin (after they've signed in once), run in the Supabase SQL
 editor, or locally with `docker exec -it mccs-db psql -U postgres -d mccs`:
 
 ```sql
 UPDATE users SET role = 'admin' WHERE email = 'someone@example.com';
 ```
 
-The app picks up the new role the next time the user signs in. Row level security is on for
+After that, admins manage users through the API (below). The API reads each user's role on
+every request, so a change applies to their next request; the app shows the new role the next
+time the user signs in. Row level security is on for
 `users` with no policies, so the app's publishable key can't read it or change roles through
 Supabase's REST API; only the backend can.
+
+**Managing users (admins only).** `401` without a valid token, `403 forbidden` for non-admins:
+
+| Endpoint                  | Does                                                                              |
+| ------------------------- | --------------------------------------------------------------------------------- |
+| `GET /admin/users`        | Users in join order (`id`, `email`, `role`, `active`, `created_at`). Takes `email` (contains, any case), `limit` (1–100, default 50), `offset`. |
+| `PATCH /admin/users/{id}` | Changes `role` and/or `active`, e.g. `{"role": "admin"}` or `{"active": false}`; returns the user. `404 user_not_found` if there's no such user. |
+
+Changes apply to the user's next request. A deactivated user (`deactivated_at` set, migration
+006) gets `403` with code `account_deactivated` from every signed-in endpoint until an admin sets
+`{"active": true}`; their Supabase sign-in itself still works. Admins can't remove their own
+admin role or deactivate themselves (`409 cannot_change_own_account`), so there's always an admin
+left.
 
 **Ratings and reviews.** `migrations/005_create_ratings_and_reviews.sql` adds two tables, each
 linked to a product and a user and deleted along with either (row level security on, like

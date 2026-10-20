@@ -8,7 +8,15 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from app.schemas import CategoryRead, PriceRead, ProductRead, RatingRead, RatingSummary
+from app.schemas import (
+    CategoryRead,
+    PriceRead,
+    ProductRead,
+    RatingRead,
+    RatingSummary,
+    Role,
+    UserAccount,
+)
 
 CREATED = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
 CHIPS = CategoryRead(id=3, name="Chips & Snacks", slug="chips-snacks")
@@ -129,3 +137,38 @@ class FakeRatings:
         stars = [r.stars for (pid, _), r in self.ratings.items() if pid == product_id]
         average = round(sum(stars) / len(stars), 2) if stars else None
         return RatingSummary(product_id=product_id, average=average, count=len(stars))
+
+
+class FakeUsers:
+    """Stands in for UserRepository: accounts are kept in a dict, in the order they were added.
+
+    `searches` records each list_users call as (email, limit, offset).
+    """
+
+    def __init__(self) -> None:
+        self.accounts: dict[UUID, UserAccount] = {}
+        self.searches: list[tuple[str, int, int]] = []
+
+    def get_or_create(self, user_id: UUID, email: str | None) -> UserAccount:
+        if user_id not in self.accounts:
+            self.accounts[user_id] = UserAccount(
+                id=user_id, email=email, role="user", active=True, created_at=CREATED
+            )
+        return self.accounts[user_id]
+
+    def list_users(self, email: str = "", limit: int = 50, offset: int = 0) -> list[UserAccount]:
+        self.searches.append((email, limit, offset))
+        needle = email.strip().lower()
+        found = [a for a in self.accounts.values() if needle in (a.email or "").lower()]
+        return found[offset : offset + limit]
+
+    def update(
+        self, user_id: UUID, role: Role | None = None, active: bool | None = None
+    ) -> UserAccount | None:
+        account = self.accounts.get(user_id)
+        if account is None:
+            return None
+        changes = {"role": role, "active": active}
+        account = account.model_copy(update={k: v for k, v in changes.items() if v is not None})
+        self.accounts[user_id] = account
+        return account

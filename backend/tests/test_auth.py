@@ -14,12 +14,13 @@ from fastapi import APIRouter
 
 from app.core.auth import AdminUser, TokenVerifier
 from app.repositories.users import get_user_repository
-from app.schemas import UserRead
+from app.schemas import UserAccount
 from tests.conftest import VALID_SUPABASE_URL
 
 ISSUER = f"{VALID_SUPABASE_URL}/auth/v1"
 USER_ID = "8f14e45f-ceea-467f-a8f0-3b7b2b1c1f00"
 EMAIL = "shopper@example.com"
+CREATED = datetime(2026, 10, 1, tzinfo=UTC)
 SECRET = "legacy-jwt-secret-that-is-at-least-32-bytes"
 
 
@@ -46,12 +47,14 @@ class FakeUserRepository:
     """Stands in for UserRepository: users are kept in a dict instead of the database."""
 
     def __init__(self) -> None:
-        self.users: dict[UUID, UserRead] = {}
+        self.users: dict[UUID, UserAccount] = {}
 
-    def get_or_create(self, user_id: UUID, email: str | None) -> UserRead:
+    def get_or_create(self, user_id: UUID, email: str | None) -> UserAccount:
         existing = self.users.get(user_id)
         role = existing.role if existing else "user"
-        self.users[user_id] = UserRead(id=user_id, email=email, role=role)
+        self.users[user_id] = UserAccount(
+            id=user_id, email=email, role=role, active=True, created_at=CREATED
+        )
         return self.users[user_id]
 
 
@@ -81,7 +84,9 @@ def client(make_client, private_key, users):
 
 
 def make_admin(users: FakeUserRepository) -> None:
-    users.users[UUID(USER_ID)] = UserRead(id=UUID(USER_ID), email=EMAIL, role="admin")
+    users.users[UUID(USER_ID)] = UserAccount(
+        id=UUID(USER_ID), email=EMAIL, role="admin", active=True, created_at=CREATED
+    )
 
 
 def get_me(client, token):

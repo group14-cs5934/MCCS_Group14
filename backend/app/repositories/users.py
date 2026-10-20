@@ -6,7 +6,7 @@ from fastapi import Depends
 from psycopg.rows import dict_row
 
 from app.core.database import DbConnection
-from app.schemas import UserRead
+from app.schemas import Role, UserAccount
 
 # Adds a new user with the default role, or updates the email if it changed in Supabase. The
 # role of an existing user is never touched, and two first requests at once can't both insert.
@@ -16,6 +16,22 @@ ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email
 WHERE users.email IS DISTINCT FROM EXCLUDED.email
 """
 
+_COLUMNS = "id, email, role, created_at, deactivated_at IS NULL AS active"
+
+# Changes only what's given: a NULL role or active keeps the current value. Deactivating an
+# already deactivated user keeps the original time.
+_UPDATE = f"""
+UPDATE users SET
+    role = COALESCE(%(role)s::text, role),
+    deactivated_at = CASE
+        WHEN %(active)s::boolean IS NULL THEN deactivated_at
+        WHEN %(active)s::boolean THEN NULL
+        ELSE COALESCE(deactivated_at, NOW())
+    END
+WHERE id = %(id)s
+RETURNING {_COLUMNS}
+"""
+
 
 class UserRepository:
     """User queries, run on one request's connection."""
@@ -23,13 +39,39 @@ class UserRepository:
     def __init__(self, connection: psycopg.Connection) -> None:
         self._connection = connection
 
-    def get_or_create(self, user_id: UUID, email: str | None) -> UserRead:
-        """The user's row, added with the "user" role the first time they're seen."""
+    def get_or_create(self, user_id: UUID, email: str | None) -> UserAccount:
+        """The user's row, added with the "user" role the first time they're seen. Read fresh on
+        every request, so role changes and deactivation take effect on the user's next request."""
         with self._connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(_UPSERT, (user_id, email))
-            cursor.execute("SELECT id, email, role FROM users WHERE id = %s", (user_id,))
+            cursor.execute(f"SELECT {_COLUMNS} FROM users WHERE id = %s", (user_id,))
             row = cursor.fetchone()
-        return UserRead.model_validate(row)
+        return UserAccount.model_validate(row)
+
+    def list_users(self, email: str = "", limit: int = 50, offset: int = 0) -> list[UserAccount]:
+        """Users in the order they joined, optionally only those whose email contains `email`
+        (any case)."""
+        email = email.strip().lower()
+        if "\x00" in email:  # Postgres rejects text containing NUL, and no email contains one
+            return []
+        with self._connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                f"SELECT {_COLUMNS} FROM users "
+                "WHERE %(email)s = '' OR position(%(email)s IN lower(email)) > 0 "
+                "ORDER BY created_at, id LIMIT %(limit)s OFFSET %(offset)s",
+                {"email": email, "limit": limit, "offset": offset},
+            )
+            return [UserAccount.model_validate(row) for row in cursor.fetchall()]
+
+    def update(
+        self, user_id: UUID, role: Role | None = None, active: bool | None = None
+    ) -> UserAccount | None:
+        """Change the user's role and/or deactivate (active=False) or reactivate them. None if
+        there's no user with this ID."""
+        with self._connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(_UPDATE, {"id": user_id, "role": role, "active": active})
+            row = cursor.fetchone()
+        return UserAccount.model_validate(row) if row is not None else None
 
 
 def get_user_repository(db: DbConnection) -> UserRepository:
