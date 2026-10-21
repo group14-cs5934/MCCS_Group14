@@ -34,7 +34,8 @@ mobile/
       product/[id].tsx  # product details, e.g. /product/123
       product/barcode/[code].tsx  # same page, opened by barcode after a scan
       search.tsx      # product search; searches once typing pauses (useProductSearch)
-      admin.tsx       # admin area (admins only): product list; others see "Admins only"
+      admin.tsx       # admin area (admins only): Products and Users lists; admins start here
+                      #   after signing in (Back goes to Home); others see "Admins only"
       sign-in.tsx, sign-up.tsx  # email + password accounts (Supabase Auth)
     theme/            # design tokens: colors, typography (Inter), spacing, radius, shadows,
                       #   and sharedStyles. The only place hex colors and font names live.

@@ -1,4 +1,5 @@
 import { useRouter, type Href } from 'expo-router';
+import { useEffect, useRef } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -20,6 +21,16 @@ export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, isAdmin, signOut } = useAuth();
+
+  // Admins start in the admin area: once their role loads, it opens on top of Home, so Back
+  // still reaches the shopper side. Only once per sign-in (Home stays mounted until sign-out).
+  const openedAdmin = useRef(false);
+  useEffect(() => {
+    if (isAdmin && !openedAdmin.current) {
+      openedAdmin.current = true;
+      router.push('/admin');
+    }
+  }, [isAdmin, router]);
 
   return (
     <ScrollView

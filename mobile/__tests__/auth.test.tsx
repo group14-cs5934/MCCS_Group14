@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 
 import { getMe } from '@/api/me';
@@ -197,13 +198,19 @@ describe('roles', () => {
     expect(getMeMock).toHaveBeenCalledTimes(1);
   });
 
-  it('marks admins on Home', async () => {
+  it('opens the admin area for admins and marks them on Home', async () => {
     getMeMock.mockResolvedValueOnce({
       ok: true,
       status: 200,
       data: { id: 'user-1', email: EMAIL, role: 'admin' },
     });
     renderRouter('src/app');
+
+    // Admins start in the admin area, which opens on top of Home; Back shows Home.
+    expect(await screen.findByRole('tab', { name: 'Products' })).toBeOnTheScreen();
+    expect(screen).toHavePathname('/admin');
+
+    await act(async () => router.back());
 
     expect(await screen.findByText(`Signed in as ${EMAIL} · Admin`)).toBeOnTheScreen();
   });
