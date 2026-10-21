@@ -1,12 +1,14 @@
+import { router } from 'expo-router';
 import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 
 import { getMe } from '@/api/me';
 import { SEARCH_DEBOUNCE_MS } from '@/hooks/useProductSearch';
 import type { Product } from '@/types/product';
-import type { Role } from '@/types/user';
+import type { AdminUserAccount, Role } from '@/types/user';
 
 // T090 acceptance: when a regular user tries to open the admin area, access is denied; an admin
-// can open it and see the product list.
+// can open it and see the product list. Admins also see the app's users, and start in the admin
+// area after signing in.
 //
 // The signed-in user's role comes from GET /me (stubbed in jest.setup.ts); the product list from
 // GET /admin/products, faked here.
@@ -34,8 +36,27 @@ function product(id: number, name: string): Product {
 
 const CATALOG = [product(1, 'Coca-Cola Classic'), product(2, 'Diet Pepsi')];
 
+const USERS: AdminUserAccount[] = [
+  {
+    id: 'u-1',
+    email: 'admin@example.com',
+    role: 'admin',
+    active: true,
+    created_at: '2026-10-01T12:00:00Z',
+  },
+  {
+    id: 'u-2',
+    email: 'shopper@example.com',
+    role: 'user',
+    active: false,
+    created_at: '2026-10-15T12:00:00Z',
+  },
+];
+
 /** What GET /admin/products answers: the catalog (filtered by q), or an error status. */
 let adminProducts: { status: number } | null = null;
+/** What GET /admin/users answers: USERS (filtered by email), or an error status. */
+let adminUsers: { status: number } | null = null;
 
 function jsonResponse(status: number, body: unknown): Response {
   return {
@@ -57,6 +78,14 @@ const fetchMock = jest.fn(async (url: string) => {
       CATALOG.filter((item) => item.name.toLowerCase().includes(q)),
     );
   }
+  if (pathname === '/admin/users') {
+    if (adminUsers) return jsonResponse(adminUsers.status, { code: 'forbidden', message: 'No' });
+    const email = (searchParams.get('email') ?? '').toLowerCase();
+    return jsonResponse(
+      200,
+      USERS.filter((user) => user.email!.includes(email)),
+    );
+  }
   return jsonResponse(404, { code: 'not_found', message: 'Not Found' });
 });
 const originalFetch = globalThis.fetch;
@@ -72,9 +101,12 @@ function signedInAs(role: Role) {
 
 const adminRequests = () =>
   fetchMock.mock.calls.filter(([url]) => new URL(url).pathname === '/admin/products');
+const userRequests = () =>
+  fetchMock.mock.calls.filter(([url]) => new URL(url).pathname === '/admin/users');
 
 beforeEach(() => {
   adminProducts = null;
+  adminUsers = null;
   fetchMock.mockClear();
   globalThis.fetch = fetchMock as unknown as typeof fetch;
 });
@@ -107,11 +139,12 @@ describe('regular users', () => {
     expect(screen).toHavePathname('/');
   });
 
-  it("don't see the Admin button on Home", async () => {
+  it("stay on Home and don't see the Admin button", async () => {
     renderRouter('src/app');
 
     await screen.findByText('Scan & compare.');
     await act(async () => {}); // let the role finish loading
+    expect(screen).toHavePathname('/');
     expect(screen.queryByRole('button', { name: 'Admin' })).not.toBeOnTheScreen();
   });
 });
@@ -129,11 +162,23 @@ describe('admins', () => {
     expect(new URL(adminRequests()[0][0]).searchParams.get('limit')).toBe('100');
   });
 
-  it('open the admin area from the Admin button on Home', async () => {
+  it('start in the admin area when the app opens', async () => {
     renderRouter('src/app');
 
-    fireEvent.press(await screen.findByRole('button', { name: 'Admin' }));
+    expect(await screen.findByText('Diet Pepsi')).toBeOnTheScreen();
+    expect(screen).toHavePathname('/admin');
+  });
 
+  it('can go back to Home without being sent to the admin area again', async () => {
+    renderRouter('src/app');
+    await screen.findByText('Diet Pepsi');
+
+    await act(async () => router.back());
+
+    expect(screen).toHavePathname('/');
+    expect(screen.getByText('Scan & compare.')).toBeOnTheScreen();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Admin' }));
     expect(screen).toHavePathname('/admin');
     expect(await screen.findByText('Diet Pepsi')).toBeOnTheScreen();
   });
@@ -187,6 +232,68 @@ describe('while the role is unknown', () => {
     });
 
     renderRouter('src/app', { initialUrl: '/admin' });
+
+    expect(await screen.findByText('Admins only')).toBeOnTheScreen();
+  });
+});
+
+describe('users list', () => {
+  beforeEach(() => signedInAs('admin'));
+
+  async function openUsers() {
+    renderRouter('src/app', { initialUrl: '/admin' });
+    await screen.findByText('Diet Pepsi');
+    fireEvent.press(screen.getByRole('tab', { name: 'Users' }));
+  }
+
+  it('shows every user with their role and whether they are active', async () => {
+    await openUsers();
+
+    expect(await screen.findByText('admin@example.com')).toBeOnTheScreen();
+    expect(screen.getByText('shopper@example.com')).toBeOnTheScreen();
+    expect(screen.getByText('2 users')).toBeOnTheScreen();
+    expect(screen.getByText('Admin')).toBeOnTheScreen();
+    expect(screen.getByText('Deactivated')).toBeOnTheScreen();
+    expect(
+      screen.getByLabelText('shopper@example.com, User, Deactivated, joined Oct 15, 2026'),
+    ).toBeOnTheScreen();
+    expect(new URL(userRequests()[0][0]).searchParams.get('limit')).toBe('100');
+  });
+
+  it('searches users by email', async () => {
+    await openUsers();
+    await screen.findByText('2 users');
+
+    fireEvent.changeText(screen.getByLabelText('Search users by email'), 'shop');
+    await act(async () => jest.advanceTimersByTime(SEARCH_DEBOUNCE_MS));
+
+    expect(await screen.findByText('1 user')).toBeOnTheScreen();
+    expect(screen.queryByText('admin@example.com')).not.toBeOnTheScreen();
+    expect(new URL(userRequests().at(-1)![0]).searchParams.get('email')).toBe('shop');
+  });
+
+  it('keeps each list’s search when switching between Products and Users', async () => {
+    renderRouter('src/app', { initialUrl: '/admin' });
+    await screen.findByText('Diet Pepsi');
+    fireEvent.changeText(screen.getByLabelText('Search products'), 'pepsi');
+    await act(async () => jest.advanceTimersByTime(SEARCH_DEBOUNCE_MS));
+    await screen.findByText('1 product');
+
+    fireEvent.press(screen.getByRole('tab', { name: 'Users' }));
+    expect(await screen.findByText('2 users')).toBeOnTheScreen();
+    expect(screen.getByLabelText('Search users by email')).toHaveProp('value', '');
+    // The users list never searched for the products' text.
+    expect(userRequests().every(([url]) => !new URL(url).searchParams.has('email'))).toBe(true);
+
+    fireEvent.press(screen.getByRole('tab', { name: 'Products' }));
+    expect(screen.getByLabelText('Search products')).toHaveProp('value', 'pepsi');
+    expect(await screen.findByText('1 product')).toBeOnTheScreen();
+  });
+
+  it('shows "Admins only" if the API refuses the users list', async () => {
+    adminUsers = { status: 403 };
+
+    await openUsers();
 
     expect(await screen.findByText('Admins only')).toBeOnTheScreen();
   });

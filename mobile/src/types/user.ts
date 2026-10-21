@@ -9,3 +9,11 @@ export type Account = {
   email: string | null;
   role: Role;
 };
+
+/** A user as admins see them, from GET /admin/users. Mirrors UserAccount in the backend. */
+export type AdminUserAccount = Account & {
+  /** False once an admin deactivates the account. */
+  active: boolean;
+  /** When the user first signed in (ISO 8601). */
+  created_at: string;
+};
