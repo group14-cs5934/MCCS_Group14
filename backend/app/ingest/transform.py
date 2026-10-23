@@ -1,7 +1,7 @@
 """Clean up raw source records into our product fields (T062).
 
 Real data is messy: prices are missing or 0, sizes are written "16.9 Ounce", "9.52oz", or not
-at all, photos are plain http, and categories are long paths. transform() fixes what it can and
+at all (the size in the product's name wins over the size field), photos are plain http, and categories are long paths. transform() fixes what it can and
 lists what it couldn't in `issues`, so one bad field never stops the import. Only a record that
 can't be a product at all (no name, or a barcode that isn't a valid UPC/EAN) is rejected, with
 RecordRejected.
@@ -11,9 +11,9 @@ Issues (a product can have several):
     price_outlier   the price is over MAX_PRICE, almost certainly a bulk or wrong listing; dropped
     price_spread    the source's highest price is over PRICE_SPREAD times its lowest; kept, but
                     worth a look
-    no_size         the size field is empty and the name has no size either
-    size_unrecognized  the size field isn't a number and unit (e.g. "One Size"); the size is
-                    taken from the name instead, if it has one
+    no_size         the name has no size and the size field is empty
+    size_unrecognized  the name has no size and the size field isn't a number and unit (e.g.
+                    "One Size"); dropped
     no_image        no https photo (phones block plain http images)
     no_category     the source has no category
     name_truncated, description_truncated  cut to fit the database
@@ -133,15 +133,18 @@ def _price(item: dict[str, Any], issues: list[str]) -> Decimal | None:
 
 
 def _size(item: dict[str, Any], name: str, issues: list[str]) -> str | None:
+    # The size in the name is what's printed on the package; the size field is often a shipping
+    # weight or pack note (the first full run, T076, had "9.00 pounds" for 72-count Goldfish).
+    from_name = normalize_size(name)  # "It's Skinny Spaghetti Pasta - 9.52oz"
+    if from_name is not None:
+        return from_name
     given = _clean(item.get("size"))
-    if given:
-        size = normalize_size(given)
-        if size is not None:
-            return size
-        issues.append("size_unrecognized")
-    size = normalize_size(name)  # "It's Skinny Spaghetti Pasta - 9.52oz"
-    if size is None and not given:
+    if not given:
         issues.append("no_size")
+        return None
+    size = normalize_size(given)
+    if size is None:
+        issues.append("size_unrecognized")
     return size
 
 

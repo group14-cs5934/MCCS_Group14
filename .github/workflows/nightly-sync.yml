@@ -24,8 +24,8 @@ jobs:
   sync:
     name: Sync products
     runs-on: ubuntu-latest
-    # UPCitemdb's trial asks for ~10 s between lookups, so 90 lookups take about 15 minutes.
-    timeout-minutes: 30
+    # Lookups are 20 s apart (UPCitemdb's trial rate limit), so 90 take about 30 minutes.
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: backend
