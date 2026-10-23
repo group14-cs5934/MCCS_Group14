@@ -523,6 +523,19 @@ If it doesn't work:
 - **Port 8000 already in use:** stop the other program, or run the API with `--port 8001` and set
   `EXPO_PUBLIC_API_URL=http://<your computer's IP>:8001` in `mobile/.env`.
 
+### Sprint 2 end-to-end check: scan, search, product page (T048)
+
+`mobile/__tests__/sprint2-e2e.test.tsx` walks these flows through the whole app on every PR, and
+fails if the app logs any error or warning. To check them on a phone, run the full stack with
+the sample catalog (`uv run python -m scripts.seed_dev`) and go through each one:
+
+| Flow | Steps | Expected |
+| ---- | ----- | -------- |
+| Scan | Home -> **Scan Product** -> point at a Diet Pepsi 20 oz (012000171741) | Its page: name, $1.59, rating; Back returns to the camera |
+| Search | Home -> **Search manually** -> type `pepsi` -> tap a result | Its page; Back returns to the same results |
+| Unknown scan | Scan any barcode not in the catalog -> **Search** -> find a product by name | "Product not found" with Retry and Search, then the product's page |
+| Mixed | Scan, close the page, search, open a result, then scan again | Every page loads; no error screens |
+
 ### Checking reviews and ratings end to end (T073)
 
 `backend/tests/test_reviews_integration.py` runs this automatically against a real database (CI
