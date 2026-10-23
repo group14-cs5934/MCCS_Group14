@@ -259,6 +259,13 @@ payloads get `422` with every problem listed.
 | `GET /products/barcode/{code}` | The same `ProductRead` for the product with this barcode, or `404`.         |
 | `GET /products/search`         | A list of `ProductRead` matching `q` and/or `category`; `[]` if none match. |
 | `POST /products/validate`      | The cleaned-up payload, or `422` listing every problem.                     |
+| `GET /products/{id}/reviews`   | A page of reviews, newest first (`limit`, `offset`), or `404`.              |
+| `POST /products/{id}/reviews`  | Saves the signed-in user's review (one per product); `401` if signed out.   |
+| `GET /locations`               | Every MCCS store, sorted by name.                                           |
+| `GET /products/{id}/availability` | Each store with `in_stock` for the product (in stock first), or `404`.   |
+
+Search also takes `store=<slug>` (only products that store carries) and `in_stock=true` (only
+products in stock there, or at any store without `store`).
 
 A missing product returns `404` with code `product_not_found`. Only digits match `{id}`, so
 `/products/abc` is also a `404`, and named routes like `/products/search` can be added without
