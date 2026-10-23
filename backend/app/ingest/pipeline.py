@@ -38,6 +38,7 @@ class SyncSummary:
     unchanged: int = 0
     failed: int = 0  # products that couldn't be saved
     saved: bool = False  # False for a dry run
+    errors: list[str] = field(default_factory=list)  # one message per rejected or failed product
 
 
 def clean_records(records: Iterable[RawRecord], summary: SyncSummary) -> list[CleanProduct]:
@@ -49,6 +50,7 @@ def clean_records(records: Iterable[RawRecord], summary: SyncSummary) -> list[Cl
             product = transform(record)
         except RecordRejected as exc:
             summary.rejected += 1
+            summary.errors.append(f"Rejected {record.source} record {record.source_id}: {exc}")
             logger.warning("Rejected %s record %s: %s", record.source, record.source_id, exc)
             continue
         if product.issues:
@@ -61,7 +63,8 @@ def clean_records(records: Iterable[RawRecord], summary: SyncSummary) -> list[Cl
 
 
 def run_sync(connector: Connector, connection: psycopg.Connection | None) -> SyncSummary:
-    """Fetch, clean, and (with a connection) save. Commits nothing; the caller commits.
+    """Fetch, clean, and (with a connection) save. Commits nothing; the caller commits (and
+    records the run, see app/ingest/runs.py).
 
     Raises SourceUnavailableError, before anything is saved, if the source can't be reached.
     """
@@ -81,7 +84,7 @@ def run_sync(connector: Connector, connection: psycopg.Connection | None) -> Syn
         logger.info("Dry run: nothing saved")
         return summary
 
-    counts = load_products(connection, products, synced_at=datetime.now(UTC))
+    counts = load_products(connection, products, synced_at=datetime.now(UTC), errors=summary.errors)
     summary.inserted, summary.updated = counts["inserted"], counts["updated"]
     summary.unchanged, summary.failed = counts["unchanged"], counts["failed"]
     summary.saved = True
