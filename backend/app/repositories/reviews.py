@@ -69,6 +69,21 @@ class ReviewRepository:
         row = self._connection.execute(_SAVE, params).fetchone()
         return self._fetch_one("WHERE r.id = %s", (row[0],)) if row is not None else None
 
+    def get_mine(self, product_id: int, user_id: UUID) -> ReviewRead | None:
+        """The user's review of the product, or None if they haven't reviewed it."""
+        if not 0 < product_id <= _MAX_ID:
+            return None
+        return self._fetch_one("WHERE r.product_id = %s AND r.user_id = %s", (product_id, user_id))
+
+    def delete_mine(self, product_id: int, user_id: UUID) -> bool:
+        """Remove the user's review of the product. False if they hadn't reviewed it."""
+        if not 0 < product_id <= _MAX_ID:
+            return False
+        cursor = self._connection.execute(
+            "DELETE FROM reviews WHERE product_id = %s AND user_id = %s", (product_id, user_id)
+        )
+        return cursor.rowcount > 0
+
     def list_for_product(self, product_id: int, limit: int, offset: int) -> ReviewPage | None:
         """A page of the product's reviews, newest first, with the total count. None if there's
         no product with this ID."""

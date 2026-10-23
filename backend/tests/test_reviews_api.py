@@ -1,7 +1,9 @@
 """Review endpoints against a real database (skipped without TEST_DATABASE_URL).
 
 T059 acceptance: when a signed-in user posts a valid review, it is saved and returned. T060
-acceptance: when a product has 25 reviews, they are returned 10 per page, newest first.
+acceptance: when a product has 25 reviews, they are returned 10 per page, newest first. T072:
+each review is linked to the account that wrote it. Sign-in checks with real tokens are in
+test_review_rating_access.py.
 """
 
 from collections.abc import Iterator
@@ -250,3 +252,50 @@ def test_bad_paging_values_are_422(client, product_id, params) -> None:
     response = client.get(f"/products/{product_id}/reviews", params=params)
 
     assert response.status_code == 422
+
+
+def test_review_is_linked_to_the_signed_in_users_account(client, connection, product_id) -> None:
+    client.post(f"/products/{product_id}/reviews", json=REVIEW)
+
+    connection.commit()
+    row = connection.execute(
+        "SELECT u.id, u.email FROM reviews AS r JOIN users AS u ON u.id = r.user_id"
+    ).fetchone()
+    assert row == (ALICE.id, ALICE.email)
+
+
+def test_deleting_an_account_removes_its_reviews(client, connection, product_id) -> None:
+    client.post(f"/products/{product_id}/reviews", json=REVIEW)
+
+    connection.commit()
+    connection.execute("DELETE FROM users WHERE id = %s", (ALICE.id,))
+    assert stored(connection) == []
+
+
+def test_my_review_is_404_until_i_write_one(client, product_id) -> None:
+    response = client.get(f"/products/{product_id}/reviews/me")
+    assert response.status_code == 404
+    assert response.json()["code"] == "review_not_found"
+
+    client.post(f"/products/{product_id}/reviews", json=REVIEW)
+
+    assert client.get(f"/products/{product_id}/reviews/me").json()["body"] == REVIEW["body"]
+
+
+def test_my_review_is_only_mine(session, product_id) -> None:
+    session.client.post(f"/products/{product_id}/reviews", json=REVIEW)
+    session.user = BOB
+
+    assert session.client.get(f"/products/{product_id}/reviews/me").status_code == 404
+
+
+def test_removing_my_review_leaves_others(session, connection, product_id) -> None:
+    session.client.post(f"/products/{product_id}/reviews", json={"body": "Alice's review."})
+    session.user = BOB
+    session.client.post(f"/products/{product_id}/reviews", json={"body": "Bob's review."})
+
+    response = session.client.delete(f"/products/{product_id}/reviews/me")
+
+    assert response.status_code == 204
+    assert stored(connection) == [(product_id, ALICE.id, None, "Alice's review.")]
+    assert session.client.delete(f"/products/{product_id}/reviews/me").status_code == 404
