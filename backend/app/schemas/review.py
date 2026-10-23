@@ -79,6 +79,15 @@ class ReviewRead(BaseModel):
     updated_at: datetime = Field(description="When the review was last edited")
 
 
+class ReviewPage(BaseModel):
+    """One page of a product's reviews, newest first."""
+
+    items: list[ReviewRead]
+    total: int = Field(ge=0, description="How many reviews the product has in all")
+    limit: int = Field(description="Most reviews per page, as requested")
+    offset: int = Field(description="Reviews skipped before this page, as requested")
+
+
 def author_name(email: str | None) -> str:
     """How a reviewer is shown: the first letter of their email, e.g. alice@example.com ->
     "a***". Reviews are public, so the full email is never sent."""
