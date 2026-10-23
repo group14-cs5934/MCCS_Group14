@@ -59,5 +59,12 @@ class ProductRead(ProductBase):
     brand: BrandRead | None = None
     category: CategoryRead | None = None
     price: PriceRead | None = Field(default=None, description="Most recent price, if any")
+    source: str | None = Field(
+        default=None, description="Data source it was imported from; null if added by hand"
+    )
+    source_id: str | None = Field(default=None, description="The product's ID in that source")
+    last_synced_at: datetime | None = Field(
+        default=None, description="When it was last imported or refreshed from its source"
+    )
     created_at: datetime
     updated_at: datetime

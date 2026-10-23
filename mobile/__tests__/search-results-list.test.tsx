@@ -29,6 +29,9 @@ const FOLGERS: Product = {
     source: 'MCCS',
     observed_at: '2026-10-11T19:19:16Z',
   },
+  source: null,
+  source_id: null,
+  last_synced_at: null,
   created_at: '2026-10-11T19:19:16Z',
   updated_at: '2026-10-11T19:19:16Z',
 };

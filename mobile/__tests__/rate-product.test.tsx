@@ -26,6 +26,9 @@ const PRODUCT: Product = {
   brand: null,
   category: null,
   price: null,
+  source: null,
+  source_id: null,
+  last_synced_at: null,
   created_at: '2026-10-16T12:00:00Z',
   updated_at: '2026-10-16T12:00:00Z',
 };
