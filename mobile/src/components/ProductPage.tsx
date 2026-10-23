@@ -16,6 +16,7 @@ import AsyncContent from '@/components/AsyncContent';
 import Button from '@/components/Button';
 import ErrorState from '@/components/ErrorState';
 import RateProduct from '@/components/RateProduct';
+import ReviewForm from '@/components/ReviewForm';
 import ReviewList from '@/components/ReviewList';
 import StarRating from '@/components/StarRating';
 import type { ProductState } from '@/hooks/useProduct';
@@ -220,6 +221,8 @@ function ProductDetails({ product }: { product: Product }) {
 
         {tab === 'reviews' ? (
           <View style={styles.reviews}>
+            {/* Posting reloads the list, so the new review shows at the top. */}
+            <ReviewForm productId={product.id} onPosted={reviews.reload} />
             <ReviewList state={reviews} />
           </View>
         ) : (
