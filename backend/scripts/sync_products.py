@@ -4,14 +4,16 @@
     uv run python -m scripts.sync_products --barcode 012000001291
     uv run python -m scripts.sync_products --file scripts/sample_products.json   # offline
 
-For now this fetches and reports what the source has (T061); cleaning the records and saving
-them to the database are added by T062 and T063. If the source is down, it logs why and exits
-with status 1, without a traceback.
+For now this fetches the records (T061), cleans them up (T062), and reports what it found;
+saving them to the database is added by T063. Records that can't be products are rejected and
+logged, and fixable problems (e.g. a missing price) are listed per product. If the source is
+down, it logs why and exits with status 1, without a traceback.
 """
 
 import argparse
 import logging
 import sys
+from collections import Counter
 from pathlib import Path
 
 from app.ingest.connectors import (
@@ -21,6 +23,7 @@ from app.ingest.connectors import (
     UpcItemDbConnector,
     read_barcodes,
 )
+from app.ingest.transform import CleanProduct, RecordRejected, transform
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 DEFAULT_BARCODES_FILE = SCRIPTS_DIR / "catalog_barcodes.txt"
@@ -59,6 +62,28 @@ def main(argv: list[str] | None = None, connector: Connector | None = None) -> i
         logger.error("Sync stopped: the %s source is unavailable. %s", connector.source, exc)
         return 1
     logger.info("Fetched %d records from %s", len(records), connector.source)
+
+    products: list[CleanProduct] = []
+    rejected = 0
+    for record in records:
+        try:
+            product = transform(record)
+        except RecordRejected as exc:
+            rejected += 1
+            logger.warning("Rejected %s record %s: %s", record.source, record.source_id, exc)
+            continue
+        if product.issues:
+            logger.info("%s %s: %s", product.barcode, product.name, ", ".join(product.issues))
+        products.append(product)
+
+    issues = Counter(issue for product in products for issue in product.issues)
+    logger.info(
+        "Cleaned %d products (%d with issues), rejected %d. Issues: %s",
+        len(products),
+        sum(1 for product in products if product.issues),
+        rejected,
+        ", ".join(f"{name} {count}" for name, count in issues.most_common()) or "none",
+    )
     return 0
 
 
