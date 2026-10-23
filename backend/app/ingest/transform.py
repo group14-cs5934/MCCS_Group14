@@ -147,7 +147,10 @@ def _size(item: dict[str, Any], name: str, issues: list[str]) -> str | None:
 
 def _image_url(item: dict[str, Any], issues: list[str]) -> str | None:
     # Phones block plain-http images by default, so only use an https photo.
-    for url in item.get("images") or []:
+    images = item.get("images") or []
+    if isinstance(images, str):  # one photo sent on its own instead of in a list
+        images = [images]
+    for url in images if isinstance(images, list) else []:
         if isinstance(url, str) and url.startswith("https://") and len(url) <= 2000:
             return url
     issues.append("no_image")

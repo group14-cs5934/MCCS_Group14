@@ -119,13 +119,16 @@ class UpcItemDbConnector:
         except ValueError as exc:  # the response wasn't JSON
             raise SourceUnavailableError("UPCitemdb sent a response that isn't JSON") from exc
 
+        if not isinstance(data, dict):
+            raise SourceUnavailableError("UPCitemdb sent an unexpected response (not an object)")
         code = data.get("code")
         if code in _UPCITEMDB_STOP_CODES:
             raise SourceUnavailableError(f"UPCitemdb refused the request ({code})")
         if code != "OK":
             logger.warning("UPCitemdb answered %s for barcode %s", code, barcode)
             return []
-        return [item for item in data.get("items") or [] if isinstance(item, dict)]
+        items = data.get("items")
+        return [item for item in items if isinstance(item, dict)] if isinstance(items, list) else []
 
 
 class JsonFileConnector:

@@ -1,0 +1,141 @@
+[
+  {
+    "why": "check digit is wrong",
+    "item": {
+      "ean": "0012000171742",
+      "title": "Typo in barcode",
+      "lowest_recorded_price": 1.0
+    },
+    "reject": true
+  },
+  {
+    "why": "too few digits",
+    "item": {
+      "ean": "12345",
+      "title": "Short barcode"
+    },
+    "reject": true
+  },
+  {
+    "why": "letters in the barcode",
+    "item": {
+      "ean": "00120001717AB",
+      "title": "Letters"
+    },
+    "reject": true
+  },
+  {
+    "why": "no name",
+    "item": {
+      "ean": "0012000001291",
+      "title": "",
+      "lowest_recorded_price": 2.0
+    },
+    "reject": true
+  },
+  {
+    "why": "name is only spaces",
+    "item": {
+      "ean": "0012000001291",
+      "title": "   \n "
+    },
+    "reject": true
+  },
+  {
+    "why": "no barcode at all",
+    "item": {
+      "title": "Mystery product"
+    },
+    "reject": "skipped"
+  },
+  {
+    "why": "price is text",
+    "item": {
+      "ean": "0012000001291",
+      "title": "Pepsi 20 fl oz",
+      "lowest_recorded_price": "about two dollars"
+    },
+    "reject": false,
+    "issues": [
+      "no_image",
+      "no_category",
+      "no_price"
+    ]
+  },
+  {
+    "why": "price is an object",
+    "item": {
+      "ean": "0012000001291",
+      "title": "Pepsi 20 fl oz",
+      "lowest_recorded_price": {
+        "usd": 2
+      }
+    },
+    "reject": false,
+    "issues": [
+      "no_image",
+      "no_category",
+      "no_price"
+    ]
+  },
+  {
+    "why": "images is a string, not a list",
+    "item": {
+      "ean": "0012000001291",
+      "title": "Pepsi 20 fl oz",
+      "images": "https://example.com/p.jpg",
+      "lowest_recorded_price": 2
+    },
+    "reject": false,
+    "issues": [
+      "no_category"
+    ]
+  },
+  {
+    "why": "category is a number",
+    "item": {
+      "ean": "0012000001291",
+      "title": "Pepsi 20 fl oz",
+      "category": 42,
+      "images": [
+        "https://e.com/p.jpg"
+      ],
+      "lowest_recorded_price": 2
+    },
+    "reject": false,
+    "issues": []
+  },
+  {
+    "why": "size is a number",
+    "item": {
+      "ean": "0012000001291",
+      "title": "Pepsi",
+      "size": 20,
+      "images": [
+        "https://e.com/p.jpg"
+      ],
+      "category": "Soda",
+      "lowest_recorded_price": 2
+    },
+    "reject": false,
+    "issues": [
+      "size_unrecognized"
+    ]
+  },
+  {
+    "why": "title is a number",
+    "item": {
+      "ean": "0012000001291",
+      "title": 7,
+      "images": [
+        "https://e.com/p.jpg"
+      ],
+      "category": "Soda",
+      "lowest_recorded_price": 2
+    },
+    "reject": false,
+    "issues": [
+      "no_size"
+    ]
+  }
+]
