@@ -24,8 +24,9 @@ logger = logging.getLogger("app.ingest")
 UPCITEMDB = "upcitemdb"
 UPCITEMDB_LOOKUP_URL = "https://api.upcitemdb.com/prod/trial/lookup"
 REQUEST_TIMEOUT_SECONDS = 20
-# The free trial allows about 6 lookups a minute (and 100 a day), so wait between requests.
-UPCITEMDB_DELAY_SECONDS = 10.0
+# The free trial allows 100 requests a day and answers TOO_FAST to bursts; 10 s apart still got
+# TOO_FAST in the first full run (T076), so wait 20 s between requests.
+UPCITEMDB_DELAY_SECONDS = 20.0
 # UPCitemdb error codes that mean "stop for now", not "this barcode is bad".
 _UPCITEMDB_STOP_CODES = {"TOO_FAST", "EXCEED_LIMIT", "SERVER_ERR"}
 

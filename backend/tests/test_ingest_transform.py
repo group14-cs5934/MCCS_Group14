@@ -109,18 +109,31 @@ def test_text_without_a_size_gives_none(text) -> None:
     assert normalize_size(text) is None
 
 
-def test_size_field_wins_over_the_name() -> None:
-    assert clean(size="2 Liters").size == "2 L"
+def test_size_in_the_name_wins_over_the_size_field() -> None:
+    # Seen in the first full run: 72-count Goldfish with a size field of "9.00 pounds".
+    product = clean(title="Pepperidge Farm Goldfish Crackers 72 Count", size="9.00 pounds")
+
+    assert product.size == "72 ct"
+
+
+def test_size_field_is_used_when_the_name_has_none() -> None:
+    assert clean(title="Diet Pepsi Bottle", size="2 Liters").size == "2 L"
 
 
 def test_size_is_taken_from_the_name_when_the_field_is_empty() -> None:
     assert clean(size="", title="It's Skinny Spaghetti Pasta - 9.52oz").size == "9.52 oz"
 
 
-def test_unrecognized_size_is_flagged_and_the_name_is_used() -> None:
+def test_unrecognized_size_field_is_flagged_when_the_name_has_none() -> None:
+    product = clean(size="One Size", title="Cereal")
+
+    assert (product.size, product.issues) == (None, ("size_unrecognized",))
+
+
+def test_unrecognized_size_field_doesnt_matter_when_the_name_has_one() -> None:
     product = clean(size="One Size", title="Cereal 8.6 oz")
 
-    assert (product.size, product.issues) == ("8.6 oz", ("size_unrecognized",))
+    assert (product.size, product.issues) == ("8.6 oz", ())
 
 
 def test_no_size_anywhere_is_flagged() -> None:
