@@ -60,6 +60,20 @@ def _same_barcode_forms(barcode: str) -> list[str]:
     return [digits.zfill(length) for length in GTIN_LENGTHS if len(digits) <= length]
 
 
+# Search filters by store (T075). product_stock's (product_id, store_id) unique index finds a
+# product's stock rows.
+_AT_STORE = """EXISTS (
+    SELECT 1 FROM product_stock AS ps JOIN store_locations AS s ON s.id = ps.store_id
+    WHERE ps.product_id = p.id AND s.slug = %(store)s
+)"""
+_AT_STORE_IN_STOCK = """EXISTS (
+    SELECT 1 FROM product_stock AS ps JOIN store_locations AS s ON s.id = ps.store_id
+    WHERE ps.product_id = p.id AND s.slug = %(store)s AND ps.in_stock
+)"""
+_IN_STOCK_ANYWHERE = """EXISTS (
+    SELECT 1 FROM product_stock AS ps WHERE ps.product_id = p.id AND ps.in_stock
+)"""
+
 # Product columns an admin can set (T087). Updates only ever name columns from this list.
 _EDITABLE_COLUMNS = (
     "barcode",
@@ -110,18 +124,31 @@ class ProductRepository:
         )
 
     def search(
-        self, query: str = "", category: str | None = None, limit: int = 20, offset: int = 0
+        self,
+        query: str = "",
+        category: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+        store: str | None = None,
+        in_stock: bool = False,
     ) -> list[ProductRead]:
         """Products whose name matches `query`, best match first, and/or that are in the category
-        with slug `category` (then sorted by name). Empty if neither is given.
+        with slug `category` (then sorted by name). Empty if no filter is given.
+
+        `store` (a store's slug) keeps only products that store carries (it has a stock record for
+        them), and with `in_stock`, only those in stock there. `in_stock` alone keeps products in
+        stock at any store. Either can also be used without a query or category, to browse.
 
         Small typos still match ("coffe" finds "Ground Coffee"): a product matches when one of
         its words is close enough to the query (pg_trgm word similarity; see migration 003).
         """
         query = query.strip()
         category = (category or "").strip().lower()
+        store = (store or "").strip().lower()
         # Postgres rejects text containing NUL, and no name or slug contains one.
-        if (not query and not category) or "\x00" in query + category:
+        if (not query and not category and not store and not in_stock) or "\x00" in (
+            query + category + store
+        ):
             return []
 
         # Built only from the constants below; values only ever go in `params`.
@@ -130,8 +157,18 @@ class ProductRepository:
             conditions.append("%(query)s <%% p.name")
         if category:
             conditions.append("c.slug = %(category)s")
+        if store:
+            conditions.append(_AT_STORE_IN_STOCK if in_stock else _AT_STORE)
+        elif in_stock:
+            conditions.append(_IN_STOCK_ANYWHERE)
         order = "word_similarity(%(query)s, p.name) DESC, p.name, p.id" if query else "p.name, p.id"
-        params = {"query": query, "category": category, "limit": limit, "offset": offset}
+        params = {
+            "query": query,
+            "category": category,
+            "store": store,
+            "limit": limit,
+            "offset": offset,
+        }
         return self._fetch_all(
             f"WHERE {' AND '.join(conditions)} ORDER BY {order} LIMIT %(limit)s OFFSET %(offset)s",
             params,

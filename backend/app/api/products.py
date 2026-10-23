@@ -42,14 +42,23 @@ def search_products(
     ] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_SEARCH_LIMIT)] = 20,
     offset: Annotated[int, Query(ge=0, le=10_000, description="Results to skip, for paging")] = 0,
+    store: Annotated[
+        str | None,
+        Query(max_length=200, description="Only products this store carries (its slug)"),
+    ] = None,
+    in_stock: Annotated[
+        bool, Query(description="Only products in stock (at `store`, or at any store)")
+    ] = False,
 ) -> list[ProductRead]:
-    """Products matching a name search (best match first) and/or in one category (by slug).
+    """Products matching a name search (best match first) and/or in one category (by slug),
+    optionally only those a store carries or has in stock.
 
-    Always a list: no matches, a blank search, or an unknown category give [], never an error.
-    For example, /products/search?q=coffe finds coffee, and ?q=chips&category=snacks finds chips
-    in Snacks only.
+    Always a list: no matches, a blank search, or an unknown category or store give [], never an
+    error. For example, /products/search?q=coffe finds coffee, ?q=chips&category=snacks finds
+    chips in Snacks only, and ?q=chips&store=camp-lejeune-mcx&in_stock=true finds chips in stock
+    at the Camp Lejeune MCX. store and in_stock also work on their own, to browse.
     """
-    return products.search(q, category, limit=limit, offset=offset)
+    return products.search(q, category, limit=limit, offset=offset, store=store, in_stock=in_stock)
 
 
 # ":int" makes this route match digits only, so /products/abc is a 404 (not a 422) and named

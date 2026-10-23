@@ -66,6 +66,8 @@ class Search:
     category: str | None
     limit: int
     offset: int
+    store: str | None = None
+    in_stock: bool = False
 
 
 class FakeProducts:
@@ -92,9 +94,17 @@ class FakeProducts:
         return self._by_barcode.get(barcode)
 
     def search(
-        self, query: str = "", category: str | None = None, limit: int = 20, offset: int = 0
+        self,
+        query: str = "",
+        category: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+        store: str | None = None,
+        in_stock: bool = False,
     ) -> list[ProductRead]:
-        self.searches.append(Search(query, category, limit, offset))
+        """Ignores store and in_stock (FakeProducts has no stock); those are tested against
+        Postgres in test_product_search_by_store.py."""
+        self.searches.append(Search(query, category, limit, offset, store, in_stock))
         query, category = query.strip().lower(), (category or "").strip().lower()
         if not query and not category:
             return []
