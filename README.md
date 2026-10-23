@@ -471,6 +471,24 @@ with `app.dependency_overrides[get_product_repository] = lambda: fake`, using `F
 from `tests/fakes.py` (see `tests/test_product_search_unit.py`). Keep a few database tests too,
 so the real SQL is covered.
 
+## Product data sync
+
+`scripts/sync_products.py` pulls real products into the catalog: it fetches them from the data
+source (UPCitemdb, the source the T022 spike used), cleans them up (prices, sizes, photos,
+categories), and saves them to `DATABASE_URL`, updating products that are already stored instead
+of adding duplicates. From `backend/`:
+
+```sh
+uv run python -m scripts.sync_products --file scripts/sample_products.json   # offline, saved data
+uv run python -m scripts.sync_products --dry-run      # look up scripts/catalog_barcodes.txt, save nothing
+uv run python -m scripts.sync_products --include-stored --limit 90           # what runs nightly
+```
+
+**Nightly sync.** [`.github/workflows/nightly-sync.yml`](.github/workflows/nightly-sync.yml) runs
+the last command every night at 07:00 UTC (and on demand from the Actions tab). It needs the
+repository secret `SYNC_DATABASE_URL` (the Supabase connection string); without it, the job skips
+the sync. UPCitemdb's free trial allows 100 lookups a day, hence `--limit 90`.
+
 ## Running the full stack (app ↔ API ↔ database)
 
 Use this to check the whole chain end to end (the T025 integration test). Commands are for Git

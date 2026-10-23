@@ -1,0 +1,59 @@
+# Refreshes the product catalog from the data source every night (T065), so prices and details
+# stay current without anyone running the sync by hand. It can also be started from the Actions
+# tab ("Run workflow").
+#
+# Needs one repository secret, SYNC_DATABASE_URL: the Postgres connection string of the database
+# to update (Supabase: Project Settings -> Database -> Connection string). Until it's added, the
+# job skips the sync and says so.
+name: Nightly product sync
+
+on:
+  schedule:
+    - cron: "0 7 * * *" # 07:00 UTC, i.e. 3 a.m. Eastern (2 a.m. in winter)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never run two syncs at once.
+concurrency:
+  group: nightly-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Sync products
+    runs-on: ubuntu-latest
+    # UPCitemdb's trial asks for ~10 s between lookups, so 90 lookups take about 15 minutes.
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      DATABASE_URL: ${{ secrets.SYNC_DATABASE_URL }}
+    steps:
+      - name: Check the database secret
+        id: secret
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::notice::SYNC_DATABASE_URL isn't set, so there's no database to sync into. Skipping."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+        working-directory: .
+
+      - uses: actions/checkout@v7
+        if: steps.secret.outputs.configured == 'true'
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        if: steps.secret.outputs.configured == 'true'
+
+      - name: Install dependencies
+        if: steps.secret.outputs.configured == 'true'
+        run: uv sync --locked --no-dev
+
+      # Stays under UPCitemdb's free limit of 100 lookups a day.
+      - name: Sync products
+        if: steps.secret.outputs.configured == 'true'
+        run: uv run python -m scripts.sync_products --include-stored --limit 90
