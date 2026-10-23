@@ -516,6 +516,18 @@ If it doesn't work:
 - **Port 8000 already in use:** stop the other program, or run the API with `--port 8001` and set
   `EXPO_PUBLIC_API_URL=http://<your computer's IP>:8001` in `mobile/.env`.
 
+### Checking reviews and ratings end to end (T073)
+
+`backend/tests/test_reviews_integration.py` runs this automatically against a real database (CI
+runs it on every PR). To see it on a device, with the full stack running and two accounts:
+
+1. Sign in as the first account, open a product, tap a star, then open **Reviews**, write a
+   review, and tap **Post review**. It appears at the top of the list.
+2. Sign out, sign in as the second account, and open the same product's **Reviews** tab: the
+   first account's review is there with its stars, shown as e.g. `a***` (never the email).
+3. In Supabase's table editor (or `psql`), the `reviews` row's `user_id` is the first account's
+   ID in `users`.
+
 ## Continuous integration
 
 GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs on every pull request
