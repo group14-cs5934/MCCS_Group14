@@ -152,11 +152,14 @@ def _record_price(
 
 
 def load_products(
-    connection: psycopg.Connection, products: list[CleanProduct], synced_at: datetime
+    connection: psycopg.Connection,
+    products: list[CleanProduct],
+    synced_at: datetime,
+    errors: list[str] | None = None,
 ) -> dict[str, int]:
-    """Upsert each product in its own savepoint, so a database error on one (logged) doesn't stop
-    the rest. Returns how many were inserted, updated, unchanged, and failed. The caller
-    commits."""
+    """Upsert each product in its own savepoint, so a database error on one (logged, and added
+    to `errors` if given) doesn't stop the rest. Returns how many were inserted, updated,
+    unchanged, and failed. The caller commits."""
     counts = {result.value: 0 for result in LoadResult} | {"failed": 0}
     for product in products:
         try:
@@ -164,7 +167,10 @@ def load_products(
                 _, result = upsert_product(connection, product, synced_at)
         except psycopg.Error as exc:
             counts["failed"] += 1
-            logger.error("Couldn't save %s %s: %s", product.barcode, product.name, exc)
+            message = f"Couldn't save {product.barcode} {product.name}: {exc}"
+            logger.error("%s", message)
+            if errors is not None:
+                errors.append(message)
             continue
         counts[result.value] += 1
     return counts

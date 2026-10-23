@@ -14,6 +14,9 @@ why and exits with status 1, without a traceback or any change to the database.
 --include-stored also refreshes every product already imported (synced longest ago first), and
 --limit caps the lookups (UPCitemdb's free trial allows 100 a day). The nightly GitHub Actions job
 runs it this way (T065).
+
+Every run that saves (not --dry-run) is recorded in the ingest_runs table with its start and end
+time, counts, and errors, including runs that fail (T066).
 """
 
 import argparse
@@ -33,7 +36,8 @@ from app.ingest.connectors import (
     UpcItemDbConnector,
     read_barcodes,
 )
-from app.ingest.pipeline import plan_barcodes, run_sync, stored_barcodes
+from app.ingest.pipeline import SyncSummary, plan_barcodes, run_sync, stored_barcodes
+from app.ingest.runs import finish_run, run_status, start_run
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 DEFAULT_BARCODES_FILE = SCRIPTS_DIR / "catalog_barcodes.txt"
@@ -98,14 +102,40 @@ def _sync(
     args: argparse.Namespace, connector: Connector | None, connection: psycopg.Connection | None
 ) -> int:
     connector = connector or build_connector(args, connection)
+    if args.dry_run or connection is None:
+        try:
+            run_sync(connector, None)
+        except SourceUnavailableError as exc:
+            logger.error("Sync stopped: the %s source is unavailable. %s", connector.source, exc)
+            return 1
+        return 0
+
+    # Every real run is recorded in ingest_runs (T066), however it ends.
+    run_id = start_run(connection, connector.source)
+    logger.info("Sync run %d started", run_id)
     try:
-        summary = run_sync(connector, None if args.dry_run else connection)
+        summary = run_sync(connector, connection)
     except SourceUnavailableError as exc:
-        logger.error("Sync stopped: the %s source is unavailable. %s", connector.source, exc)
-        return 1
-    if connection is not None and summary.saved:
-        connection.commit()
+        message = f"The {connector.source} source is unavailable. {exc}"
+        logger.error("Sync stopped: %s", message)
+        return _fail_run(connection, run_id, message)
+    except Exception as exc:  # anything unexpected: record it, then show the traceback
+        logger.exception("Sync run %d crashed", run_id)
+        return _fail_run(connection, run_id, f"Unexpected error: {type(exc).__name__}: {exc}")
+
+    status = run_status(summary)
+    finish_run(connection, run_id, summary, status, summary.errors)
+    connection.commit()  # the products and the run's record together
+    logger.info("Sync run %d %s", run_id, status)
     return 1 if summary.failed else 0
+
+
+def _fail_run(connection: psycopg.Connection, run_id: int, message: str) -> int:
+    """Undo the run's changes and record it as failed."""
+    connection.rollback()
+    finish_run(connection, run_id, SyncSummary(), "failed", [message])
+    connection.commit()
+    return 1
 
 
 if __name__ == "__main__":
