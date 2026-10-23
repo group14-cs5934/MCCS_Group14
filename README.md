@@ -87,6 +87,7 @@ appear on the dev **Theme preview** screen (link on Home in development builds).
 | `CameraPermissionGate` | Wraps anything that needs the camera; asks for access and handles "denied" for you.  |
 | `BarcodeScanner`       | Live camera for UPC/EAN barcodes; `onScanned` gets one once it stays in view 0.5s.   |
 | `ProductPage`          | Body of the product page; shared by the by-ID and by-barcode product routes.         |
+| `ReviewList`           | A product's reviews from `useReviews`; loads the next page via `loadMore`.           |
 | `SearchResultsList`    | List of product cards (photo, name, size, price); `onOpen` gets the tapped product.  |
 | `StarRating`           | Five stars. With `onChange`, tap to rate 1–5; without, shows e.g. an average (½s).   |
 
