@@ -191,7 +191,7 @@ def test_sync_command_reports_rejected_and_flagged_records(tmp_path, caplog) -> 
     )
 
     with caplog.at_level(logging.INFO, logger="app.ingest"):
-        status = sync_products.main(["--file", str(path)])
+        status = sync_products.main(["--dry-run", "--file", str(path)])
 
     assert status == 0
     assert "Rejected upcitemdb record 0012000171742" in caplog.text
