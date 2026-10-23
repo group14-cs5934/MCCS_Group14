@@ -87,13 +87,13 @@ class UpcItemDbConnector:
         delay_seconds: float = UPCITEMDB_DELAY_SECONDS,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
-        self._barcodes = list(barcodes)
+        self.barcodes = list(barcodes)
         self._post = post
         self._delay = delay_seconds
         self._sleep = sleep
 
     def fetch(self) -> Iterator[RawRecord]:
-        for number, barcode in enumerate(self._barcodes):
+        for number, barcode in enumerate(self.barcodes):
             if number:
                 self._sleep(self._delay)
             items = self._lookup(barcode)
