@@ -1,8 +1,9 @@
 """Clean up raw source records into our product fields (T062).
 
 Real data is messy: prices are missing or 0, sizes are written "16.9 Ounce", "9.52oz", or not
-at all (the size in the product's name wins over the size field), photos are plain http, and categories are long paths. transform() fixes what it can and
-lists what it couldn't in `issues`, so one bad field never stops the import. Only a record that
+at all (the size in the product's name wins over the size field), photos are plain http, and
+categories are long paths. transform() fixes what it can and lists what it couldn't in `issues`,
+so one bad field never stops the import. Only a record that
 can't be a product at all (no name, or a barcode that isn't a valid UPC/EAN) is rejected, with
 RecordRejected.
 
