@@ -59,6 +59,9 @@ def test_found_returns_200_with_the_full_product(client, products) -> None:
             "source": "MCCS",
             "observed_at": "2026-10-01T09:30:00Z",
         },
+        "source": None,
+        "source_id": None,
+        "last_synced_at": None,
         "created_at": "2026-09-30T12:00:00Z",
         "updated_at": "2026-09-30T12:00:00Z",
     }

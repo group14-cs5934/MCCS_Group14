@@ -19,7 +19,8 @@ _MAX_ID = 2**31 - 1
 _PRODUCT_QUERY = """
 SELECT
     p.id, p.barcode, p.name, p.description, p.size, p.image_url,
-    p.brand_id, p.category_id, p.created_at, p.updated_at,
+    p.brand_id, p.category_id, p.source, p.source_id, p.last_synced_at,
+    p.created_at, p.updated_at,
     c.id AS category__id,
     c.name AS category__name,
     c.slug AS category__slug,

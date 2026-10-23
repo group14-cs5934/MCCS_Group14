@@ -44,6 +44,12 @@ export type Product = {
   category: Category | null;
   /** Most recent price, if any. */
   price: Price | null;
+  /** Data source it was imported from, e.g. "upcitemdb"; null if added by hand. */
+  source: string | null;
+  /** The product's ID in that source. */
+  source_id: string | null;
+  /** When it was last imported or refreshed from its source. */
+  last_synced_at: IsoDateTime | null;
   created_at: IsoDateTime;
   updated_at: IsoDateTime;
 };
