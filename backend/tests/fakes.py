@@ -14,6 +14,8 @@ from app.schemas import (
     ProductRead,
     RatingRead,
     RatingSummary,
+    ReviewPage,
+    ReviewRead,
     Role,
     UserAccount,
 )
@@ -137,6 +139,53 @@ class FakeRatings:
         stars = [r.stars for (pid, _), r in self.ratings.items() if pid == product_id]
         average = round(sum(stars) / len(stars), 2) if stars else None
         return RatingSummary(product_id=product_id, average=average, count=len(stars))
+
+
+class FakeReviews:
+    """Stands in for ReviewRepository: one review per (product, user), kept in the order written.
+
+    Only the product IDs given exist, like the products in a database. Authors are shown as
+    "u***" (the real repository shortens the author's email).
+    """
+
+    def __init__(self, *product_ids: int) -> None:
+        self._product_ids = set(product_ids)
+        self.reviews: dict[tuple[int, UUID], ReviewRead] = {}
+
+    def save(
+        self, product_id: int, user_id: UUID, title: str | None, body: str
+    ) -> ReviewRead | None:
+        if product_id not in self._product_ids:
+            return None
+        key = (product_id, user_id)
+        earlier = self.reviews.pop(key, None)
+        self.reviews[key] = ReviewRead(
+            id=earlier.id if earlier else len(self.reviews) + 1,
+            product_id=product_id,
+            title=title,
+            body=body,
+            author="u***",
+            created_at=earlier.created_at if earlier else CREATED,
+            updated_at=CREATED,
+        )
+        return self.reviews[key]
+
+    def get_mine(self, product_id: int, user_id: UUID) -> ReviewRead | None:
+        return self.reviews.get((product_id, user_id))
+
+    def delete_mine(self, product_id: int, user_id: UUID) -> bool:
+        return self.reviews.pop((product_id, user_id), None) is not None
+
+    def list_for_product(self, product_id: int, limit: int, offset: int) -> ReviewPage | None:
+        if product_id not in self._product_ids:
+            return None
+        newest_first = [r for (pid, _), r in reversed(self.reviews.items()) if pid == product_id]
+        return ReviewPage(
+            items=newest_first[offset : offset + limit],
+            total=len(newest_first),
+            limit=limit,
+            offset=offset,
+        )
 
 
 class FakeUsers:
