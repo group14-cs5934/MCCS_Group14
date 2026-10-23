@@ -174,7 +174,7 @@ def test_sync_command_fetches_and_reports(caplog) -> None:
     fake = FakeUpcItemDb({"012000001291": COKE})
 
     with caplog.at_level(logging.INFO, logger="app.ingest"):
-        status = sync_products.main([], connector=connector(fake, "012000001291"))
+        status = sync_products.main(["--dry-run"], connector=connector(fake, "012000001291"))
 
     assert status == 0
     assert "Fetched 1 records from upcitemdb" in caplog.text
@@ -184,7 +184,7 @@ def test_sync_command_exits_cleanly_when_the_source_is_down(caplog) -> None:
     fake = FakeUpcItemDb({}, fail=urllib.error.URLError("Network is unreachable"))
 
     with caplog.at_level(logging.INFO, logger="app.ingest"):
-        status = sync_products.main([], connector=connector(fake, "012000001291"))
+        status = sync_products.main(["--dry-run"], connector=connector(fake, "012000001291"))
 
     assert status == 1  # an error status, but no exception or traceback
     assert "Sync stopped: the upcitemdb source is unavailable" in caplog.text
@@ -193,7 +193,7 @@ def test_sync_command_exits_cleanly_when_the_source_is_down(caplog) -> None:
 
 def test_sync_command_reads_a_file_offline(caplog) -> None:
     with caplog.at_level(logging.INFO, logger="app.ingest"):
-        status = sync_products.main(["--file", str(SAMPLE_CATALOG_FILE)])
+        status = sync_products.main(["--dry-run", "--file", str(SAMPLE_CATALOG_FILE)])
 
     assert status == 0
     assert "Fetched 18 records" in caplog.text

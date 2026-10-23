@@ -50,7 +50,7 @@ def _pop_nested(row: dict[str, Any], field: str) -> dict[str, Any] | None:
     return nested if nested["id"] is not None else None
 
 
-def _same_barcode_forms(barcode: str) -> list[str]:
+def same_barcode_forms(barcode: str) -> list[str]:
     """Every length this barcode can be written at by adding or removing leading zeros.
 
     GS1 pads shorter barcodes with zeros to compare them, so these all name the same product,
@@ -120,7 +120,7 @@ class ProductRepository:
             return None
         return self._fetch_one(
             "WHERE p.barcode = ANY(%s) ORDER BY p.barcode = %s DESC LIMIT 1",
-            (_same_barcode_forms(barcode), barcode),
+            (same_barcode_forms(barcode), barcode),
         )
 
     def search(
@@ -188,7 +188,7 @@ class ProductRepository:
         leading zeros (012000001291 and 0012000001291 are the same product)."""
         row = self._connection.execute(
             "SELECT 1 FROM products WHERE barcode = ANY(%s) AND id IS DISTINCT FROM %s",
-            (_same_barcode_forms(barcode), except_id),
+            (same_barcode_forms(barcode), except_id),
         ).fetchone()
         return row is not None
 
