@@ -12,3 +12,4 @@ export { getApiBaseUrl } from './config';
 export { checkHealth } from './health';
 export { getMe } from './me';
 export { getMyRating, rateProduct, removeMyRating } from './ratings';
+export { getReviews } from './reviews';
