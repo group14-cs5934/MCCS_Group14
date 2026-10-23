@@ -1,15 +1,18 @@
-"""Product reviews (US09): a signed-in user writes a review of a product.
+"""Product reviews (US09): a signed-in user writes a review of a product, and anyone can read a
+product's reviews, newest first, a page at a time.
 
 Each user has one review per product; posting again replaces its title and text. The review's
 rules (required text, length limits) are in app/schemas/review.py.
 """
 
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Query
 
 from app.core.auth import CurrentUser
 from app.core.errors import ApiError, error_response
 from app.repositories import Reviews
-from app.schemas import ReviewCreate, ReviewRead
+from app.schemas import ReviewCreate, ReviewPage, ReviewRead
 
 router = APIRouter(
     prefix="/products",
@@ -18,6 +21,30 @@ router = APIRouter(
 )
 
 _NOT_SIGNED_IN = error_response("Missing, invalid, or expired token")
+
+# Reviews per page unless the app asks for another size, and the most it can ask for.
+PAGE_SIZE = 10
+MAX_PAGE_SIZE = 50
+
+
+@router.get("/{product_id:int}/reviews", responses={404: error_response("No product with this ID")})
+def list_reviews(
+    product_id: int,
+    reviews: Reviews,
+    limit: Annotated[
+        int, Query(ge=1, le=MAX_PAGE_SIZE, description="Reviews per page")
+    ] = PAGE_SIZE,
+    offset: Annotated[int, Query(ge=0, le=100_000, description="Reviews to skip, for paging")] = 0,
+) -> ReviewPage:
+    """A product's reviews, newest first, 10 at a time. No sign-in needed.
+
+    For the next page, ask again with offset increased by limit; there are more while
+    offset + len(items) < total. A product with no reviews gives {"items": [], "total": 0, ...}.
+    """
+    page = reviews.list_for_product(product_id, limit=limit, offset=offset)
+    if page is None:
+        raise ApiError(404, "product_not_found", "Product not found")
+    return page
 
 
 @router.post(
