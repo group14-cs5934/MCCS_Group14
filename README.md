@@ -2,10 +2,11 @@
 
 Mobile app for scanning retail products and viewing product info, prices, ratings, and reviews.
 
-| Folder     | What                                |
-| ---------- | ----------------------------------- |
-| `mobile/`  | React Native app (Expo, TypeScript) |
-| `backend/` | FastAPI service (Python 3.13, uv)   |
+| Folder                  | What                                                               |
+| ----------------------- | ------------------------------------------------------------------ |
+| `mobile/`               | React Native app (Expo, TypeScript)                                |
+| `backend/`              | FastAPI service (Python 3.13, uv)                                  |
+| `jobs/product-monitor/` | [Job](#product-monitor-job) reading MCCS online store prices/stock |
 
 ## Mobile app
 
@@ -462,6 +463,68 @@ with `app.dependency_overrides[get_product_repository] = lambda: fake`, using `F
 from `tests/fakes.py` (see `tests/test_product_search_unit.py`). Keep a few database tests too,
 so the real SQL is covered.
 
+## Product monitor job
+
+`jobs/product-monitor/` is a script, run on a schedule, that keeps prices and stock up to date
+from the MCCS online store. It has its own uv project, so run its commands from that folder.
+
+For each entry in `products.yaml` it fetches the product page (it obeys robots.txt and waits
+`PER_DOMAIN_DELAY` seconds between requests to one site), and Claude reads the barcode, price
+and stock from the page. Then, in one transaction, it:
+
+- adds the product to `products` if its barcode is new (name, size and photo from the page). An
+  existing product is never changed, so edits made in the admin screen stay;
+- adds a row to `prices` with `source` set to the store's slug. The app shows the newest price,
+  so this becomes the product's current price;
+- updates the product's `product_stock` row for that store (`aisle` is left alone).
+
+Barcodes must pass the same length and check digit rules as the API, and are stored as the
+digits printed on the package (a UPC-A is stored as 12 digits). A page that's for a different
+product, or that shows no price and no stock, is skipped and nothing is written for it.
+
+```sh
+cd jobs/product-monitor
+uv sync
+uv run make_products_yaml.py               # build products.yaml from backend/scripts/demo_products.csv
+uv run product-monitor.py --dry-run        # print the rows it would write; doesn't touch the database
+uv run product-monitor.py --only doritos   # only entries whose name or barcode contains "doritos"
+uv run product-monitor.py                  # write to the database
+```
+
+**`products.yaml`**: one entry per product and store. Entries without a `url` are skipped, and
+`store` must be a `store_locations.slug` (the seed adds `mcx-online`, the MCX Online Store).
+`barcode` is optional. It's read off the page, so set it only if the page doesn't show one, or to
+make sure the page is for that product. Quote it, so YAML keeps leading zeros.
+
+```yaml
+products:
+  - name: "Doritos Nacho Cheese Tortilla Chips (9.25 oz bag)"
+    store: "mcx-online"
+    url: "https://<MCCS online store product page>"
+    barcode: null  # optional
+```
+
+`make_products_yaml.py` makes one entry for each product in `demo_products.csv`, with `url` left
+to fill in. Running it again keeps the URLs and barcodes already filled in, and any entries added
+by hand.
+
+The job reads its settings from environment variables only (not from `backend/.env`):
+
+| Variable            | Required        | Default                   | Notes                                                        |
+| ------------------- | --------------- | ------------------------- | ------------------------------------------------------------ |
+| `DATABASE_URL`      | yes, to write   |                           | Same Postgres connection string as the backend               |
+| `ANTHROPIC_API_KEY` | yes             |                           | Claude API key                                               |
+| `PRODUCTS_FILE`     | no              | `products.yaml`           | Relative to the folder the job runs from                     |
+| `USER_AGENT`        | no              | `ProductMonitorBot/1.0 …` | Set a real contact address before running it on a schedule   |
+| `CLAUDE_MODEL`      | no              | `claude-haiku-5-5`        | Model that reads the pages                                   |
+| `DEFAULT_CURRENCY`  | no              | `USD`                     | Used when a page shows a price but no currency               |
+| `CONCURRENCY`       | no              | `4`                       | Products processed at once                                   |
+| `PER_DOMAIN_DELAY`  | no              | `3`                       | Seconds between requests to the same site                    |
+| `MAX_PAGE_CHARS`    | no              | `40000`                   | Page text sent to Claude per product                         |
+
+The job exits with an error only if every product fails. CI doesn't check this folder yet, so
+run `uv run ruff check . && uv run ruff format --check .` in it before pushing.
+
 ## Running the full stack (app ↔ API ↔ database)
 
 Use this to check the whole chain end to end (the T025 integration test). Commands are for Git
@@ -484,7 +547,9 @@ Bash or macOS/Linux; run them from the repo root unless a step says otherwise.
 3. **Seed it**, from `backend/`: `uv run python -m scripts.seed_dev` → prints "Development seed
    completed successfully." It adds Sample Chips (product 1, no price), then the real products in
    `backend/scripts/sample_products.json` (e.g. Diet Pepsi 20 oz, `012000171741`, $1.59) with
-   their photos and prices, so you can scan them. Running it again skips products already there.
+   their photos and prices, so you can scan them, and the store locations (two MCX stores and
+   the MCX Online Store used by the [product monitor](#product-monitor-job)). Running it again
+   skips products and stores already there.
 4. **Start the API**, from `backend/`: `uv run fastapi dev app/main.py --host 0.0.0.0`. Check
    <http://localhost:8000/products/1> returns Sample Chips as JSON.
 5. **Start the app**, from `mobile/`: set the Supabase variables in `mobile/.env` (see
