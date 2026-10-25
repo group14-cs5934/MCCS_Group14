@@ -57,6 +57,12 @@ SAMPLE_STORES = [
         "slug": "new-river-mcx",
         "address": "Bldg. AS-4040 Curtis Rd., MCAS New River, NC 28540",
     },
+    {
+        # The MCCS online store, where jobs/product-monitor reads prices and stock from.
+        "name": "MCX Online Store",
+        "slug": "mcx-online",
+        "address": None,
+    },
 ]
 
 

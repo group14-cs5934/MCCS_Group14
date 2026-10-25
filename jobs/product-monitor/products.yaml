@@ -1,0 +1,192 @@
+# Products the monitor checks. Made by make_products_yaml.py; safe to edit by hand.
+# store must be a store_locations.slug. Entries with a null url are skipped until it's filled in.
+# barcode is read off the product page; set it (quoted) only to make the page match it.
+products:
+  - name: "Doritos Nacho Cheese Tortilla Chips (9.25 oz bag)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Lay's Classic Potato Chips (8 oz bag)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Oreo Chocolate Sandwich Cookies (13.29 oz pack)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Goldfish Cheddar Crackers (6.6 oz carton)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Nature Valley Crunchy Oats 'n Honey Granola Bars (12-bar box)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Reese's Peanut Butter Cups (1.5 oz 2-cup pack)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Cheerios (8.9 oz box)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Kraft Macaroni & Cheese Original (7.25 oz box)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Barilla Spaghetti (16 oz box)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Jif Creamy Peanut Butter (16 oz jar)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Heinz Tomato Ketchup (20 oz squeeze bottle)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Coca-Cola Classic (12 x 12 oz cans)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Gatorade Thirst Quencher Lemon-Lime (28 oz bottle)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Folgers Classic Roast Ground Coffee (25.9 oz canister)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Starbucks Pike Place Roast K-Cup Pods (22-count box)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Celsius Sparkling Orange Energy Drink (12 oz can)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Crest 3D White Toothpaste (3.8 oz tube)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Dove Beauty Bar (4-bar pack)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Head & Shoulders Classic Clean Shampoo (13.5 oz bottle)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Old Spice Swagger Deodorant (3 oz stick)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "CeraVe Moisturizing Cream (16 oz tub)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Advil Ibuprofen Tablets 200 mg (100-count bottle)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Band-Aid Flexible Fabric Bandages (30-count box)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Tide Original Liquid Laundry Detergent (92 oz bottle)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Dawn Ultra Original Dish Soap (19.4 oz bottle)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Bounty Select-A-Size Paper Towels (6 double rolls)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Clorox Disinfecting Wipes (75-count canister)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Ziploc Storage Bags Gallon (38-count box)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Duracell Coppertop AA Batteries (8-pack)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Apple AirPods Pro (2nd generation; USB-C)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Logitech M185 Wireless Mouse"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Anker Nano USB-C Charger 20W"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Amazon Echo Dot (5th generation)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "JBL Flip 6 Bluetooth Speaker"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "SanDisk Ultra microSDXC Card 128GB"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Stanley Quencher H2.0 FlowState Tumbler 40 oz"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Contigo West Loop Autoseal Travel Mug 16 oz"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Brita Standard Replacement Water Filters (3-pack)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "BIC Round Stic Ballpoint Pens Black (10-count pack)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Scotch Magic Tape (3/4 in x 1000 in roll)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Sharpie Permanent Markers Fine Point Black (12-count pack)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Five Star Spiral Notebook 1-Subject (100 sheets)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Post-it Notes 3 x 3 in Canary Yellow (12-pad pack)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Greenies Original Regular Dental Dog Treats (12 oz pack)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "Temptations Classic Cat Treats Tasty Chicken (3 oz pouch)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "LEGO Classic Medium Creative Brick Box 10696 (484 pieces)"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
+  - name: "UNO Card Game"
+    store: "mcx-online"
+    url: null  # TODO
+    barcode: null  # optional
