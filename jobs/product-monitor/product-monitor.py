@@ -125,6 +125,13 @@ def normalize_barcode(value: Any) -> str | None:
     return digits
 
 
+def same_barcode_forms(barcode: str) -> list[str]:
+    """Every length this barcode can be written at by adding or removing leading zeros, which
+    all name the same product (same as same_barcode_forms in backend/app/repositories)."""
+    digits = barcode.lstrip("0")
+    return [digits.zfill(length) for length in GTIN_LENGTHS if len(digits) <= length]
+
+
 def load_products(path: str) -> list[Product]:
     with open(path, encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
@@ -477,26 +484,35 @@ def to_rows(
     return new_product, price, stock
 
 
-# A product already in the database is left as it is, so edits made in the admin screen stay.
+# The stored product with this barcode in any of its forms (the backend and the product sync
+# match barcodes the same way), preferring the exact form.
+FIND_PRODUCT = """
+SELECT id FROM products
+WHERE barcode = ANY(%(forms)s)
+ORDER BY barcode = %(barcode)s DESC
+LIMIT 1
+"""
+
+# Only used when FIND_PRODUCT finds nothing. A product already in the database is left as it
+# is, so edits made in the admin screen stay.
 INSERT_PRODUCT = """
 INSERT INTO products (barcode, name, size, image_url)
 VALUES (%(barcode)s, %(name)s, %(size)s, %(image_url)s)
 ON CONFLICT (barcode) DO NOTHING
+RETURNING id
 """
 
 INSERT_PRICE = """
 INSERT INTO prices (product_id, amount, currency, source, observed_at)
-SELECT id, %(amount)s, %(currency)s, %(source)s, %(observed_at)s
-FROM products
-WHERE barcode = %(barcode)s
+VALUES (%(product_id)s, %(amount)s, %(currency)s, %(source)s, %(observed_at)s)
 """
 
 # Leaves aisle alone: it is entered by hand and the online page doesn't know it.
 UPSERT_STOCK = """
 INSERT INTO product_stock (product_id, store_id, in_stock, quantity, updated_at)
-SELECT p.id, s.id, %(in_stock)s, %(quantity)s, %(updated_at)s
-FROM products AS p, store_locations AS s
-WHERE p.barcode = %(barcode)s AND s.slug = %(store)s
+SELECT %(product_id)s, id, %(in_stock)s, %(quantity)s, %(updated_at)s
+FROM store_locations
+WHERE slug = %(store)s
 ON CONFLICT (product_id, store_id) DO UPDATE
 SET in_stock = EXCLUDED.in_stock,
     quantity = EXCLUDED.quantity,
@@ -537,19 +553,23 @@ class DatabaseWriter:
     ) -> bool:
         """Write the rows in one transaction, so a product never gets only half its update.
         Returns whether the product was new."""
+        barcode = new_product["barcode"]
+        find = {"barcode": barcode, "forms": same_barcode_forms(barcode)}
         with self._lock, self.conn.transaction(), self.conn.cursor() as cur:
-            cur.execute(INSERT_PRODUCT, new_product)
-            created = cur.rowcount == 1
+            created = False
+            row = cur.execute(FIND_PRODUCT, find).fetchone()
+            if row is None:
+                row = cur.execute(INSERT_PRODUCT, new_product).fetchone()
+                created = row is not None
+                if row is None:  # added by someone else since FIND_PRODUCT ran
+                    row = cur.execute(FIND_PRODUCT, find).fetchone()
+            product_id = row[0]
             if price is not None:
-                cur.execute(INSERT_PRICE, price)
-                if cur.rowcount != 1:
-                    raise RuntimeError(f"No product with barcode {price['barcode']}")
+                cur.execute(INSERT_PRICE, {**price, "product_id": product_id})
             if stock is not None:
-                cur.execute(UPSERT_STOCK, stock)
+                cur.execute(UPSERT_STOCK, {**stock, "product_id": product_id})
                 if cur.rowcount != 1:
-                    raise RuntimeError(
-                        f"No product {stock['barcode']} or store {stock['store']} to stock"
-                    )
+                    raise RuntimeError(f"No store {stock['store']} to stock")
         return created
 
 
