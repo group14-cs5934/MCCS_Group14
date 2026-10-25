@@ -13,6 +13,8 @@ import { useRatingSummary, type RatingSummaryState } from '@/hooks/useRatingSumm
 import { colors, fonts, radius, sharedStyles, spacing, textStyles } from '@/theme';
 import type { Product } from '@/types/product';
 import { formatPrice } from '@/utils/formatPrice';
+import ProductReviews from '@/components/ProductReviews';
+import ProductNutrition from '@/components/ProductNutrition';
 
 type Props = {
   state: ProductState;
@@ -116,6 +118,7 @@ function ProductDetails({ product }: { product: Product }) {
     : category
       ? `Category: ${category}`
       : '';
+  const [activeTab, setActiveTab] = useState<'overview' | 'reviews' | 'nutrition'>('overview');
   return (
     <View style={styles.page}>
       <ScrollView
@@ -161,36 +164,58 @@ function ProductDetails({ product }: { product: Product }) {
         {/* Saving a rating reloads the average above, so it includes the new one. */}
         <RateProduct productId={product.id} onSaved={ratings.reload} />
 
-        {/* Tabs: only Overview is implemented in T040 */}
+        {/* Product information tabs */}
         <View style={styles.tabs}>
-          <View style={styles.activeTab}>
-            <Text style={styles.activeTabText}>Overview</Text>
-          </View>
-          <View style={styles.tab}>
-            <Text style={styles.inactiveTabText}>Reviews</Text>
-          </View>
-          <View style={styles.tab}>
-            <Text style={styles.inactiveTabText}>Nutrition</Text>
-          </View>
+          {(['overview', 'reviews', 'nutrition'] as const).map((tab) => {
+            const active = activeTab === tab;
+
+            return (
+              <Pressable
+                key={tab}
+                onPress={() => setActiveTab(tab)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: active }}
+                style={active ? styles.activeTab : styles.tab}
+              >
+                <Text
+                  style={
+                    active
+                      ? styles.activeTabText
+                      : styles.inactiveTabText
+                  }
+                >
+                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
+        {activeTab === 'overview' && (
+          <View style={styles.details}>
+            {brand ? <DetailRow icon="◇" label="Brand" value={brand} /> : null}
 
-        {/* Product details */}
-        <View style={styles.details}>
-          {brand ? <DetailRow icon="◇" label="Brand" value={brand} /> : null}
+            {category ? <DetailRow icon="⬡" label="Category" value={category} /> : null}
 
-          {category ? <DetailRow icon="⬡" label="Category" value={category} /> : null}
+            {product.size ? <DetailRow icon="♧" label="Size" value={product.size} /> : null}
 
-          {product.size ? <DetailRow icon="♧" label="Size" value={product.size} /> : null}
+            <DetailRow icon="▥" label="UPC" value={product.barcode} />
 
-          <DetailRow icon="▥" label="UPC" value={product.barcode} />
+            {product.description ? (
+              <View style={styles.descriptionSection}>
+                <Text style={styles.descriptionTitle}>Description</Text>
+                <Text style={styles.description}>{product.description}</Text>
+              </View>
+            ) : null}
+          </View>
+        )}
 
-          {product.description ? (
-            <View style={styles.descriptionSection}>
-              <Text style={styles.descriptionTitle}>Description</Text>
-              <Text style={styles.description}>{product.description}</Text>
-            </View>
-          ) : null}
-        </View>
+        {activeTab === 'reviews' && (
+          <ProductReviews productId={product.id} />
+        )}
+
+        {activeTab === 'nutrition' && (
+          <ProductNutrition />
+        )}
       </ScrollView>
 
       {/* Compare Prices will be enabled in its own feature */}
