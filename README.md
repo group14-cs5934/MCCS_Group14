@@ -88,6 +88,8 @@ appear on the dev **Theme preview** screen (link on Home in development builds).
 | `CameraPermissionGate` | Wraps anything that needs the camera; asks for access and handles "denied" for you.  |
 | `BarcodeScanner`       | Live camera for UPC/EAN barcodes; `onScanned` gets one once it stays in view 0.5s.   |
 | `ProductPage`          | Body of the product page; shared by the by-ID and by-barcode product routes.         |
+| `ReviewForm`           | Write or edit the signed-in user's review of a product; checks length before posting. |
+| `ReviewList`           | A product's reviews from `useReviews`; loads the next page via `loadMore`.           |
 | `SearchResultsList`    | List of product cards (photo, name, size, price); `onOpen` gets the tapped product.  |
 | `StarRating`           | Five stars. With `onChange`, tap to rate 1–5; without, shows e.g. an average (½s).   |
 
@@ -258,6 +260,13 @@ payloads get `422` with every problem listed.
 | `GET /products/barcode/{code}` | The same `ProductRead` for the product with this barcode, or `404`.         |
 | `GET /products/search`         | A list of `ProductRead` matching `q` and/or `category`; `[]` if none match. |
 | `POST /products/validate`      | The cleaned-up payload, or `422` listing every problem.                     |
+| `GET /products/{id}/reviews`   | A page of reviews, newest first (`limit`, `offset`), or `404`.              |
+| `POST /products/{id}/reviews`  | Saves the signed-in user's review (one per product); `401` if signed out.   |
+| `GET /locations`               | Every MCCS store, sorted by name.                                           |
+| `GET /products/{id}/availability` | Each store with `in_stock` for the product (in stock first), or `404`.   |
+
+Search also takes `store=<slug>` (only products that store carries) and `in_stock=true` (only
+products in stock there, or at any store without `store`).
 
 A missing product returns `404` with code `product_not_found`. Only digits match `{id}`, so
 `/products/abc` is also a `404`, and named routes like `/products/search` can be added without
@@ -463,6 +472,24 @@ with `app.dependency_overrides[get_product_repository] = lambda: fake`, using `F
 from `tests/fakes.py` (see `tests/test_product_search_unit.py`). Keep a few database tests too,
 so the real SQL is covered.
 
+## Product data sync
+
+`scripts/sync_products.py` pulls real products into the catalog: it fetches them from the data
+source (UPCitemdb, the source the T022 spike used), cleans them up (prices, sizes, photos,
+categories), and saves them to `DATABASE_URL`, updating products that are already stored instead
+of adding duplicates. From `backend/`:
+
+```sh
+uv run python -m scripts.sync_products --file scripts/sample_products.json   # offline, saved data
+uv run python -m scripts.sync_products --dry-run      # look up scripts/catalog_barcodes.txt, save nothing
+uv run python -m scripts.sync_products --include-stored --limit 90           # what runs nightly
+```
+
+**Nightly sync.** [`.github/workflows/nightly-sync.yml`](.github/workflows/nightly-sync.yml) runs
+the last command every night at 07:00 UTC (and on demand from the Actions tab). It needs the
+repository secret `SYNC_DATABASE_URL` (the Supabase connection string); without it, the job skips
+the sync. UPCitemdb's free trial allows 100 lookups a day, hence `--limit 90`.
+
 ## Product monitor job
 
 `jobs/product-monitor/` is a script, run on a schedule, that keeps prices and stock up to date
@@ -578,6 +605,31 @@ If it doesn't work:
 - **Nothing loads in the browser:** `CORS_ORIGINS` must include `http://localhost:8081`.
 - **Port 8000 already in use:** stop the other program, or run the API with `--port 8001` and set
   `EXPO_PUBLIC_API_URL=http://<your computer's IP>:8001` in `mobile/.env`.
+
+### Sprint 2 end-to-end check: scan, search, product page (T048)
+
+`mobile/__tests__/sprint2-e2e.test.tsx` walks these flows through the whole app on every PR, and
+fails if the app logs any error or warning. To check them on a phone, run the full stack with
+the sample catalog (`uv run python -m scripts.seed_dev`) and go through each one:
+
+| Flow | Steps | Expected |
+| ---- | ----- | -------- |
+| Scan | Home -> **Scan Product** -> point at a Diet Pepsi 20 oz (012000171741) | Its page: name, $1.59, rating; Back returns to the camera |
+| Search | Home -> **Search manually** -> type `pepsi` -> tap a result | Its page; Back returns to the same results |
+| Unknown scan | Scan any barcode not in the catalog -> **Search** -> find a product by name | "Product not found" with Retry and Search, then the product's page |
+| Mixed | Scan, close the page, search, open a result, then scan again | Every page loads; no error screens |
+
+### Checking reviews and ratings end to end (T073)
+
+`backend/tests/test_reviews_integration.py` runs this automatically against a real database (CI
+runs it on every PR). To see it on a device, with the full stack running and two accounts:
+
+1. Sign in as the first account, open a product, tap a star, then open **Reviews**, write a
+   review, and tap **Post review**. It appears at the top of the list.
+2. Sign out, sign in as the second account, and open the same product's **Reviews** tab: the
+   first account's review is there with its stars, shown as e.g. `a***` (never the email).
+3. In Supabase's table editor (or `psql`), the `reviews` row's `user_id` is the first account's
+   ID in `users`.
 
 ## Continuous integration
 

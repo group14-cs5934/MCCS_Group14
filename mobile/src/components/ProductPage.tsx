@@ -1,5 +1,14 @@
 import { useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
 import { router, Stack } from 'expo-router';
 
 import type { ErrorAction } from '@/api';
@@ -7,12 +16,16 @@ import AsyncContent from '@/components/AsyncContent';
 import Button from '@/components/Button';
 import ErrorState from '@/components/ErrorState';
 import RateProduct from '@/components/RateProduct';
+import ReviewForm from '@/components/ReviewForm';
+import ReviewList from '@/components/ReviewList';
 import StarRating from '@/components/StarRating';
 import type { ProductState } from '@/hooks/useProduct';
 import { useRatingSummary, type RatingSummaryState } from '@/hooks/useRatingSummary';
+import { useReviews } from '@/hooks/useReviews';
 import { colors, fonts, radius, sharedStyles, spacing, textStyles } from '@/theme';
 import type { Product } from '@/types/product';
 import { formatPrice } from '@/utils/formatPrice';
+import ProductNutrition from '@/components/ProductNutrition';
 
 type Props = {
   state: ProductState;
@@ -61,7 +74,8 @@ export default function ProductPage({ state: { product, loading, error, reload }
           onRetry={reload}
           loadingMessage="Loading product…"
         >
-          {product ? <ProductDetails product={product} /> : null}
+          {/* Keyed so another product's page starts fresh (its own tab and reviews). */}
+          {product ? <ProductDetails key={product.id} product={product} /> : null}
         </AsyncContent>
       )}
     </View>
@@ -104,8 +118,33 @@ function ProductNotFound({ actions }: { actions: ErrorAction[] }) {
   );
 }
 
+type Tab = 'overview' | 'reviews' | 'nutrition';
+
+/** How close to the bottom (in points) counts as "scrolled to the bottom" for loading more. */
+const LOAD_MORE_DISTANCE = 200;
+
+function isNearBottom({ layoutMeasurement, contentOffset, contentSize }: NativeScrollEvent) {
+  return layoutMeasurement.height + contentOffset.y >= contentSize.height - LOAD_MORE_DISTANCE;
+}
+
 function ProductDetails({ product }: { product: Product }) {
   const ratings = useRatingSummary(product.id);
+  const [tab, setTab] = useState<Tab>('overview');
+  // Reviews are only requested once the Reviews tab is first opened.
+  const [reviewsOpened, setReviewsOpened] = useState(false);
+  const reviews = useReviews(product.id, reviewsOpened);
+
+  function openTab(next: Tab) {
+    setTab(next);
+    if (next === 'reviews') setReviewsOpened(true);
+  }
+
+  function onScroll(event: NativeSyntheticEvent<NativeScrollEvent>) {
+    if (tab === 'reviews' && isNearBottom(event.nativeEvent)) {
+      reviews.loadMore();
+    }
+  }
+
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   const imageFailed = !!product.image_url && failedImageUrl === product.image_url;
 
@@ -122,6 +161,9 @@ function ProductDetails({ product }: { product: Product }) {
         style={styles.scroll}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        testID="product-scroll"
+        onScroll={onScroll}
+        scrollEventThrottle={100}
       >
         {/* Product photo */}
         <View style={styles.imageSection}>
@@ -161,36 +203,53 @@ function ProductDetails({ product }: { product: Product }) {
         {/* Saving a rating reloads the average above, so it includes the new one. */}
         <RateProduct productId={product.id} onSaved={ratings.reload} />
 
-        {/* Tabs: only Overview is implemented in T040 */}
-        <View style={styles.tabs}>
-          <View style={styles.activeTab}>
-            <Text style={styles.activeTabText}>Overview</Text>
-          </View>
-          <View style={styles.tab}>
-            <Text style={styles.inactiveTabText}>Reviews</Text>
-          </View>
-          <View style={styles.tab}>
-            <Text style={styles.inactiveTabText}>Nutrition</Text>
-          </View>
+        {/* Nutrition isn't available yet. */}
+        <View style={styles.tabs} accessibilityRole="tablist">
+          <TabButton
+            title="Overview"
+            selected={tab === 'overview'}
+            onPress={() => openTab('overview')}
+          />
+          <TabButton
+            title="Reviews"
+            selected={tab === 'reviews'}
+            onPress={() => openTab('reviews')}
+          />
+          <TabButton
+            title="Nutrition"
+            selected={tab === 'nutrition'}
+            onPress={() => openTab('nutrition')}
+          />
         </View>
 
-        {/* Product details */}
-        <View style={styles.details}>
-          {brand ? <DetailRow icon="◇" label="Brand" value={brand} /> : null}
+        {tab === 'reviews' ? (
+          <View style={styles.reviews}>
+            {/* Posting reloads the list, so the new review shows at the top. */}
+            <ReviewForm productId={product.id} onPosted={reviews.reload} />
+            <ReviewList state={reviews} />
+          </View>
+        ) : tab === 'nutrition' ? (
+          <View style={styles.nutrition}>
+            <ProductNutrition />
+          </View>
+        ) : (
+          <View style={styles.details}>
+            {brand ? <DetailRow icon="◇" label="Brand" value={brand} /> : null}
 
-          {category ? <DetailRow icon="⬡" label="Category" value={category} /> : null}
+            {category ? <DetailRow icon="⬡" label="Category" value={category} /> : null}
 
-          {product.size ? <DetailRow icon="♧" label="Size" value={product.size} /> : null}
+            {product.size ? <DetailRow icon="♧" label="Size" value={product.size} /> : null}
 
-          <DetailRow icon="▥" label="UPC" value={product.barcode} />
+            <DetailRow icon="▥" label="UPC" value={product.barcode} />
 
-          {product.description ? (
-            <View style={styles.descriptionSection}>
-              <Text style={styles.descriptionTitle}>Description</Text>
-              <Text style={styles.description}>{product.description}</Text>
-            </View>
-          ) : null}
-        </View>
+            {product.description ? (
+              <View style={styles.descriptionSection}>
+                <Text style={styles.descriptionTitle}>Description</Text>
+                <Text style={styles.description}>{product.description}</Text>
+              </View>
+            ) : null}
+          </View>
+        )}
       </ScrollView>
 
       {/* Compare Prices will be enabled in its own feature */}
@@ -237,6 +296,27 @@ function RatingLine({ ratings: { loading, summary, failed } }: { ratings: Rating
       <Text style={styles.ratingAverage}>{average}</Text>
       <Text style={styles.ratingNote}>({count})</Text>
     </View>
+  );
+}
+
+function TabButton({
+  title,
+  selected,
+  onPress,
+}: {
+  title: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={selected ? styles.activeTab : styles.tab}
+      accessibilityRole="tab"
+      accessibilityState={{ selected }}
+    >
+      <Text style={selected ? styles.activeTabText : styles.inactiveTabText}>{title}</Text>
+    </Pressable>
   );
 }
 
@@ -384,6 +464,13 @@ const styles = StyleSheet.create({
   details: {
     paddingTop: spacing.xl,
     gap: spacing.xl,
+  },
+  reviews: {
+    paddingTop: spacing.xl,
+    gap: spacing.xl,
+  },
+  nutrition: {
+    paddingTop: spacing.xl,
   },
   detailRow: {
     flexDirection: 'row',

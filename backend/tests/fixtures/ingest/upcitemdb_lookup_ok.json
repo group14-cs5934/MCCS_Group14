@@ -1,0 +1,53 @@
+{
+  "code": "OK",
+  "total": 3,
+  "offset": 0,
+  "items": [
+    {
+      "ean": "0012000171741",
+      "title": "Diet Pepsi Cola Soda- 20 fl oz Bottle",
+      "upc": "012000171741",
+      "description": "Diet Pepsi 20 oz bottle.",
+      "brand": "Pepsi",
+      "size": "",
+      "category": "Food, Beverages & Tobacco > Beverages > Soda",
+      "lowest_recorded_price": 1.59,
+      "highest_recorded_price": 2.99,
+      "images": [
+        "https://example.com/diet-pepsi.jpg"
+      ],
+      "offers": []
+    },
+    {
+      "ean": "0049000418347",
+      "title": "Coca-Cola Classic Soda  16.9 Ounce (24 Bottles)",
+      "upc": "049000418347",
+      "description": "",
+      "brand": "Coca-Cola",
+      "size": "",
+      "category": "Food, Beverages & Tobacco > Beverages",
+      "lowest_recorded_price": 9.98,
+      "highest_recorded_price": 14.99,
+      "images": [
+        "http://example.com/coke-http.jpg",
+        "https://example.com/coke.jpg"
+      ],
+      "offers": []
+    },
+    {
+      "ean": "0016000178199",
+      "title": "Franken Berry Cereal - 16oz",
+      "upc": "016000178199",
+      "description": "Strawberry flavored cereal with marshmallows.",
+      "brand": "General Mills",
+      "size": "16 Ounce",
+      "category": "Food, Beverages & Tobacco > Food Items > Cereal & Granola",
+      "lowest_recorded_price": 3.28,
+      "highest_recorded_price": 5.49,
+      "images": [
+        "https://example.com/franken-berry.jpg"
+      ],
+      "offers": []
+    }
+  ]
+}

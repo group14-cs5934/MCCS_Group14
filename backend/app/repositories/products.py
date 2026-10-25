@@ -19,7 +19,8 @@ _MAX_ID = 2**31 - 1
 _PRODUCT_QUERY = """
 SELECT
     p.id, p.barcode, p.name, p.description, p.size, p.image_url,
-    p.brand_id, p.category_id, p.created_at, p.updated_at,
+    p.brand_id, p.category_id, p.source, p.source_id, p.last_synced_at,
+    p.created_at, p.updated_at,
     c.id AS category__id,
     c.name AS category__name,
     c.slug AS category__slug,
@@ -49,7 +50,7 @@ def _pop_nested(row: dict[str, Any], field: str) -> dict[str, Any] | None:
     return nested if nested["id"] is not None else None
 
 
-def _same_barcode_forms(barcode: str) -> list[str]:
+def same_barcode_forms(barcode: str) -> list[str]:
     """Every length this barcode can be written at by adding or removing leading zeros.
 
     GS1 pads shorter barcodes with zeros to compare them, so these all name the same product,
@@ -58,6 +59,20 @@ def _same_barcode_forms(barcode: str) -> list[str]:
     digits = barcode.lstrip("0")
     return [digits.zfill(length) for length in GTIN_LENGTHS if len(digits) <= length]
 
+
+# Search filters by store (T075). product_stock's (product_id, store_id) unique index finds a
+# product's stock rows.
+_AT_STORE = """EXISTS (
+    SELECT 1 FROM product_stock AS ps JOIN store_locations AS s ON s.id = ps.store_id
+    WHERE ps.product_id = p.id AND s.slug = %(store)s
+)"""
+_AT_STORE_IN_STOCK = """EXISTS (
+    SELECT 1 FROM product_stock AS ps JOIN store_locations AS s ON s.id = ps.store_id
+    WHERE ps.product_id = p.id AND s.slug = %(store)s AND ps.in_stock
+)"""
+_IN_STOCK_ANYWHERE = """EXISTS (
+    SELECT 1 FROM product_stock AS ps WHERE ps.product_id = p.id AND ps.in_stock
+)"""
 
 # Product columns an admin can set (T087). Updates only ever name columns from this list.
 _EDITABLE_COLUMNS = (
@@ -105,22 +120,35 @@ class ProductRepository:
             return None
         return self._fetch_one(
             "WHERE p.barcode = ANY(%s) ORDER BY p.barcode = %s DESC LIMIT 1",
-            (_same_barcode_forms(barcode), barcode),
+            (same_barcode_forms(barcode), barcode),
         )
 
     def search(
-        self, query: str = "", category: str | None = None, limit: int = 20, offset: int = 0
+        self,
+        query: str = "",
+        category: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+        store: str | None = None,
+        in_stock: bool = False,
     ) -> list[ProductRead]:
         """Products whose name matches `query`, best match first, and/or that are in the category
-        with slug `category` (then sorted by name). Empty if neither is given.
+        with slug `category` (then sorted by name). Empty if no filter is given.
+
+        `store` (a store's slug) keeps only products that store carries (it has a stock record for
+        them), and with `in_stock`, only those in stock there. `in_stock` alone keeps products in
+        stock at any store. Either can also be used without a query or category, to browse.
 
         Small typos still match ("coffe" finds "Ground Coffee"): a product matches when one of
         its words is close enough to the query (pg_trgm word similarity; see migration 003).
         """
         query = query.strip()
         category = (category or "").strip().lower()
+        store = (store or "").strip().lower()
         # Postgres rejects text containing NUL, and no name or slug contains one.
-        if (not query and not category) or "\x00" in query + category:
+        if (not query and not category and not store and not in_stock) or "\x00" in (
+            query + category + store
+        ):
             return []
 
         # Built only from the constants below; values only ever go in `params`.
@@ -129,8 +157,18 @@ class ProductRepository:
             conditions.append("%(query)s <%% p.name")
         if category:
             conditions.append("c.slug = %(category)s")
+        if store:
+            conditions.append(_AT_STORE_IN_STOCK if in_stock else _AT_STORE)
+        elif in_stock:
+            conditions.append(_IN_STOCK_ANYWHERE)
         order = "word_similarity(%(query)s, p.name) DESC, p.name, p.id" if query else "p.name, p.id"
-        params = {"query": query, "category": category, "limit": limit, "offset": offset}
+        params = {
+            "query": query,
+            "category": category,
+            "store": store,
+            "limit": limit,
+            "offset": offset,
+        }
         return self._fetch_all(
             f"WHERE {' AND '.join(conditions)} ORDER BY {order} LIMIT %(limit)s OFFSET %(offset)s",
             params,
@@ -150,7 +188,7 @@ class ProductRepository:
         leading zeros (012000001291 and 0012000001291 are the same product)."""
         row = self._connection.execute(
             "SELECT 1 FROM products WHERE barcode = ANY(%s) AND id IS DISTINCT FROM %s",
-            (_same_barcode_forms(barcode), except_id),
+            (same_barcode_forms(barcode), except_id),
         ).fetchone()
         return row is not None
 

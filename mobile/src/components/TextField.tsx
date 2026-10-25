@@ -6,6 +6,7 @@ import {
   View,
   type StyleProp,
   type TextInputProps,
+  type TextStyle,
   type ViewStyle,
 } from 'react-native';
 
@@ -16,10 +17,20 @@ type Props = Omit<TextInputProps, 'style'> & {
   /** Shown in red below the input, which also gets a red border. */
   error?: string;
   style?: StyleProp<ViewStyle>;
+  /** Extra style for the input itself, e.g. a taller box for multiline text. */
+  inputStyle?: StyleProp<TextStyle>;
 };
 
 /** Labeled text input, e.g. Email and Password on the sign-in screen. */
-export default function TextField({ label, error, style, onFocus, onBlur, ...inputProps }: Props) {
+export default function TextField({
+  label,
+  error,
+  style,
+  inputStyle,
+  onFocus,
+  onBlur,
+  ...inputProps
+}: Props) {
   const [focused, setFocused] = useState(false);
 
   return (
@@ -37,7 +48,7 @@ export default function TextField({ label, error, style, onFocus, onBlur, ...inp
           setFocused(false);
           onBlur?.(event);
         }}
-        style={[styles.input, focused && styles.focused, error ? styles.invalid : null]}
+        style={[styles.input, inputStyle, focused && styles.focused, error ? styles.invalid : null]}
       />
       {error ? <Text style={styles.error}>{error}</Text> : null}
     </View>

@@ -19,6 +19,9 @@ function product(id: number, name: string): Product {
     brand: null,
     category: null,
     price: null,
+    source: null,
+    source_id: null,
+    last_synced_at: null,
     created_at: '2026-10-11T19:19:16Z',
     updated_at: '2026-10-11T19:19:16Z',
   };
