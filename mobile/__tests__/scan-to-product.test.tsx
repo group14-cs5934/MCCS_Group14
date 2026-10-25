@@ -55,6 +55,9 @@ function catalogProduct(id: number, barcode: string, name: string, amount: strin
           observed_at: seeded,
         }
       : null,
+    source: null,
+    source_id: null,
+    last_synced_at: null,
     created_at: seeded,
     updated_at: seeded,
   };

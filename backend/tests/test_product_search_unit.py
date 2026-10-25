@@ -150,4 +150,14 @@ def test_docs_show_search_returns_a_list_of_products(client) -> None:
         "category",
         "limit",
         "offset",
+        "store",
+        "in_stock",
     }
+
+
+def test_store_and_in_stock_are_passed_to_the_search(client, products) -> None:
+    client.get("/products/search?q=chips&store=camp-lejeune-mcx&in_stock=true")
+
+    assert products.searches == [
+        Search("chips", None, limit=20, offset=0, store="camp-lejeune-mcx", in_stock=True)
+    ]
