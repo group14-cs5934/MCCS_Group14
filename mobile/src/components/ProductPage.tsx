@@ -25,6 +25,7 @@ import { useReviews } from '@/hooks/useReviews';
 import { colors, fonts, radius, sharedStyles, spacing, textStyles } from '@/theme';
 import type { Product } from '@/types/product';
 import { formatPrice } from '@/utils/formatPrice';
+import ProductNutrition from '@/components/ProductNutrition';
 
 type Props = {
   state: ProductState;
@@ -117,7 +118,7 @@ function ProductNotFound({ actions }: { actions: ErrorAction[] }) {
   );
 }
 
-type Tab = 'overview' | 'reviews';
+type Tab = 'overview' | 'reviews' | 'nutrition';
 
 /** How close to the bottom (in points) counts as "scrolled to the bottom" for loading more. */
 const LOAD_MORE_DISTANCE = 200;
@@ -214,9 +215,11 @@ function ProductDetails({ product }: { product: Product }) {
             selected={tab === 'reviews'}
             onPress={() => openTab('reviews')}
           />
-          <View style={styles.tab}>
-            <Text style={styles.inactiveTabText}>Nutrition</Text>
-          </View>
+          <TabButton
+            title="Nutrition"
+            selected={tab === 'nutrition'}
+            onPress={() => openTab('nutrition')}
+          />
         </View>
 
         {tab === 'reviews' ? (
@@ -224,6 +227,10 @@ function ProductDetails({ product }: { product: Product }) {
             {/* Posting reloads the list, so the new review shows at the top. */}
             <ReviewForm productId={product.id} onPosted={reviews.reload} />
             <ReviewList state={reviews} />
+          </View>
+        ) : tab === 'nutrition' ? (
+          <View style={styles.nutrition}>
+            <ProductNutrition />
           </View>
         ) : (
           <View style={styles.details}>
@@ -461,6 +468,9 @@ const styles = StyleSheet.create({
   reviews: {
     paddingTop: spacing.xl,
     gap: spacing.xl,
+  },
+  nutrition: {
+    paddingTop: spacing.xl,
   },
   detailRow: {
     flexDirection: 'row',
