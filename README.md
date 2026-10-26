@@ -457,6 +457,11 @@ To log a new admin change, take an `AuditLog` parameter and call `audit.record(.
 `changed_fields(before, after)` from `app/repositories/audit_log.py`.
 `tests/test_admin_audit_log.py` fails if an admin route that changes something has no audit test.
 
+**Who may call what (T093).** `tests/test_permissions_audit.py` lists every endpoint as
+`public` (works signed out, never changes data), `signed_in` (`401` without a valid token), or
+`admin` (under `/admin`; `403` for regular users), and checks each one behaves that way. When you
+add an endpoint, add it to `ACCESS` there too: the test fails for an endpoint that isn't listed.
+
 New admin endpoints go under `/admin` and take an `AdminUser` parameter.
 `tests/test_admin_access.py` finds every `/admin` route by itself and checks that regular
 users get `403`, missing or bad tokens `401`, and deactivated admins `403`, so a route that
