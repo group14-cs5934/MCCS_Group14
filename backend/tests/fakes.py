@@ -208,6 +208,12 @@ class FakeUsers:
         self.accounts: dict[UUID, UserAccount] = {}
         self.searches: list[tuple[str, int, int]] = []
 
+    def lock(self, user_id: UUID) -> bool:
+        return user_id in self.accounts
+
+    def get(self, user_id: UUID) -> UserAccount | None:
+        return self.accounts.get(user_id)
+
     def get_or_create(self, user_id: UUID, email: str | None) -> UserAccount:
         if user_id not in self.accounts:
             self.accounts[user_id] = UserAccount(
@@ -231,3 +237,14 @@ class FakeUsers:
         account = account.model_copy(update={k: v for k, v in changes.items() if v is not None})
         self.accounts[user_id] = account
         return account
+
+
+class FakeAuditLog:
+    """Stands in for AuditLogRepository: each recorded change is kept in `entries`, as the
+    keyword arguments record() was called with."""
+
+    def __init__(self) -> None:
+        self.entries: list[dict] = []
+
+    def record(self, **entry) -> None:
+        self.entries.append(entry)

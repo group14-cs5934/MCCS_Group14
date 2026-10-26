@@ -415,6 +415,21 @@ its `total`, so it disappears from the app; it's kept so it can be shown again. 
 sees it through `.../reviews/me` and can edit or remove it, but editing doesn't unhide it. Hiding a
 review doesn't change the author's rating. An unknown review is `404 review_not_found`.
 
+**Audit log (admins only).** Every admin change is recorded in `admin_audit_log` (migration 010)
+with who made it (`admin_id`, plus `admin_email`, kept even if the account is deleted later), what
+changed (`action` such as `product.update`, `user.update`, `review.hide`; the target, e.g.
+`product` `7`; and `changes`, each changed field as `{"from": old, "to": new}`), and when
+(`created_at`). The entry is written in the same transaction as the change, so a change is never
+saved without it. Refused requests (`403`, `404`, `409`, `422`) aren't logged.
+
+| Endpoint                  | Does                                                                              |
+| ------------------------- | --------------------------------------------------------------------------------- |
+| `GET /admin/audit-log`    | Changes newest first. Filters: `admin_id`, `action`, `target_type` + `target_id` (e.g. `product`, `7`); paging with `limit` (1–100, default 50) and `offset`. |
+
+To log a new admin change, take an `AuditLog` parameter and call `audit.record(...)` with
+`changed_fields(before, after)` from `app/repositories/audit_log.py`.
+`tests/test_admin_audit_log.py` fails if an admin route that changes something has no audit test.
+
 New admin endpoints go under `/admin` and take an `AdminUser` parameter.
 `tests/test_admin_access.py` finds every `/admin` route by itself and checks that regular
 users get `403`, missing or bad tokens `401`, and deactivated admins `403`, so a route that

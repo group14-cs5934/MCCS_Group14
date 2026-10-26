@@ -2,7 +2,8 @@
 (T087).
 
 Every route needs a signed-in admin: 401 without a valid token, 403 for anyone else. The app reads
-products fresh on every request, so changes show up there right away.
+products fresh on every request, so changes show up there right away. Each change is recorded in
+the audit log (T083).
 """
 
 from typing import Annotated
@@ -11,7 +12,8 @@ from fastapi import APIRouter, Query, Response, status
 
 from app.core.auth import AdminUser
 from app.core.errors import ApiError, error_response
-from app.repositories import Products
+from app.repositories import AuditLog, Products
+from app.repositories.audit_log import changed_fields
 from app.schemas import ProductRead
 from app.schemas.admin_product import AdminProductCreate, AdminProductUpdate
 
@@ -33,6 +35,31 @@ _BARCODE_TAKEN = error_response("Another product already has this barcode")
 
 def _product_not_found() -> ApiError:
     return ApiError(status.HTTP_404_NOT_FOUND, "product_not_found", "Product not found")
+
+
+def _product_fields(product: ProductRead) -> dict[str, object]:
+    """What the audit log compares for a product: its editable fields and current price."""
+    return {
+        "barcode": product.barcode,
+        "name": product.name,
+        "description": product.description,
+        "size": product.size,
+        "image_url": str(product.image_url) if product.image_url else None,
+        "brand_id": product.brand_id,
+        "category_id": product.category_id,
+        "price": product.price.amount if product.price else None,
+    }
+
+
+def _record(audit: AuditLog, admin: AdminUser, action: str, product_id: int, changes) -> None:
+    audit.record(
+        admin_id=admin.id,
+        admin_email=admin.email,
+        action=action,
+        target_type="product",
+        target_id=product_id,
+        changes=changes,
+    )
 
 
 def _check_new_values(
@@ -72,7 +99,7 @@ def list_products(
 
 @router.post("", status_code=status.HTTP_201_CREATED, responses={409: _BARCODE_TAKEN})
 def create_product(
-    product: AdminProductCreate, admin: AdminUser, products: Products
+    product: AdminProductCreate, admin: AdminUser, products: Products, audit: AuditLog
 ) -> ProductRead:
     """Add a product, optionally with its current price. Returns it as GET /products/{id} does.
 
@@ -85,29 +112,52 @@ def create_product(
     product_id = products.create(fields, price=product.price)
     created = products.get_by_id(product_id)
     assert created is not None  # added in this same transaction
+    changes = changed_fields({}, _product_fields(created))
+    _record(audit, admin, "product.create", product_id, changes)
     return created
 
 
 @router.patch("/{product_id:int}", responses={404: _NOT_FOUND, 409: _BARCODE_TAKEN})
 def update_product(
-    product_id: int, change: AdminProductUpdate, admin: AdminUser, products: Products
+    product_id: int,
+    change: AdminProductUpdate,
+    admin: AdminUser,
+    products: Products,
+    audit: AuditLog,
 ) -> ProductRead:
     """Change a product: only the fields sent change, and null clears an optional field. A new
-    price becomes the current price (earlier prices are kept as history). Returns the product."""
-    if products.get_by_id(product_id) is None:
+    price becomes the current price (earlier prices are kept as history); sending the price it
+    already has adds nothing. Returns the product."""
+    if not products.lock(product_id):
         raise _product_not_found()
+    before = products.get_by_id(product_id)
+    assert before is not None  # locked above
     _check_new_values(products, change.barcode, change.category_id, product_id=product_id)
-    products.update(product_id, change.product_changes(), price=change.price)
+    current_price = before.price.amount if before.price else None
+    new_price = change.price if change.price != current_price else None
+    products.update(product_id, change.product_changes(), price=new_price)
     updated = products.get_by_id(product_id)
     assert updated is not None
+    changes = changed_fields(_product_fields(before), _product_fields(updated))
+    _record(audit, admin, "product.update", product_id, changes)
     return updated
 
 
 @router.delete(
     "/{product_id:int}", status_code=status.HTTP_204_NO_CONTENT, responses={404: _NOT_FOUND}
 )
-def delete_product(product_id: int, admin: AdminUser, products: Products) -> Response:
+def delete_product(
+    product_id: int, admin: AdminUser, products: Products, audit: AuditLog
+) -> Response:
     """Remove a product, along with its prices, ratings, and reviews. 204 (no body) when done."""
-    if not products.delete(product_id):
+    if not products.lock(product_id):
         raise _product_not_found()
+    before = products.get_by_id(product_id)
+    assert before is not None  # locked above
+    # The log keeps what was deleted, and how many prices, ratings, and reviews went with it.
+    counts = products.related_counts(product_id)
+    products.delete(product_id)
+    changes = changed_fields(_product_fields(before), {})
+    changes |= changed_fields(counts, {name: 0 for name in counts})
+    _record(audit, admin, "product.delete", product_id, changes)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

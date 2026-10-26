@@ -4,7 +4,8 @@ Every route needs a signed-in admin: 401 without a valid token, 403 for anyone e
 review no longer appears on the product page (GET /products/{id}/reviews leaves it out, and it
 doesn't count in the total), but it stays in the database so it can be shown again. Its author can
 still see, edit, or remove it through /products/{id}/reviews/me; editing doesn't unhide it.
-Hiding a review doesn't change the author's star rating.
+Hiding a review doesn't change the author's star rating. Each change is recorded in the audit
+log (T083).
 """
 
 from typing import Annotated
@@ -13,7 +14,8 @@ from fastapi import APIRouter, Query, Response, status
 
 from app.core.auth import AdminUser
 from app.core.errors import ApiError, error_response
-from app.repositories import Reviews
+from app.repositories import AuditLog, Reviews
+from app.repositories.audit_log import changed_fields
 from app.schemas import AdminReviewRead, ReviewModeration
 
 MAX_REVIEWS_PER_PAGE = 100
@@ -54,22 +56,54 @@ def list_reviews(
 
 @router.patch("/{review_id:int}", responses={404: _NOT_FOUND})
 def moderate_review(
-    review_id: int, change: ReviewModeration, admin: AdminUser, reviews: Reviews
+    review_id: int,
+    change: ReviewModeration,
+    admin: AdminUser,
+    reviews: Reviews,
+    audit: AuditLog,
 ) -> AdminReviewRead:
     """Hide a review from the product page ({"hidden": true}) or show it again
     ({"hidden": false}). Returns the review."""
-    review = reviews.set_hidden(review_id, change.hidden, admin_id=admin.id)
-    if review is None:
+    if not reviews.lock(review_id):
         raise _review_not_found()
+    before = reviews.get_for_admin(review_id)
+    assert before is not None  # locked above
+    review = reviews.set_hidden(review_id, change.hidden, admin_id=admin.id)
+    assert review is not None  # found above, in this same transaction
+    audit.record(
+        admin_id=admin.id,
+        admin_email=admin.email,
+        action="review.hide" if change.hidden else "review.show",
+        target_type="review",
+        target_id=review_id,
+        changes=changed_fields({"hidden": before.hidden}, {"hidden": review.hidden}),
+    )
     return review
 
 
 @router.delete(
     "/{review_id:int}", status_code=status.HTTP_204_NO_CONTENT, responses={404: _NOT_FOUND}
 )
-def delete_review(review_id: int, admin: AdminUser, reviews: Reviews) -> Response:
+def delete_review(review_id: int, admin: AdminUser, reviews: Reviews, audit: AuditLog) -> Response:
     """Remove a review for good. 204 (no body) when done. To take a review down but keep it,
     hide it instead."""
-    if not reviews.delete(review_id):
+    before = reviews.get_for_admin(review_id)
+    if before is None or not reviews.delete(review_id):
         raise _review_not_found()
+    # Keep what was deleted, so the log still shows what the review said and who wrote it.
+    deleted = {
+        "product_id": before.product_id,
+        "author_email": before.author_email,
+        "title": before.title,
+        "body": before.body,
+        "hidden": before.hidden,
+    }
+    audit.record(
+        admin_id=admin.id,
+        admin_email=admin.email,
+        action="review.delete",
+        target_type="review",
+        target_id=review_id,
+        changes=changed_fields(deleted, {}),
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

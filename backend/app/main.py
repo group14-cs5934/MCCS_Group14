@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
     admin,
+    admin_audit,
     admin_products,
     admin_reviews,
     health,
@@ -74,6 +75,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(admin.router)
     app.include_router(admin_products.router)
     app.include_router(admin_reviews.router)
+    app.include_router(admin_audit.router)
 
     @app.get("/")
     def root() -> dict[str, str]:

@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 from app.core.auth import TokenVerifier
 from app.core.config import load_settings
 from app.main import create_app
+from app.repositories.audit_log import get_audit_log_repository
 from app.repositories.products import get_product_repository
 from app.repositories.ratings import get_rating_repository
 from app.repositories.reviews import get_review_repository
@@ -46,6 +47,7 @@ KNOWN_ADMIN_ROUTES = {
     ("GET", "/admin/reviews"),
     ("PATCH", "/admin/reviews/{review_id}"),
     ("DELETE", "/admin/reviews/{review_id}"),
+    ("GET", "/admin/audit-log"),
 }
 
 # A valid value for each path parameter, so requests reach the access check.
@@ -146,6 +148,7 @@ def client(make_client, private_key, users) -> TestClient:
     client.app.dependency_overrides[get_product_repository] = lambda: Tripwire("products")
     client.app.dependency_overrides[get_rating_repository] = lambda: Tripwire("ratings")
     client.app.dependency_overrides[get_review_repository] = lambda: Tripwire("reviews")
+    client.app.dependency_overrides[get_audit_log_repository] = lambda: Tripwire("audit log")
     return client
 
 

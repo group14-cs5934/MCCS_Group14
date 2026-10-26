@@ -8,9 +8,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.auth import AuthUser, get_current_user
+from app.repositories.audit_log import get_audit_log_repository
 from app.repositories.products import get_product_repository
 from app.schemas.admin_product import AdminProductUpdate
-from tests.fakes import LAYS, FakeProducts
+from tests.fakes import LAYS, FakeAuditLog, FakeProducts
 
 ADMIN = AuthUser(id=UUID("a0000000-0000-4000-8000-000000000001"), email=None, role="admin")
 SHOPPER = AuthUser(id=UUID("b0000000-0000-4000-8000-000000000002"), email=None, role="user")
@@ -23,6 +24,7 @@ def client(make_client) -> TestClient:
     client = make_client()
     client.app.dependency_overrides[get_product_repository] = lambda: FakeProducts(LAYS)
     client.app.dependency_overrides[get_current_user] = lambda: ADMIN
+    client.app.dependency_overrides[get_audit_log_repository] = FakeAuditLog
     return client
 
 
