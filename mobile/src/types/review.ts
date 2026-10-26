@@ -19,6 +19,17 @@ export type Review = {
   updated_at: IsoDateTime;
 };
 
+/** A review as admins see it when moderating (GET /admin/reviews). Mirrors AdminReviewRead. */
+export type AdminReview = Review & {
+  user_id: string;
+  /** The author's full email (admins only). */
+  author_email: string | null;
+  /** True if an admin hid it from the product page. */
+  hidden: boolean;
+  /** When it was hidden. */
+  hidden_at: IsoDateTime | null;
+};
+
 /** One page of a product's reviews, newest first (GET /products/{id}/reviews). */
 export type ReviewPage = {
   items: Review[];

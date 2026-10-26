@@ -2,10 +2,11 @@ import { useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { updateUser, type ApiError } from '@/api';
+import Badge from '@/components/Badge';
 import Button from '@/components/Button';
 import Card from '@/components/Card';
 import ErrorBanner from '@/components/ErrorBanner';
-import { colors, radius, spacing, textStyles } from '@/theme';
+import { colors, spacing, textStyles } from '@/theme';
 import type { AdminUserAccount, UserUpdateBody } from '@/types/user';
 
 /** One thing an admin can do to a user, and what they're asked before it's sent. */
@@ -170,14 +171,6 @@ export default function AdminUserRow({ user, isSelf, onUpdated, onDenied }: Prop
   );
 }
 
-function Badge({ label, tone }: { label: string; tone: 'accent' | 'danger' }) {
-  return (
-    <Text style={[styles.badge, tone === 'accent' ? styles.badgeAccent : styles.badgeDanger]}>
-      {label}
-    </Text>
-  );
-}
-
 const styles = StyleSheet.create({
   card: {
     gap: spacing.sm,
@@ -202,21 +195,6 @@ const styles = StyleSheet.create({
   badges: {
     alignItems: 'flex-end',
     gap: spacing.xs,
-  },
-  badge: {
-    ...textStyles.caption,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xxs,
-    borderRadius: radius.pill,
-    overflow: 'hidden',
-  },
-  badgeAccent: {
-    color: colors.accent,
-    backgroundColor: colors.accentSoft,
-  },
-  badgeDanger: {
-    color: colors.danger,
-    backgroundColor: colors.dangerSoft,
   },
   confirm: {
     gap: spacing.xs,

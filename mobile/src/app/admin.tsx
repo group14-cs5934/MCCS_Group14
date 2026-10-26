@@ -6,6 +6,7 @@ import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-na
 import { useAuth } from '@/auth';
 import AdminActivityList from '@/components/AdminActivityList';
 import AdminGate, { AccessDenied } from '@/components/AdminGate';
+import AdminReviewRow from '@/components/AdminReviewRow';
 import AdminUserRow from '@/components/AdminUserRow';
 import AsyncContent from '@/components/AsyncContent';
 import Button from '@/components/Button';
@@ -16,31 +17,44 @@ import { SEARCH_DEBOUNCE_MS, SEARCH_MAX_LENGTH } from '@/hooks/useProductSearch'
 import { colors, radius, sharedStyles, spacing, textStyles } from '@/theme';
 import type { AuditLogEntry } from '@/types/audit';
 import type { Product } from '@/types/product';
+import type { AdminReview } from '@/types/review';
 import type { AdminUserAccount } from '@/types/user';
 
 /** Most rows a list loads at once (the API's limit for GET /admin/products, /users, /audit-log). */
 export const ADMIN_PAGE_SIZE = 100;
 
-type Section = 'products' | 'users' | 'activity';
+type Section = 'products' | 'users' | 'reviews' | 'activity';
 
 const sections: { key: Section; label: string; searchLabel?: string }[] = [
   { key: 'products', label: 'Products', searchLabel: 'Search products' },
   { key: 'users', label: 'Users', searchLabel: 'Search users by email' },
+  { key: 'reviews', label: 'Reviews' },
   { key: 'activity', label: 'Activity' },
 ];
 
+/** A filter button's value (sent to the API) and label. */
+type Filter<T> = { value: T; label: string };
+
 /** The Activity tab's filters: every change, or only changes to one kind of thing. */
-const activityFilters: { targetType: string | null; label: string }[] = [
-  { targetType: null, label: 'All' },
-  { targetType: 'product', label: 'Products' },
-  { targetType: 'user', label: 'Users' },
-  { targetType: 'review', label: 'Reviews' },
+const activityFilters: Filter<string | null>[] = [
+  { value: null, label: 'All' },
+  { value: 'product', label: 'Products' },
+  { value: 'user', label: 'Users' },
+  { value: 'review', label: 'Reviews' },
+];
+
+/** The Reviews tab's filters: every review, or only those shown on or hidden from product pages. */
+const reviewFilters: Filter<boolean | null>[] = [
+  { value: null, label: 'All' },
+  { value: false, label: 'Visible' },
+  { value: true, label: 'Hidden' },
 ];
 
 /**
- * Admin area: the catalog's products (T090) and the app's users, each with a search box, and the
- * audit log of admin changes (Activity, T083). Only admins can open it; anyone else sees "Admins
- * only". The API checks too, so hiding the screen isn't the only guard.
+ * Admin area: the catalog's products (T090) and the app's users, each with a search box, reviews
+ * to moderate (T098), and the audit log of admin changes (Activity, T083). Only admins can open
+ * it; anyone else sees "Admins only". The API checks too, so hiding the screen isn't the only
+ * guard.
  */
 export default function AdminScreen() {
   return (
@@ -56,6 +70,7 @@ function AdminArea() {
   const [searches, setSearches] = useState<Record<Section, string>>({
     products: '',
     users: '',
+    reviews: '',
     activity: '',
   });
   const text = searches[section];
@@ -101,6 +116,7 @@ function AdminArea() {
 
       {section === 'products' ? <AdminProducts query={query} /> : null}
       {section === 'users' ? <AdminUsers query={query} /> : null}
+      {section === 'reviews' ? <AdminReviews /> : null}
       {section === 'activity' ? <AdminActivity /> : null}
     </>
   );
@@ -194,21 +210,10 @@ function AdminUsers({ query }: { query: string }) {
   if (query) params.set('email', query);
   const { loading, data, error, reload } = useApiGet<AdminUserAccount[]>(`/admin/users?${params}`);
   const [denied, setDenied] = useState(false);
-  // Users changed since the list loaded, shown in place of their rows until it loads again.
-  const [changed, setChanged] = useState<{
-    list: AdminUserAccount[] | null;
-    byId: Record<string, AdminUserAccount>;
-  }>({ list: null, byId: {} });
+  const [users, setUser] = useChangedRows(data);
 
   if (denied || error?.status === 403) return <AccessDenied />;
 
-  const byId = changed.list === data ? changed.byId : {};
-  const users = (data ?? []).map((user) => byId[user.id] ?? user);
-  const showUpdated = (user: AdminUserAccount) =>
-    setChanged((prev) => ({
-      list: data,
-      byId: { ...(prev.list === data ? prev.byId : {}), [user.id]: user },
-    }));
   return (
     <AsyncContent
       loading={loading}
@@ -228,13 +233,70 @@ function AdminUsers({ query }: { query: string }) {
           <AdminUserRow
             user={item}
             isSelf={item.id === me?.id}
-            onUpdated={showUpdated}
+            onUpdated={(user) => setUser(user.id, user)}
             onDenied={() => setDenied(true)}
           />
         )}
       />
     </AsyncContent>
   );
+}
+
+/**
+ * Every review, newest first, including hidden ones, optionally only the visible or hidden ones
+ * (T098). Admins can hide a review from its product page, show it again, or delete it.
+ */
+function AdminReviews() {
+  const router = useRouter();
+  const [hidden, setHidden] = useState<boolean | null>(null);
+  const params = new URLSearchParams({ limit: String(ADMIN_PAGE_SIZE) });
+  if (hidden !== null) params.set('hidden', String(hidden));
+  const { loading, data, error, reload } = useApiGet<AdminReview[]>(`/admin/reviews?${params}`);
+  const [denied, setDenied] = useState(false);
+  // A review hidden while viewing only visible ones (or shown while viewing hidden ones) stays in
+  // the list with its new badge until the list reloads, so it can be undone.
+  const [reviews, setReview] = useChangedRows(data);
+
+  if (denied || error?.status === 403) return <AccessDenied />;
+
+  return (
+    <>
+      <FilterPills filters={reviewFilters} selected={hidden} onSelect={setHidden} noun="reviews" />
+
+      <AsyncContent
+        loading={loading}
+        error={error?.message}
+        onRetry={reload}
+        loadingMessage="Loading reviews…"
+      >
+        <Text style={styles.count} accessibilityLiveRegion="polite">
+          {reviewCountText(reviews.length, hidden)}
+        </Text>
+        <FlatList
+          data={reviews}
+          keyExtractor={(review) => String(review.id)}
+          contentContainerStyle={styles.list}
+          renderItem={({ item }) => (
+            <AdminReviewRow
+              review={item}
+              onUpdated={(review) => setReview(review.id, review)}
+              onDeleted={(reviewId) => setReview(reviewId, null)}
+              onOpenProduct={(productId) => router.push(`/product/${productId}`)}
+              onDenied={() => setDenied(true)}
+            />
+          )}
+        />
+      </AsyncContent>
+    </>
+  );
+}
+
+/** "12 reviews", "No hidden reviews.", or "Showing the latest 100 visible reviews." */
+function reviewCountText(count: number, hidden: boolean | null): string {
+  const kind = hidden === null ? '' : hidden ? 'hidden ' : 'visible ';
+  if (count === 0) return `No ${kind}reviews.`;
+  if (count >= ADMIN_PAGE_SIZE) return `Showing the latest ${ADMIN_PAGE_SIZE} ${kind}reviews.`;
+  return `${count} ${kind}${count === 1 ? 'review' : 'reviews'}`;
 }
 
 /** Every admin change, newest first, optionally only changes to products, users, or reviews. */
@@ -250,25 +312,12 @@ function AdminActivity() {
   const entries = data ?? [];
   return (
     <>
-      <View style={styles.filters}>
-        {activityFilters.map((filter) => {
-          const selected = filter.targetType === targetType;
-          return (
-            <Pressable
-              key={filter.label}
-              onPress={() => setTargetType(filter.targetType)}
-              accessibilityRole="button"
-              accessibilityLabel={`Show ${filter.label.toLowerCase()} changes`}
-              accessibilityState={{ selected }}
-              style={[styles.filter, selected && styles.filterSelected]}
-            >
-              <Text style={[styles.filterText, selected && styles.filterTextSelected]}>
-                {filter.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      <FilterPills
+        filters={activityFilters}
+        selected={targetType}
+        onSelect={setTargetType}
+        noun="changes"
+      />
 
       <AsyncContent
         loading={loading}
@@ -286,6 +335,65 @@ function AdminActivity() {
       </AsyncContent>
     </>
   );
+}
+
+/** A row of filter buttons with one selected; each reads e.g. "Show hidden reviews". */
+function FilterPills<T>({
+  filters,
+  selected,
+  onSelect,
+  noun,
+}: {
+  filters: Filter<T>[];
+  selected: T;
+  onSelect: (value: T) => void;
+  noun: string;
+}) {
+  return (
+    <View style={styles.filters}>
+      {filters.map((filter) => {
+        const isSelected = filter.value === selected;
+        return (
+          <Pressable
+            key={filter.label}
+            onPress={() => onSelect(filter.value)}
+            accessibilityRole="button"
+            accessibilityLabel={`Show ${filter.label.toLowerCase()} ${noun}`}
+            accessibilityState={{ selected: isSelected }}
+            style={[styles.filter, isSelected && styles.filterSelected]}
+          >
+            <Text style={[styles.filterText, isSelected && styles.filterTextSelected]}>
+              {filter.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/**
+ * `list` with the rows changed since it loaded put in their place (or left out, if set to null
+ * because they were deleted), so a change shows at once without reloading the whole list. The
+ * changes are dropped when the list loads again, since it then comes from the server.
+ */
+function useChangedRows<T extends { id: string | number }>(list: T[] | null) {
+  const [changed, setChanged] = useState<{
+    list: T[] | null;
+    byId: Record<string, T | null>;
+  }>({ list: null, byId: {} });
+
+  const byId = changed.list === list ? changed.byId : {};
+  const rows = (list ?? []).flatMap((row) => {
+    const now = row.id in byId ? byId[row.id] : row;
+    return now ? [now] : [];
+  });
+  const setRow = (id: T['id'], row: T | null) =>
+    setChanged((prev) => ({
+      list,
+      byId: { ...(prev.list === list ? prev.byId : {}), [id]: row },
+    }));
+  return [rows, setRow] as const;
 }
 
 /** "12 changes", "No changes yet.", or "Showing the latest 100 changes." */
