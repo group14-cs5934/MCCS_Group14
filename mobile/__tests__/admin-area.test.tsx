@@ -3,6 +3,7 @@ import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-librar
 
 import { getMe } from '@/api/me';
 import { SEARCH_DEBOUNCE_MS } from '@/hooks/useProductSearch';
+import type { AuditLogEntry } from '@/types/audit';
 import type { Product } from '@/types/product';
 import type { AdminUserAccount, Role } from '@/types/user';
 
@@ -70,6 +71,49 @@ function jsonResponse(status: number, body: unknown): Response {
   } as unknown as Response;
 }
 
+/** GET /admin/audit-log's entries, newest first. */
+const ACTIVITY: AuditLogEntry[] = [
+  {
+    id: 3,
+    admin_id: 'u-1',
+    admin_email: 'admin@example.com',
+    action: 'product.update',
+    target_type: 'product',
+    target_id: '2',
+    changes: {
+      price: { from: '2.49', to: '2.99' },
+      name: { from: 'Pepsi', to: 'Diet Pepsi' },
+      size: { from: null, to: '20 fl oz' },
+      category_id: { from: null, to: 4 },
+    },
+    created_at: '2026-10-26T15:04:00Z',
+  },
+  {
+    id: 2,
+    admin_id: null,
+    admin_email: 'former@example.com',
+    action: 'review.hide',
+    target_type: 'review',
+    target_id: '9',
+    changes: { hidden: { from: false, to: true } },
+    created_at: '2026-10-25T10:00:00Z',
+  },
+  {
+    id: 1,
+    admin_id: 'u-1',
+    admin_email: 'admin@example.com',
+    action: 'product.delete',
+    target_type: 'product',
+    target_id: '5',
+    changes: { name: { from: 'Old Chips', to: null }, ratings: { from: 3, to: 0 } },
+    created_at: '2026-10-24T09:00:00Z',
+  },
+];
+
+/** What GET /admin/audit-log answers: these entries (filtered by target_type), or an error. */
+let auditLog: { status: number } | null = null;
+let auditEntries: AuditLogEntry[] = ACTIVITY;
+
 const fetchMock = jest.fn(async (url: string) => {
   const { pathname, searchParams } = new URL(url);
   if (pathname === '/admin/products') {
@@ -79,6 +123,14 @@ const fetchMock = jest.fn(async (url: string) => {
     return jsonResponse(
       200,
       CATALOG.filter((item) => item.name.toLowerCase().includes(q)),
+    );
+  }
+  if (pathname === '/admin/audit-log') {
+    if (auditLog) return jsonResponse(auditLog.status, { code: 'forbidden', message: 'No' });
+    const targetType = searchParams.get('target_type');
+    return jsonResponse(
+      200,
+      auditEntries.filter((entry) => !targetType || entry.target_type === targetType),
     );
   }
   if (pathname === '/admin/users') {
@@ -104,12 +156,16 @@ function signedInAs(role: Role) {
 
 const adminRequests = () =>
   fetchMock.mock.calls.filter(([url]) => new URL(url).pathname === '/admin/products');
+const activityRequests = () =>
+  fetchMock.mock.calls.filter(([url]) => new URL(url).pathname === '/admin/audit-log');
 const userRequests = () =>
   fetchMock.mock.calls.filter(([url]) => new URL(url).pathname === '/admin/users');
 
 beforeEach(() => {
   adminProducts = null;
   adminUsers = null;
+  auditLog = null;
+  auditEntries = ACTIVITY;
   fetchMock.mockClear();
   globalThis.fetch = fetchMock as unknown as typeof fetch;
 });
@@ -297,6 +353,83 @@ describe('users list', () => {
     adminUsers = { status: 403 };
 
     await openUsers();
+
+    expect(await screen.findByText('Admins only')).toBeOnTheScreen();
+  });
+});
+
+describe('activity', () => {
+  beforeEach(() => signedInAs('admin'));
+
+  async function openActivity() {
+    renderRouter('src/app', { initialUrl: '/admin' });
+    await screen.findByText('Diet Pepsi');
+    fireEvent.press(screen.getByRole('tab', { name: 'Activity' }));
+  }
+
+  it('shows each admin change: who, what, and when, newest first', async () => {
+    await openActivity();
+
+    expect(await screen.findByText('admin@example.com edited product #2')).toBeOnTheScreen();
+    expect(screen.getByText('3 changes')).toBeOnTheScreen();
+    expect(screen.getByText('Price: $2.49 → $2.99')).toBeOnTheScreen();
+    expect(screen.getByText('Name: Pepsi → Diet Pepsi')).toBeOnTheScreen();
+    expect(screen.getByText('Size: none → 20 fl oz')).toBeOnTheScreen();
+    expect(screen.getByText('and 1 more change')).toBeOnTheScreen(); // the fourth field
+    expect(screen.getByText('former@example.com hid review #9')).toBeOnTheScreen();
+    expect(screen.getByText('Hidden: no → yes')).toBeOnTheScreen();
+    // Shown in the phone's own time zone, so only the date is the same everywhere.
+    expect(screen.getByText(/^Oct 24, 2026, \d{1,2}:\d{2}/)).toBeOnTheScreen();
+    expect(new URL(activityRequests()[0][0]).searchParams.get('limit')).toBe('100');
+  });
+
+  it('shows what a delete removed', async () => {
+    await openActivity();
+
+    expect(await screen.findByText('admin@example.com deleted product #5')).toBeOnTheScreen();
+    expect(screen.getByText('Name: Old Chips')).toBeOnTheScreen();
+    expect(screen.getByText('Ratings: 3')).toBeOnTheScreen();
+  });
+
+  it('has no search box, and filters by what was changed', async () => {
+    await openActivity();
+    await screen.findByText('3 changes');
+    expect(screen.queryByLabelText(/^Search/)).not.toBeOnTheScreen();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Show reviews changes' }));
+
+    expect(await screen.findByText('1 change')).toBeOnTheScreen();
+    expect(screen.queryByText('admin@example.com edited product #2')).not.toBeOnTheScreen();
+    expect(new URL(activityRequests().at(-1)![0]).searchParams.get('target_type')).toBe('review');
+    expect(screen.getByRole('button', { name: 'Show reviews changes' })).toBeSelected();
+  });
+
+  it('opens a changed product, but not one that was deleted', async () => {
+    await openActivity();
+    await screen.findByText('3 changes');
+    expect(
+      screen.queryByRole('button', { name: /^admin@example.com deleted product #5/ }),
+    ).not.toBeOnTheScreen();
+
+    await act(async () =>
+      fireEvent.press(screen.getByRole('button', { name: /^admin@example.com edited product #2/ })),
+    );
+
+    expect(screen).toHavePathname('/product/2');
+  });
+
+  it('says when there are no changes yet', async () => {
+    auditEntries = [];
+
+    await openActivity();
+
+    expect(await screen.findByText('No changes yet.')).toBeOnTheScreen();
+  });
+
+  it('shows "Admins only" if the API refuses the log', async () => {
+    auditLog = { status: 403 };
+
+    await openActivity();
 
     expect(await screen.findByText('Admins only')).toBeOnTheScreen();
   });
