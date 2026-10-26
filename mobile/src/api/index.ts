@@ -19,7 +19,9 @@ export { checkHealth } from './health';
 export {
   clearStock,
   createProduct,
+  deleteReview,
   getProductStock,
+  setReviewHidden,
   setStock,
   updateProduct,
   updateUser,

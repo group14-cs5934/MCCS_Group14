@@ -1,4 +1,5 @@
 import type { AdminProduct, AdminProductBody, AdminProductStock, StockBody } from '@/types/admin';
+import type { AdminReview } from '@/types/review';
 import type { AdminUserAccount, UserUpdateBody } from '@/types/user';
 
 import { api, type CallOptions } from './client';
@@ -39,4 +40,17 @@ export function clearStock(productId: number, storeId: number, options?: CallOpt
  */
 export function updateUser(userId: string, body: UserUpdateBody, options?: CallOptions) {
   return api.patch<AdminUserAccount>(`/admin/users/${userId}`, body, options);
+}
+
+/**
+ * PATCH /admin/reviews/{id}: hides a review from the product page, or shows it again (404
+ * review_not_found). A hidden review stays in the database.
+ */
+export function setReviewHidden(reviewId: number, hidden: boolean, options?: CallOptions) {
+  return api.patch<AdminReview>(`/admin/reviews/${reviewId}`, { hidden }, options);
+}
+
+/** DELETE /admin/reviews/{id}: removes a review for good (404 review_not_found). */
+export function deleteReview(reviewId: number, options?: CallOptions) {
+  return api.delete(`/admin/reviews/${reviewId}`, options);
 }
