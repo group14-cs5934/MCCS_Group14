@@ -1,6 +1,7 @@
 """Product reviews (US09): a signed-in user's written review of a product (T058)."""
 
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -93,3 +94,23 @@ def author_name(email: str | None) -> str:
     "a***". Reviews are public, so the full email is never sent."""
     local = (email or "").split("@", 1)[0].strip()
     return f"{local[0].lower()}***" if local else "Shopper"
+
+
+class AdminReviewRead(ReviewRead):
+    """A review as admins see it when moderating (T082): who wrote it, and whether it's hidden."""
+
+    user_id: UUID
+    author_email: str | None = Field(description="The author's full email (admins only)")
+    hidden: bool = Field(description="True if an admin hid it from the product page")
+    hidden_at: datetime | None = Field(default=None, description="When it was hidden")
+
+
+class ReviewModeration(BaseModel):
+    """An admin's change to a review (PATCH /admin/reviews/{id})."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Strict: only true or false, so a string like "no" can't change a review by accident.
+    hidden: bool = Field(
+        strict=True, description="true hides the review from the product page, false shows it again"
+    )

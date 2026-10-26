@@ -6,10 +6,17 @@ from app.schemas.error import ErrorAction, ErrorResponse
 from app.schemas.price import PriceCreate, PriceRead
 from app.schemas.product import ProductCreate, ProductRead
 from app.schemas.rating import RatingCreate, RatingRead, RatingSummary
-from app.schemas.review import ReviewCreate, ReviewPage, ReviewRead
+from app.schemas.review import (
+    AdminReviewRead,
+    ReviewCreate,
+    ReviewModeration,
+    ReviewPage,
+    ReviewRead,
+)
 from app.schemas.user import Role, UserAccount, UserRead, UserUpdate
 
 __all__ = [
+    "AdminReviewRead",
     "BrandCreate",
     "BrandRead",
     "CategoryCreate",
@@ -24,6 +31,7 @@ __all__ = [
     "RatingRead",
     "RatingSummary",
     "ReviewCreate",
+    "ReviewModeration",
     "ReviewPage",
     "ReviewRead",
     "Role",

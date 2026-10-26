@@ -25,6 +25,7 @@ from app.core.config import load_settings
 from app.main import create_app
 from app.repositories.products import get_product_repository
 from app.repositories.ratings import get_rating_repository
+from app.repositories.reviews import get_review_repository
 from app.repositories.users import get_user_repository
 from tests.conftest import VALID_DATABASE_URL, VALID_SUPABASE_URL
 from tests.fakes import FakeUsers
@@ -42,14 +43,23 @@ KNOWN_ADMIN_ROUTES = {
     ("POST", "/admin/products"),
     ("PATCH", "/admin/products/{product_id}"),
     ("DELETE", "/admin/products/{product_id}"),
+    ("GET", "/admin/reviews"),
+    ("PATCH", "/admin/reviews/{review_id}"),
+    ("DELETE", "/admin/reviews/{review_id}"),
 }
 
 # A valid value for each path parameter, so requests reach the access check.
-PATH_VALUES = {"product_id": "7", "user_id": str(SHOPPER_ID)}
+PATH_VALUES = {"product_id": "7", "user_id": str(SHOPPER_ID), "review_id": "3"}
 
 # A body that passes validation for every admin endpoint that takes one, so a 422 can't hide a
 # missing access check. (Extra fields don't matter: access is checked first.)
-BODY = {"barcode": "036000291452", "name": "Sample Chips", "role": "admin", "active": True}
+BODY = {
+    "barcode": "036000291452",
+    "name": "Sample Chips",
+    "role": "admin",
+    "active": True,
+    "hidden": True,
+}
 
 
 class TrippedError(AssertionError):
@@ -135,6 +145,7 @@ def client(make_client, private_key, users) -> TestClient:
     client.app.dependency_overrides[get_user_repository] = lambda: users
     client.app.dependency_overrides[get_product_repository] = lambda: Tripwire("products")
     client.app.dependency_overrides[get_rating_repository] = lambda: Tripwire("ratings")
+    client.app.dependency_overrides[get_review_repository] = lambda: Tripwire("reviews")
     return client
 
 
