@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useAuth } from '@/auth';
+import AdminActivityList from '@/components/AdminActivityList';
 import AsyncContent from '@/components/AsyncContent';
 import Button from '@/components/Button';
 import Card from '@/components/Card';
@@ -14,23 +15,33 @@ import { useApiGet } from '@/hooks/useApiGet';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { SEARCH_DEBOUNCE_MS, SEARCH_MAX_LENGTH } from '@/hooks/useProductSearch';
 import { colors, radius, sharedStyles, spacing, textStyles } from '@/theme';
+import type { AuditLogEntry } from '@/types/audit';
 import type { Product } from '@/types/product';
 import type { AdminUserAccount } from '@/types/user';
 
-/** Most rows a list loads at once (the API's limit for GET /admin/products and /admin/users). */
+/** Most rows a list loads at once (the API's limit for GET /admin/products, /users, /audit-log). */
 export const ADMIN_PAGE_SIZE = 100;
 
-type Section = 'products' | 'users';
+type Section = 'products' | 'users' | 'activity';
 
-const sections: { key: Section; label: string; searchLabel: string }[] = [
+const sections: { key: Section; label: string; searchLabel?: string }[] = [
   { key: 'products', label: 'Products', searchLabel: 'Search products' },
   { key: 'users', label: 'Users', searchLabel: 'Search users by email' },
+  { key: 'activity', label: 'Activity' },
+];
+
+/** The Activity tab's filters: every change, or only changes to one kind of thing. */
+const activityFilters: { targetType: string | null; label: string }[] = [
+  { targetType: null, label: 'All' },
+  { targetType: 'product', label: 'Products' },
+  { targetType: 'user', label: 'Users' },
+  { targetType: 'review', label: 'Reviews' },
 ];
 
 /**
- * Admin area: the catalog's products (T090) and the app's users, each with a search box. Only
- * admins can open it; anyone else sees "Admins only". The API checks too, so hiding the screen
- * isn't the only guard.
+ * Admin area: the catalog's products (T090) and the app's users, each with a search box, and the
+ * audit log of admin changes (Activity, T083). Only admins can open it; anyone else sees "Admins
+ * only". The API checks too, so hiding the screen isn't the only guard.
  */
 export default function AdminScreen() {
   const { roleLoading, isAdmin } = useAuth();
@@ -62,7 +73,11 @@ function AccessDenied() {
 function AdminArea() {
   const [section, setSection] = useState<Section>('products');
   // Each section keeps its own search text, so switching back shows what was there.
-  const [searches, setSearches] = useState<Record<Section, string>>({ products: '', users: '' });
+  const [searches, setSearches] = useState<Record<Section, string>>({
+    products: '',
+    users: '',
+    activity: '',
+  });
   const text = searches[section];
   const typed = text.trim();
   // While typing, search once typing pauses. Switching lists or clearing the box applies right
@@ -96,13 +111,17 @@ function AdminArea() {
         })}
       </View>
 
-      <SearchBar
-        label={current.searchLabel}
-        value={text}
-        onChange={(value) => setSearches((all) => ({ ...all, [section]: value }))}
-      />
+      {current.searchLabel ? (
+        <SearchBar
+          label={current.searchLabel}
+          value={text}
+          onChange={(value) => setSearches((all) => ({ ...all, [section]: value }))}
+        />
+      ) : null}
 
-      {section === 'products' ? <AdminProducts query={query} /> : <AdminUsers query={query} />}
+      {section === 'products' ? <AdminProducts query={query} /> : null}
+      {section === 'users' ? <AdminUsers query={query} /> : null}
+      {section === 'activity' ? <AdminActivity /> : null}
     </>
   );
 }
@@ -205,6 +224,64 @@ function AdminUsers({ query }: { query: string }) {
   );
 }
 
+/** Every admin change, newest first, optionally only changes to products, users, or reviews. */
+function AdminActivity() {
+  const router = useRouter();
+  const [targetType, setTargetType] = useState<string | null>(null);
+  const params = new URLSearchParams({ limit: String(ADMIN_PAGE_SIZE) });
+  if (targetType) params.set('target_type', targetType);
+  const { loading, data, error, reload } = useApiGet<AuditLogEntry[]>(`/admin/audit-log?${params}`);
+
+  if (error?.status === 403) return <AccessDenied />;
+
+  const entries = data ?? [];
+  return (
+    <>
+      <View style={styles.filters}>
+        {activityFilters.map((filter) => {
+          const selected = filter.targetType === targetType;
+          return (
+            <Pressable
+              key={filter.label}
+              onPress={() => setTargetType(filter.targetType)}
+              accessibilityRole="button"
+              accessibilityLabel={`Show ${filter.label.toLowerCase()} changes`}
+              accessibilityState={{ selected }}
+              style={[styles.filter, selected && styles.filterSelected]}
+            >
+              <Text style={[styles.filterText, selected && styles.filterTextSelected]}>
+                {filter.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <AsyncContent
+        loading={loading}
+        error={error?.message}
+        onRetry={reload}
+        loadingMessage="Loading activity…"
+      >
+        <Text style={styles.count} accessibilityLiveRegion="polite">
+          {activityCountText(entries.length)}
+        </Text>
+        <AdminActivityList
+          entries={entries}
+          onOpenProduct={(productId) => router.push(`/product/${productId}`)}
+        />
+      </AsyncContent>
+    </>
+  );
+}
+
+/** "12 changes", "No changes yet.", or "Showing the latest 100 changes." */
+function activityCountText(count: number): string {
+  if (count === 0) return 'No changes yet.';
+  if (count >= ADMIN_PAGE_SIZE) return `Showing the latest ${ADMIN_PAGE_SIZE} changes.`;
+  return `${count} ${count === 1 ? 'change' : 'changes'}`;
+}
+
 function UserRow({ user }: { user: AdminUserAccount }) {
   const email = user.email ?? 'No email';
   const joined = new Date(user.created_at).toLocaleDateString('en-US', {
@@ -293,6 +370,33 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: spacing.md,
     color: colors.textPrimary,
+  },
+  filters: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginHorizontal: spacing.xl,
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
+  },
+  filter: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  filterSelected: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accentSoft,
+  },
+  filterText: {
+    ...textStyles.label,
+    color: colors.textSecondary,
+  },
+  filterTextSelected: {
+    color: colors.accent,
   },
   count: {
     ...textStyles.caption,
