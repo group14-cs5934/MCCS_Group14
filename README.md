@@ -468,6 +468,28 @@ Both have `created_at` and `updated_at`. Because of the one-per-user rule, save 
 id DESC`). A user's row must exist before they rate or review, which `GET /me` (or any
 signed-in request) takes care of.
 
+### Database migrations
+
+Database changes are numbered SQL files in `backend/migrations/`, applied in filename order. Each
+one can safely run more than once. To apply the ones a database doesn't have yet, from
+`backend/`:
+
+```sh
+uv run python -m scripts.migrate            # the database in backend/.env (DATABASE_URL)
+uv run python -m scripts.migrate --status   # what's applied and what's pending; changes nothing
+uv run python -m scripts.migrate --database-url "postgresql://..."   # another database
+```
+
+Applied files are recorded in a `schema_migrations` table, so later runs skip them. Each runs in
+its own transaction: if one fails it's undone and not recorded, the run stops, and the ones
+before it stay applied. Fix it and run again. For a database that isn't on this computer (e.g. the
+team's Supabase), it shows where and how many and asks first; `--yes` skips the question. The
+first run on a database migrated by hand runs every file once more and records them all.
+
+Run it on the shared Supabase database only for migrations that are merged into `main`, so a
+branch's unfinished migration never reaches everyone's data. To add a database change, add the
+next numbered file and make it safe to rerun (`IF NOT EXISTS`, or a check first, as in 002).
+
 ### Database access
 
 The app opens a connection pool at startup (`app/core/database.py`). Routes never connect or
@@ -607,12 +629,13 @@ Bash or macOS/Linux; run them from the repo root unless a step says otherwise.
 
    ```sh
    docker run -d --name mccs-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=mccs -p 5432:5432 postgres:17
-   for f in backend/migrations/*.sql; do docker exec -i mccs-db psql -U postgres -d mccs -v ON_ERROR_STOP=1 < "$f"; done
+   cd backend && uv run python -m scripts.migrate --database-url postgresql://postgres:postgres@localhost:5432/mccs; cd ..
    ```
 
    To use the team's Supabase database instead, put its connection string in `backend/.env` and
-   skip this step if its tables already exist (otherwise run each migration file, in order, in
-   Supabase's SQL editor). The seeded product may then not have ID 1.
+   run `uv run python -m scripts.migrate` (from `backend/`) to bring it up to date; it asks before
+   changing a remote database (see "Database migrations"). The seeded product may then not have
+   ID 1.
 
 2. **Configure the backend.** In `backend/.env` (copy `backend/.env.example`):
    `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mccs`, the team's
