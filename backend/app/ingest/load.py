@@ -8,6 +8,9 @@ added by hand with that barcode is linked to the source and updated too.
 Fields the source leaves empty keep their stored value, so a sync never wipes out a description,
 photo, or category. A new price is only recorded when it differs from the current one, so
 re-importing doesn't fill the price history with copies.
+
+Fields an admin set (products.admin_fields, T089) keep the admin's value too, so the next sync
+doesn't undo an edit; "price" there means the source's price isn't recorded.
 """
 
 import logging
@@ -37,7 +40,7 @@ _FIELDS = ("barcode", "name", "description", "size", "image_url", "category_id")
 
 # The source's match wins over a barcode match, and an exact barcode over another form of it.
 _FIND = """
-SELECT id, barcode, name, description, size, image_url, category_id
+SELECT id, barcode, name, description, size, image_url, category_id, admin_fields
 FROM products
 WHERE (source = %(source)s AND source_id = %(source_id)s) OR barcode = ANY(%(forms)s)
 ORDER BY (source = %(source)s AND source_id = %(source_id)s) IS TRUE DESC,
@@ -117,15 +120,16 @@ def upsert_product(
         _record_price(connection, product_id, product.price, product.source, synced_at)
         return product_id, LoadResult.INSERTED
 
-    # Keep stored values the source doesn't have (it never clears a field).
-    for column in ("description", "size", "image_url", "category_id"):
-        if params[column] is None:
+    # Keep stored values the source doesn't have (it never clears a field), and every value an
+    # admin set (T089).
+    admin_fields = set(existing["admin_fields"])
+    for column in _FIELDS:
+        if column in admin_fields or (column != "barcode" and params[column] is None):
             params[column] = existing[column]
     changed = any(params[column] != existing[column] for column in _FIELDS)
     connection.execute(_UPDATE, {**params, "id": existing["id"], "changed": changed})
-    price_changed = _record_price(
-        connection, existing["id"], product.price, product.source, synced_at
-    )
+    price = None if "price" in admin_fields else product.price
+    price_changed = _record_price(connection, existing["id"], price, product.source, synced_at)
     return existing["id"], (
         LoadResult.UPDATED if changed or price_changed else LoadResult.UNCHANGED
     )
