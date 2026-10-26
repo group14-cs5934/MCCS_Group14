@@ -9,7 +9,8 @@ vary. The numbers come from the product and store IDs (and --seed), so running i
 same stock, and a product added later gets its own rows without changing anyone else's.
 
 If there are no stores yet, it adds DEMO_STORES first. By default only missing rows are added, so
-stock that an admin set by hand is kept; --reset replaces everything.
+stock that an admin set by hand is kept; --reset replaces every row except ones an admin set
+(T094).
 """
 
 import argparse
@@ -89,9 +90,10 @@ def generate(
     pairs = connection.execute(
         "SELECT p.id, s.id FROM products AS p CROSS JOIN store_locations AS s ORDER BY p.id, s.id"
     ).fetchall()
+    # Even --reset leaves stock an admin set (T094).
     conflict = (
         "DO UPDATE SET in_stock = EXCLUDED.in_stock, quantity = EXCLUDED.quantity, "
-        "aisle = EXCLUDED.aisle, updated_at = NOW()"
+        "aisle = EXCLUDED.aisle, updated_at = NOW() WHERE product_stock.admin_set_at IS NULL"
         if reset
         else "DO NOTHING"
     )

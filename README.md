@@ -457,6 +457,22 @@ To log a new admin change, take an `AuditLog` parameter and call `audit.record(.
 `changed_fields(before, after)` from `app/repositories/audit_log.py`.
 `tests/test_admin_audit_log.py` fails if an admin route that changes something has no audit test.
 
+**Managing stores and stock (admins only, T094):**
+
+| Endpoint                                        | Does                                                       |
+| ----------------------------------------------- | ---------------------------------------------------------- |
+| `POST /admin/stores`                            | Adds a store (`201`): `name`, optional `address`, and `slug` (made from the name if not sent; `409 slug_taken` if another store has it). |
+| `PATCH /admin/stores/{id}`                      | Changes `name`, `slug`, or `address`.                      |
+| `DELETE /admin/stores/{id}`                     | Removes a store and its stock records (`204`).             |
+| `GET /admin/products/{id}/stock`                | The product at every store, with `admin_set_at` for stock an admin set. |
+| `PUT /admin/products/{id}/stock/{store_id}`     | Sets stock there, e.g. `{"in_stock": false}`; optional `quantity` (must agree with `in_stock`) and `aisle` (kept if not sent). |
+| `DELETE /admin/products/{id}/stock/{store_id}`  | Hands that store's stock back to automatic updates (`204`); the values stay until the monitor next updates them. `404 admin_stock_not_found` if an admin hadn't set it. |
+
+Stock an admin sets is marked with `product_stock.admin_set_at` (migration 013), so the product
+monitor and `scripts/generate_store_stock.py --reset` leave it alone. The app reads stock from
+`GET /products/{id}/availability`, so a change shows there right away. Every change is in the
+audit log.
+
 **Who may call what (T093).** `tests/test_permissions_audit.py` lists every endpoint as
 `public` (works signed out, never changes data), `signed_in` (`401` without a valid token), or
 `admin` (under `/admin`; `403` for regular users), and checks each one behaves that way. When you

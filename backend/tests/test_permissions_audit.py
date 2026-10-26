@@ -66,6 +66,12 @@ ACCESS: dict[tuple[str, str], Access] = {
     ("DELETE", "/admin/reviews/{review_id}"): "admin",
     ("GET", "/admin/users"): "admin",
     ("PATCH", "/admin/users/{user_id}"): "admin",
+    ("GET", "/admin/products/{product_id}/stock"): "admin",
+    ("PUT", "/admin/products/{product_id}/stock/{store_id}"): "admin",
+    ("DELETE", "/admin/products/{product_id}/stock/{store_id}"): "admin",
+    ("POST", "/admin/stores"): "admin",
+    ("PATCH", "/admin/stores/{store_id}"): "admin",
+    ("DELETE", "/admin/stores/{store_id}"): "admin",
 }
 
 # Public endpoints that aren't GET; each must save nothing.
@@ -76,6 +82,7 @@ PATH_VALUES = {
     "user_id": str(SHOPPER_ID),
     "review_id": "3",
     "code": "036000291452",
+    "store_id": "2",
 }
 
 # A body that's valid for every endpoint that takes one, so a 422 can't hide an access check.
@@ -87,6 +94,7 @@ BODY = {
     "role": "admin",
     "active": True,
     "hidden": True,
+    "in_stock": False,
 }
 
 

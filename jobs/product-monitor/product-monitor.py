@@ -511,7 +511,8 @@ WHERE NOT EXISTS (
 )
 """
 
-# Leaves aisle alone: it is entered by hand and the online page doesn't know it.
+# Leaves aisle alone: it is entered by hand and the online page doesn't know it. Leaves the
+# whole row alone when an admin set it (T094), so their stock change isn't undone.
 UPSERT_STOCK = """
 INSERT INTO product_stock (product_id, store_id, in_stock, quantity, updated_at)
 SELECT %(product_id)s, id, %(in_stock)s, %(quantity)s, %(updated_at)s
@@ -521,7 +522,10 @@ ON CONFLICT (product_id, store_id) DO UPDATE
 SET in_stock = EXCLUDED.in_stock,
     quantity = EXCLUDED.quantity,
     updated_at = EXCLUDED.updated_at
+WHERE product_stock.admin_set_at IS NULL
 """
+
+STORE_EXISTS = "SELECT 1 FROM store_locations WHERE slug = %s"
 
 
 class DatabaseWriter:
@@ -572,8 +576,12 @@ class DatabaseWriter:
                 cur.execute(INSERT_PRICE, {**price, "product_id": product_id})
             if stock is not None:
                 cur.execute(UPSERT_STOCK, {**stock, "product_id": product_id})
+                # Nothing written means either no such store, or an admin set this store's stock
+                # (left alone on purpose).
                 if cur.rowcount != 1:
-                    raise RuntimeError(f"No store {stock['store']} to stock")
+                    store_exists = cur.execute(STORE_EXISTS, (stock["store"],)).fetchone()
+                    if store_exists is None:
+                        raise RuntimeError(f"No store {stock['store']} to stock")
         return created
 
 

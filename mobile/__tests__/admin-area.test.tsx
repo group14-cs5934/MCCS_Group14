@@ -383,6 +383,29 @@ describe('activity', () => {
     expect(new URL(activityRequests()[0][0]).searchParams.get('limit')).toBe('100');
   });
 
+  it('shows a stock change by store, and it opens the product', async () => {
+    auditEntries = [
+      {
+        id: 4,
+        admin_id: 'u-1',
+        admin_email: 'admin@example.com',
+        action: 'stock.set',
+        target_type: 'product',
+        target_id: '2',
+        changes: { 'Camp Lejeune MCX in_stock': { from: true, to: false } },
+        created_at: '2026-10-26T16:00:00Z',
+      },
+    ];
+    await openActivity();
+
+    expect(await screen.findByText('admin@example.com set stock for product #2')).toBeOnTheScreen();
+    expect(screen.getByText('Camp Lejeune MCX in stock: yes → no')).toBeOnTheScreen();
+    await act(async () =>
+      fireEvent.press(screen.getByRole('button', { name: /^admin@example.com set stock for/ })),
+    );
+    expect(screen).toHavePathname('/product/2');
+  });
+
   it('shows what a delete removed', async () => {
     await openActivity();
 

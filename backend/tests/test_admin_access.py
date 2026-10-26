@@ -27,6 +27,7 @@ from app.repositories.audit_log import get_audit_log_repository
 from app.repositories.products import get_product_repository
 from app.repositories.ratings import get_rating_repository
 from app.repositories.reviews import get_review_repository
+from app.repositories.stores import get_store_repository
 from app.repositories.users import get_user_repository
 from tests.conftest import VALID_DATABASE_URL, VALID_SUPABASE_URL
 from tests.fakes import FakeUsers
@@ -48,10 +49,21 @@ KNOWN_ADMIN_ROUTES = {
     ("PATCH", "/admin/reviews/{review_id}"),
     ("DELETE", "/admin/reviews/{review_id}"),
     ("GET", "/admin/audit-log"),
+    ("GET", "/admin/products/{product_id}/stock"),
+    ("PUT", "/admin/products/{product_id}/stock/{store_id}"),
+    ("DELETE", "/admin/products/{product_id}/stock/{store_id}"),
+    ("POST", "/admin/stores"),
+    ("PATCH", "/admin/stores/{store_id}"),
+    ("DELETE", "/admin/stores/{store_id}"),
 }
 
 # A valid value for each path parameter, so requests reach the access check.
-PATH_VALUES = {"product_id": "7", "user_id": str(SHOPPER_ID), "review_id": "3"}
+PATH_VALUES = {
+    "product_id": "7",
+    "user_id": str(SHOPPER_ID),
+    "review_id": "3",
+    "store_id": "2",
+}
 
 # A body that passes validation for every admin endpoint that takes one, so a 422 can't hide a
 # missing access check. (Extra fields don't matter: access is checked first.)
@@ -61,6 +73,7 @@ BODY = {
     "role": "admin",
     "active": True,
     "hidden": True,
+    "in_stock": False,
 }
 
 
@@ -148,6 +161,7 @@ def client(make_client, private_key, users) -> TestClient:
     client.app.dependency_overrides[get_product_repository] = lambda: Tripwire("products")
     client.app.dependency_overrides[get_rating_repository] = lambda: Tripwire("ratings")
     client.app.dependency_overrides[get_review_repository] = lambda: Tripwire("reviews")
+    client.app.dependency_overrides[get_store_repository] = lambda: Tripwire("stores")
     client.app.dependency_overrides[get_audit_log_repository] = lambda: Tripwire("audit log")
     return client
 

@@ -18,6 +18,11 @@ const verbs: Record<string, string> = {
   'review.hide': 'hid',
   'review.show': 'showed',
   'review.delete': 'deleted',
+  'stock.set': 'set stock for',
+  'stock.clear': 'handed back stock for',
+  'store.create': 'added',
+  'store.update': 'edited',
+  'store.delete': 'deleted',
 };
 
 const fieldLabels: Record<string, string> = {
