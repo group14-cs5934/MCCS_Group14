@@ -33,6 +33,11 @@ AUDITED_ROUTES = {
     ("PATCH", "/admin/users/{user_id}"),
     ("PATCH", "/admin/reviews/{review_id}"),
     ("DELETE", "/admin/reviews/{review_id}"),
+    ("PUT", "/admin/products/{product_id}/stock/{store_id}"),
+    ("DELETE", "/admin/products/{product_id}/stock/{store_id}"),
+    ("POST", "/admin/stores"),
+    ("PATCH", "/admin/stores/{store_id}"),
+    ("DELETE", "/admin/stores/{store_id}"),
 }
 
 
