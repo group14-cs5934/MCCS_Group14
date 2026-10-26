@@ -1,5 +1,6 @@
 """Request/response models (API contracts). Database models live separately."""
 
+from app.schemas.audit import AuditLogEntry
 from app.schemas.brand import BrandCreate, BrandRead
 from app.schemas.category import CategoryCreate, CategoryRead
 from app.schemas.error import ErrorAction, ErrorResponse
@@ -16,6 +17,7 @@ from app.schemas.review import (
 from app.schemas.user import Role, UserAccount, UserRead, UserUpdate
 
 __all__ = [
+    "AuditLogEntry",
     "AdminReviewRead",
     "BrandCreate",
     "BrandRead",

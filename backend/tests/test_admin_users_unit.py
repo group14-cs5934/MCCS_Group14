@@ -14,8 +14,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.auth import TokenUser, get_token_user
+from app.repositories.audit_log import get_audit_log_repository
 from app.repositories.users import get_user_repository
-from tests.fakes import FakeUsers
+from tests.fakes import FakeAuditLog, FakeUsers
 
 ADMIN = TokenUser(id=UUID("a0000000-0000-4000-8000-000000000001"), email="admin@example.com")
 SHOPPER = TokenUser(id=UUID("b0000000-0000-4000-8000-000000000002"), email="shopper@example.com")
@@ -42,10 +43,16 @@ def session() -> Session:
 
 
 @pytest.fixture
-def client(make_client, users: FakeUsers, session: Session) -> TestClient:
+def audit() -> FakeAuditLog:
+    return FakeAuditLog()
+
+
+@pytest.fixture
+def client(make_client, users: FakeUsers, session: Session, audit: FakeAuditLog) -> TestClient:
     client = make_client()
     client.app.dependency_overrides[get_user_repository] = lambda: users
     client.app.dependency_overrides[get_token_user] = lambda: session.user
+    client.app.dependency_overrides[get_audit_log_repository] = lambda: audit
     return client
 
 
@@ -215,3 +222,37 @@ def test_a_deactivated_admin_is_rejected(client, session, users) -> None:
 
     assert response.status_code == 403
     assert response.json()["code"] == "account_deactivated"
+
+
+# --- Audit log (T083) ---
+
+
+def test_a_change_is_recorded_in_the_audit_log(client, audit) -> None:
+    patch_user(client, SHOPPER.id, {"role": "admin", "active": False})
+
+    assert audit.entries == [
+        {
+            "admin_id": ADMIN.id,
+            "admin_email": ADMIN.email,
+            "action": "user.update",
+            "target_type": "user",
+            "target_id": SHOPPER.id,
+            "changes": {
+                "role": {"from": "user", "to": "admin"},
+                "active": {"from": True, "to": False},
+            },
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("user_id", "body"),
+    [
+        (uuid4(), {"role": "admin"}),  # unknown user
+        (ADMIN.id, {"role": "user"}),  # can't demote yourself
+        (SHOPPER.id, {}),  # invalid
+    ],
+)
+def test_refused_changes_are_not_logged(client, audit, user_id, body) -> None:
+    assert patch_user(client, user_id, body).status_code in (404, 409, 422)
+    assert audit.entries == []

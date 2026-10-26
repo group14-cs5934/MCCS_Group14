@@ -3,7 +3,7 @@ token, 403 for anyone else.
 
 User management (T081): list users, change a user's role, and deactivate or reactivate them.
 Changes take effect on the user's next request, because the API reads their role and status from
-the users table on every request.
+the users table on every request. Each change is recorded in the audit log (T083).
 """
 
 from typing import Annotated
@@ -13,7 +13,8 @@ from fastapi import APIRouter, Query, status
 
 from app.core.auth import AdminUser
 from app.core.errors import ApiError, error_response
-from app.repositories import Users
+from app.repositories import AuditLog, Users
+from app.repositories.audit_log import changed_fields
 from app.schemas import UserAccount, UserUpdate
 
 MAX_USERS_PER_PAGE = 100
@@ -50,7 +51,9 @@ def list_users(
         409: error_response("Admins can't demote or deactivate themselves"),
     },
 )
-def update_user(user_id: UUID, change: UserUpdate, admin: AdminUser, users: Users) -> UserAccount:
+def update_user(
+    user_id: UUID, change: UserUpdate, admin: AdminUser, users: Users, audit: AuditLog
+) -> UserAccount:
     """Change a user's role and/or deactivate or reactivate them, e.g. {"role": "admin"} or
     {"active": false}. It takes effect on the user's next request: a deactivated user gets 403
     with code account_deactivated.
@@ -64,7 +67,23 @@ def update_user(user_id: UUID, change: UserUpdate, admin: AdminUser, users: User
             "cannot_change_own_account",
             "You can't remove your own admin role or deactivate yourself.",
         )
-    updated = users.update(user_id, role=change.role, active=change.active)
-    if updated is None:
+    if not users.lock(user_id):
         raise ApiError(status.HTTP_404_NOT_FOUND, "user_not_found", "User not found")
+    before = users.get(user_id)
+    assert before is not None  # locked above
+    updated = users.update(user_id, role=change.role, active=change.active)
+    assert updated is not None  # found above, in this same transaction
+    audit.record(
+        admin_id=admin.id,
+        admin_email=admin.email,
+        action="user.update",
+        target_type="user",
+        target_id=user_id,
+        changes=changed_fields(_user_fields(before), _user_fields(updated)),
+    )
     return updated
+
+
+def _user_fields(user: UserAccount) -> dict[str, object]:
+    """What the audit log compares for a user."""
+    return {"email": user.email, "role": user.role, "active": user.active}

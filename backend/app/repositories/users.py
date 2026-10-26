@@ -48,6 +48,21 @@ class UserRepository:
             row = cursor.fetchone()
         return UserAccount.model_validate(row)
 
+    def lock(self, user_id: UUID) -> bool:
+        """Lock the user's row until this request's transaction ends, so a concurrent
+        change waits and the audit log's "before" values are right. False if there's none."""
+        row = self._connection.execute(
+            "SELECT 1 FROM users WHERE id = %s FOR UPDATE", (user_id,)
+        ).fetchone()
+        return row is not None
+
+    def get(self, user_id: UUID) -> UserAccount | None:
+        """The user with this ID, or None if there isn't one."""
+        with self._connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(f"SELECT {_COLUMNS} FROM users WHERE id = %s", (user_id,))
+            row = cursor.fetchone()
+        return UserAccount.model_validate(row) if row is not None else None
+
     def list_users(self, email: str = "", limit: int = 50, offset: int = 0) -> list[UserAccount]:
         """Users in the order they joined, optionally only those whose email contains `email`
         (any case)."""

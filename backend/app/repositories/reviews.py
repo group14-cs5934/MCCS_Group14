@@ -161,6 +161,16 @@ class ReviewRepository:
             )
             return [_to_admin_review(row) for row in cursor.fetchall()]
 
+    def lock(self, review_id: int) -> bool:
+        """Lock the review until this request's transaction ends, so a concurrent
+        change waits and the audit log's "before" values are right. False if there's none."""
+        if not 0 < review_id <= _MAX_ID:
+            return False
+        row = self._connection.execute(
+            "SELECT 1 FROM reviews WHERE id = %s FOR UPDATE", (review_id,)
+        ).fetchone()
+        return row is not None
+
     def get_for_admin(self, review_id: int) -> AdminReviewRead | None:
         """Any review by ID, hidden or not. None if there isn't one."""
         if not 0 < review_id <= _MAX_ID:

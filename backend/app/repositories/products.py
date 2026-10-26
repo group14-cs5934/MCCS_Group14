@@ -236,6 +236,29 @@ class ProductRepository:
             self._add_price(product_id, price)
         return True
 
+    def lock(self, product_id: int) -> bool:
+        """Lock the product until this request's transaction ends, so a concurrent
+        change waits and the audit log's "before" values are right. False if there's none."""
+        if not 0 < product_id <= _MAX_ID:
+            return False
+        row = self._connection.execute(
+            "SELECT 1 FROM products WHERE id = %s FOR UPDATE", (product_id,)
+        ).fetchone()
+        return row is not None
+
+    def related_counts(self, product_id: int) -> dict[str, int]:
+        """How many prices, ratings, and reviews the product has; deleting it deletes them too."""
+        (prices, ratings, reviews) = self._connection.execute(
+            """
+            SELECT
+                (SELECT count(*) FROM prices WHERE product_id = %(id)s),
+                (SELECT count(*) FROM ratings WHERE product_id = %(id)s),
+                (SELECT count(*) FROM reviews WHERE product_id = %(id)s)
+            """,
+            {"id": product_id},
+        ).fetchone()
+        return {"prices": prices, "ratings": ratings, "reviews": reviews}
+
     def delete(self, product_id: int) -> bool:
         """Remove the product, with its prices, ratings, and reviews. False if there's none."""
         if not 0 < product_id <= _MAX_ID:
