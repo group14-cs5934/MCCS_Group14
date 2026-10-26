@@ -38,6 +38,8 @@ mobile/
       admin.tsx       # admin area (admins only): Products, Users, and Activity (the audit log);
                       #   admins start here after signing in (Back goes to Home); others see
                       #   "Admins only"
+      admin-product/[id].tsx  # admin product form: /admin-product/new adds one, /admin-product/7
+                      #   edits one, with stock at each store (Automatic / In stock / Out)
       sign-in.tsx, sign-up.tsx  # email + password accounts (Supabase Auth)
     theme/            # design tokens: colors, typography (Inter), spacing, radius, shadows,
                       #   and sharedStyles. The only place hex colors and font names live.

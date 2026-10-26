@@ -10,6 +10,7 @@ export type {
 } from './client';
 export { getApiBaseUrl } from './config';
 export { checkHealth } from './health';
+export { clearStock, createProduct, getProductStock, setStock, updateProduct } from './admin';
 export { getMe } from './me';
 export { getMyRating, rateProduct, removeMyRating } from './ratings';
 export { getMyReview, getReviews, postReview } from './reviews';
