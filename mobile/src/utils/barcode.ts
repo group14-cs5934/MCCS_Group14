@@ -4,7 +4,7 @@ import type { BarcodeType } from 'expo-camera';
 export const PRODUCT_BARCODE_TYPES: BarcodeType[] = ['upc_a', 'upc_e', 'ean13', 'ean8'];
 
 /** True if the last digit is the correct GS1 check digit for the digits before it. */
-function hasValidCheckDigit(digits: string): boolean {
+export function hasValidCheckDigit(digits: string): boolean {
   let sum = 0;
   // Counting from the right, the check digit has weight 1 and the weights alternate 1, 3, 1, 3...
   for (let i = 0; i < digits.length; i++) {

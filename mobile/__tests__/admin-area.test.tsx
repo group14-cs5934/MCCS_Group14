@@ -242,14 +242,23 @@ describe('admins', () => {
     expect(await screen.findByText('Diet Pepsi')).toBeOnTheScreen();
   });
 
-  it('open a product page by tapping a product', async () => {
+  it('open a product for editing by tapping it (T091)', async () => {
     renderRouter('src/app', { initialUrl: '/admin' });
 
     const row = await screen.findByText('Diet Pepsi');
-    // The product page starts loading as it opens; let that finish inside act.
+    // The form starts loading as it opens; let that finish inside act.
     await act(async () => fireEvent.press(row));
 
-    expect(screen).toHavePathname('/product/2');
+    expect(screen).toHavePathname('/admin-product/2');
+  });
+
+  it('can add a product from the list (T091)', async () => {
+    renderRouter('src/app', { initialUrl: '/admin' });
+    await screen.findByText('Diet Pepsi');
+
+    await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Add product' })));
+
+    expect(screen).toHavePathname('/admin-product/new');
   });
 
   it('can search the product list', async () => {

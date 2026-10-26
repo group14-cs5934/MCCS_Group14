@@ -59,6 +59,7 @@ function RootNavigator() {
           <Stack.Screen name="product/barcode/[code]" options={{ title: 'Product' }} />
           <Stack.Screen name="search" options={{ title: 'Search' }} />
           <Stack.Screen name="admin" options={{ title: 'Admin' }} />
+          <Stack.Screen name="admin-product/[id]" options={{ title: 'Product' }} />
           <Stack.Screen name="theme-preview" options={{ title: 'Theme preview' }} />
         </Stack.Protected>
         <Stack.Protected guard={!signedIn}>

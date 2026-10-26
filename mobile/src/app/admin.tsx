@@ -3,13 +3,11 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { useAuth } from '@/auth';
 import AdminActivityList from '@/components/AdminActivityList';
+import AdminGate, { AccessDenied } from '@/components/AdminGate';
 import AsyncContent from '@/components/AsyncContent';
 import Button from '@/components/Button';
 import Card from '@/components/Card';
-import ErrorState from '@/components/ErrorState';
-import Loader from '@/components/Loader';
 import SearchResultsList from '@/components/SearchResultsList';
 import { useApiGet } from '@/hooks/useApiGet';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
@@ -44,29 +42,10 @@ const activityFilters: { targetType: string | null; label: string }[] = [
  * only". The API checks too, so hiding the screen isn't the only guard.
  */
 export default function AdminScreen() {
-  const { roleLoading, isAdmin } = useAuth();
-
-  if (roleLoading) {
-    return (
-      <View style={sharedStyles.screen}>
-        <Loader message="Checking access…" style={sharedStyles.centered} />
-      </View>
-    );
-  }
-  return <View style={sharedStyles.screen}>{isAdmin ? <AdminArea /> : <AccessDenied />}</View>;
-}
-
-function AccessDenied() {
-  const router = useRouter();
   return (
-    <ErrorState
-      title="Admins only"
-      message="You need an admin account to open the admin area."
-      icon="lock-closed-outline"
-      style={sharedStyles.centered}
-    >
-      <Button title="Go Home" variant="secondary" onPress={() => router.replace('/(tabs)')} />
-    </ErrorState>
+    <AdminGate>
+      <AdminArea />
+    </AdminGate>
   );
 }
 
@@ -183,12 +162,22 @@ function AdminProducts({ query }: { query: string }) {
       onRetry={reload}
       loadingMessage="Loading products…"
     >
-      <Text style={styles.count} accessibilityLiveRegion="polite">
-        {countText(products.length, query, 'product')}
-      </Text>
+      <View style={styles.listHeader}>
+        <Text style={styles.listCount} accessibilityLiveRegion="polite">
+          {countText(products.length, query, 'product')}
+        </Text>
+        <Button
+          title="Add product"
+          variant="text"
+          icon="add-circle-outline"
+          onPress={() => router.push('/admin-product/new')}
+          style={styles.addButton}
+        />
+      </View>
+      {/* Tapping a product opens it for editing (T091); the form links to its page in the app. */}
       <SearchResultsList
         results={products}
-        onOpen={(product) => router.push(`/product/${product.id}`)}
+        onOpen={(product) => router.push(`/admin-product/${product.id}`)}
       />
     </AsyncContent>
   );
@@ -403,6 +392,20 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginHorizontal: spacing.xl,
     marginBottom: spacing.sm,
+  },
+  listHeader: {
+    ...sharedStyles.row,
+    justifyContent: 'space-between',
+    marginHorizontal: spacing.xl,
+    marginBottom: spacing.sm,
+  },
+  listCount: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    flexShrink: 1,
+  },
+  addButton: {
+    alignSelf: 'auto',
   },
   list: {
     gap: spacing.md,
