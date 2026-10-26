@@ -259,6 +259,28 @@ class ProductRepository:
         ).fetchone()
         return {"prices": prices, "ratings": ratings, "reviews": reviews}
 
+    def admin_fields(self, product_ids: list[int]) -> dict[int, list[str]]:
+        """Each product's admin-set fields (T089), sorted, for the products given."""
+        rows = self._connection.execute(
+            "SELECT id, admin_fields FROM products WHERE id = ANY(%s)", (product_ids,)
+        ).fetchall()
+        return {product_id: sorted(fields) for product_id, fields in rows}
+
+    def change_admin_fields(
+        self, product_id: int, protect: set[str], release: set[str] | None = None
+    ) -> None:
+        """Mark `protect` as set by an admin, so the sync leaves them, then hand `release` back
+        to the sync (None: none of them; every field the admin set if it's the string "all")."""
+        current = set(self.admin_fields([product_id]).get(product_id, []))
+        fields = current | protect
+        if release == "all":
+            fields = set()
+        elif release:
+            fields -= release
+        self._connection.execute(
+            "UPDATE products SET admin_fields = %s WHERE id = %s", (sorted(fields), product_id)
+        )
+
     def delete(self, product_id: int) -> bool:
         """Remove the product, with its prices, ratings, and reviews. False if there's none."""
         if not 0 < product_id <= _MAX_ID:

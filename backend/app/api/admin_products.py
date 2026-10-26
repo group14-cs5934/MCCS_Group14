@@ -15,7 +15,7 @@ from app.core.errors import ApiError, error_response
 from app.repositories import AuditLog, Products
 from app.repositories.audit_log import changed_fields
 from app.schemas import ProductRead
-from app.schemas.admin_product import AdminProductCreate, AdminProductUpdate
+from app.schemas.admin_product import AdminProductCreate, AdminProductRead, AdminProductUpdate
 
 router = APIRouter(
     prefix="/admin/products",
@@ -37,8 +37,23 @@ def _product_not_found() -> ApiError:
     return ApiError(status.HTTP_404_NOT_FOUND, "product_not_found", "Product not found")
 
 
-def _product_fields(product: ProductRead) -> dict[str, object]:
-    """What the audit log compares for a product: its editable fields and current price."""
+def _admin_view(products: Products, product: ProductRead) -> AdminProductRead:
+    """The product with which of its fields an admin set (the sync leaves those alone)."""
+    fields = products.admin_fields([product.id]).get(product.id, [])
+    return AdminProductRead(**product.model_dump(), admin_fields=fields)
+
+
+def _admin_views(products: Products, found: list[ProductRead]) -> list[AdminProductRead]:
+    fields = products.admin_fields([product.id for product in found])
+    return [
+        AdminProductRead(**product.model_dump(), admin_fields=fields.get(product.id, []))
+        for product in found
+    ]
+
+
+def _product_fields(product: AdminProductRead) -> dict[str, object]:
+    """What the audit log compares for a product: its editable fields, current price, and which
+    of them an admin set."""
     return {
         "barcode": product.barcode,
         "name": product.name,
@@ -48,6 +63,7 @@ def _product_fields(product: ProductRead) -> dict[str, object]:
         "brand_id": product.brand_id,
         "category_id": product.category_id,
         "price": product.price.amount if product.price else None,
+        "admin_fields": product.admin_fields or None,
     }
 
 
@@ -89,29 +105,35 @@ def list_products(
     ] = "",
     limit: Annotated[int, Query(ge=1, le=MAX_PRODUCTS_PER_PAGE)] = 50,
     offset: Annotated[int, Query(ge=0, le=10_000, description="Products to skip, for paging")] = 0,
-) -> list[ProductRead]:
+) -> list[AdminProductRead]:
     """Every product, sorted by name, for the admin product list. With q, only products whose
-    name matches, best match first (the same search shoppers use)."""
+    name matches, best match first (the same search shoppers use). Each says which fields an
+    admin set, which the product sync leaves alone."""
     if q.strip():
-        return products.search(q, limit=limit, offset=offset)
-    return products.list_all(limit=limit, offset=offset)
+        return _admin_views(products, products.search(q, limit=limit, offset=offset))
+    return _admin_views(products, products.list_all(limit=limit, offset=offset))
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, responses={409: _BARCODE_TAKEN})
 def create_product(
     product: AdminProductCreate, admin: AdminUser, products: Products, audit: AuditLog
-) -> ProductRead:
-    """Add a product, optionally with its current price. Returns it as GET /products/{id} does.
+) -> AdminProductRead:
+    """Add a product, optionally with its current price. Returns it as GET /products/{id} does,
+    plus admin_fields.
 
     The barcode must be new: one that matches an existing product (even with different leading
-    zeros, e.g. 012000001291 and 0012000001291) is a 409.
+    zeros, e.g. 012000001291 and 0012000001291) is a 409. Every field given is marked as set by
+    an admin, so the product sync won't replace it.
     """
     _check_new_values(products, product.barcode, product.category_id, product_id=None)
     fields = product.model_dump(exclude={"price"})
     fields["image_url"] = str(product.image_url) if product.image_url else None
     product_id = products.create(fields, price=product.price)
-    created = products.get_by_id(product_id)
-    assert created is not None  # added in this same transaction
+    given = {name for name, value in product.model_dump().items() if value is not None}
+    products.change_admin_fields(product_id, protect=given)
+    found = products.get_by_id(product_id)
+    assert found is not None  # added in this same transaction
+    created = _admin_view(products, found)
     changes = changed_fields({}, _product_fields(created))
     _record(audit, admin, "product.create", product_id, changes)
     return created
@@ -124,20 +146,29 @@ def update_product(
     admin: AdminUser,
     products: Products,
     audit: AuditLog,
-) -> ProductRead:
+) -> AdminProductRead:
     """Change a product: only the fields sent change, and null clears an optional field. A new
     price becomes the current price (earlier prices are kept as history); sending the price it
-    already has adds nothing. Returns the product."""
+    already has adds nothing. Returns the product.
+
+    Every field sent is marked as set by an admin, so the product sync won't replace it.
+    {"resume_sync": ["name"]} hands fields back to the sync (true for all of them); it can be sent
+    on its own or with changes.
+    """
     if not products.lock(product_id):
         raise _product_not_found()
-    before = products.get_by_id(product_id)
-    assert before is not None  # locked above
+    found = products.get_by_id(product_id)
+    assert found is not None  # locked above
+    before = _admin_view(products, found)
     _check_new_values(products, change.barcode, change.category_id, product_id=product_id)
     current_price = before.price.amount if before.price else None
     new_price = change.price if change.price != current_price else None
     products.update(product_id, change.product_changes(), price=new_price)
-    updated = products.get_by_id(product_id)
-    assert updated is not None
+    release = "all" if change.resume_sync is True else set(change.resume_sync or [])
+    products.change_admin_fields(product_id, protect=change.edited_fields(), release=release)
+    found = products.get_by_id(product_id)
+    assert found is not None
+    updated = _admin_view(products, found)
     changes = changed_fields(_product_fields(before), _product_fields(updated))
     _record(audit, admin, "product.update", product_id, changes)
     return updated
@@ -152,8 +183,9 @@ def delete_product(
     """Remove a product, along with its prices, ratings, and reviews. 204 (no body) when done."""
     if not products.lock(product_id):
         raise _product_not_found()
-    before = products.get_by_id(product_id)
-    assert before is not None  # locked above
+    found = products.get_by_id(product_id)
+    assert found is not None  # locked above
+    before = _admin_view(products, found)
     # The log keeps what was deleted, and how many prices, ratings, and reviews went with it.
     counts = products.related_counts(product_id)
     products.delete(product_id)

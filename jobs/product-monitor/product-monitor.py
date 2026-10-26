@@ -502,9 +502,13 @@ ON CONFLICT (barcode) DO NOTHING
 RETURNING id
 """
 
+# Skipped when an admin set the product's price, so the monitor doesn't replace it (T089).
 INSERT_PRICE = """
 INSERT INTO prices (product_id, amount, currency, source, observed_at)
-VALUES (%(product_id)s, %(amount)s, %(currency)s, %(source)s, %(observed_at)s)
+SELECT %(product_id)s, %(amount)s, %(currency)s, %(source)s, %(observed_at)s
+WHERE NOT EXISTS (
+    SELECT 1 FROM products WHERE id = %(product_id)s AND 'price' = ANY(admin_fields)
+)
 """
 
 # Leaves aisle alone: it is entered by hand and the online page doesn't know it.

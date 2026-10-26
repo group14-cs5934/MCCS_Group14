@@ -116,6 +116,8 @@ def test_creating_a_product_is_logged(client, connection) -> None:
         "name": {"from": None, "to": "Coke"},
         "size": {"from": None, "to": "16.9 fl oz"},
         "price": {"from": None, "to": "1.95"},  # an exact string, not a float
+        # The fields the admin set, which the product sync now leaves alone (T089).
+        "admin_fields": {"from": None, "to": ["barcode", "name", "price", "size"]},
     }
 
 
@@ -131,18 +133,23 @@ def test_editing_a_product_logs_only_what_changed(client, connection) -> None:
     assert entry["changes"] == {
         "name": {"from": "Sample Chips", "to": "Classic Chips"},
         "price": {"from": None, "to": "2.49"},
+        # Every field sent is now protected from the sync, size included (T089).
+        "admin_fields": {"from": None, "to": ["name", "price", "size"]},
     }  # size was sent but didn't change
 
 
 def test_an_edit_that_changes_nothing_is_still_logged(client, connection) -> None:
     product_id = add_product(connection)
     connection.commit()
-
     client.patch(f"/admin/products/{product_id}", json={"name": "Sample Chips"})
 
-    [entry] = log(connection)
-    assert_logged(entry, "product.update", "product", product_id)
-    assert entry["changes"] == {}
+    client.patch(f"/admin/products/{product_id}", json={"name": "Sample Chips"})  # again
+
+    first, second = log(connection)
+    # The first edit only protected the name from the sync (T089); the second changed nothing.
+    assert first["changes"] == {"admin_fields": {"from": None, "to": ["name"]}}
+    assert_logged(second, "product.update", "product", product_id)
+    assert second["changes"] == {}
 
 
 def test_deleting_a_product_logs_what_was_deleted(client, connection) -> None:
@@ -181,7 +188,8 @@ def test_saving_the_price_a_product_already_has_adds_no_price_or_change(client, 
     ).fetchone()
     assert prices == 1
     [entry] = log(connection)
-    assert entry["changes"] == {}
+    # No new price, but the price is now protected from the sync (T089).
+    assert entry["changes"] == {"admin_fields": {"from": None, "to": ["price"]}}
 
 
 # --- Users ---

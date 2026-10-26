@@ -420,6 +420,15 @@ different leading zeros (`012000001291` and `0012000001291`). A `category_id` th
 category is `422 category_not_found`; an unknown product is `404 product_not_found`. Prices
 entered here are recorded with source `admin`.
 
+**Admin edits survive the product sync (T089).** Every field an admin sets (on create, every field
+given; on edit, every field sent, including `price`) is recorded in `products.admin_fields`
+(migration 012). The nightly sync (`app/ingest/load.py`) keeps those values and still updates
+the product's other fields, and neither it nor the product monitor (`jobs/product-monitor`) adds
+a newer price once an admin has set one. Admin product responses include `admin_fields`; public
+ones don't. To let the sync update a field again, send `{"resume_sync": ["name"]}` (or `true` for
+all of them), on its own or with other changes. Code that changes products automatically must
+respect `admin_fields`.
+
 **Moderating reviews (admins only)**, same `401`/`403` rules:
 
 | Endpoint                      | Does                                                                          |
