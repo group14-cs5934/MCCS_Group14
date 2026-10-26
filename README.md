@@ -375,6 +375,23 @@ time the user signs in. Row level security is on for
 `users` with no policies, so the app's publishable key can't read it or change roles through
 Supabase's REST API; only the backend can.
 
+**Row level security (T084).** Every table has row level security on with no policies (the
+catalog tables since migration 011), so nobody can read or change rows directly through
+Supabase's REST API, with the publishable key or a signed-in user's token, even if table access
+is granted by mistake. The backend connects as the tables' owner, which these rules don't apply
+to, and checks who's asking itself. There are deliberately no "edit your own review" policies: a
+direct edit would skip the API's checks (e.g. an author could undo a moderator hiding their
+review). Give every new table `ALTER TABLE ... ENABLE ROW LEVEL SECURITY;`;
+`tests/test_row_level_security.py` fails if one doesn't have it. To check a database, e.g. in
+Supabase's SQL editor:
+
+```sql
+SELECT relname AS table_without_rls FROM pg_class
+WHERE relnamespace = 'public'::regnamespace AND relkind = 'r' AND NOT relrowsecurity;
+```
+
+It should return no rows.
+
 **Managing users (admins only).** `401` without a valid token, `403 forbidden` for non-admins:
 
 | Endpoint                  | Does                                                                              |
