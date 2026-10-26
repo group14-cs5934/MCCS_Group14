@@ -402,6 +402,19 @@ different leading zeros (`012000001291` and `0012000001291`). A `category_id` th
 category is `422 category_not_found`; an unknown product is `404 product_not_found`. Prices
 entered here are recorded with source `admin`.
 
+**Moderating reviews (admins only)**, same `401`/`403` rules:
+
+| Endpoint                      | Does                                                                          |
+| ----------------------------- | ----------------------------------------------------------------------------- |
+| `GET /admin/reviews`          | Every review, newest first, including hidden ones, with `author_email`, `user_id`, `hidden`, and `hidden_at`. Filters: `product_id`, `hidden` (`true`/`false`); paging with `limit` (1–100, default 50) and `offset`. |
+| `PATCH /admin/reviews/{id}`   | `{"hidden": true}` hides a review, `{"hidden": false}` shows it again; returns the review. |
+| `DELETE /admin/reviews/{id}`  | Removes a review for good (`204`).                                            |
+
+A hidden review (`hidden_at` set, migration 009) is left out of `GET /products/{id}/reviews` and
+its `total`, so it disappears from the app; it's kept so it can be shown again. Its author still
+sees it through `.../reviews/me` and can edit or remove it, but editing doesn't unhide it. Hiding a
+review doesn't change the author's rating. An unknown review is `404 review_not_found`.
+
 New admin endpoints go under `/admin` and take an `AdminUser` parameter.
 `tests/test_admin_access.py` finds every `/admin` route by itself and checks that regular
 users get `403`, missing or bad tokens `401`, and deactivated admins `403`, so a route that

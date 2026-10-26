@@ -59,10 +59,14 @@ def count(connection: psycopg.Connection, table: str) -> int:
 
 @pytest.mark.parametrize("table", TABLES)
 def test_table_links_to_products_and_users(connection, table) -> None:
-    assert foreign_keys(connection, table) == {
+    expected = {
         "product_id": ("products", "id", "cascade"),
         "user_id": ("users", "id", "cascade"),
     }
+    if table == "reviews":
+        # The admin who hid the review (migration 009); kept hidden if that admin is deleted.
+        expected["hidden_by"] = ("users", "id", "set null")
+    assert foreign_keys(connection, table) == expected
 
 
 @pytest.mark.parametrize("table", TABLES)
