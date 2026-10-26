@@ -11,12 +11,14 @@ import { sharedStyles, spacing } from '@/theme';
 /** Shown to signed-out users. Signing in swaps the whole stack to the tabs (see _layout.tsx). */
 export default function SignInScreen() {
   const router = useRouter();
-  const { signIn } = useAuth();
+  const { signIn, signedOutReason } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // E.g. "This account has been deactivated…" after the app signed the user out.
+  const banner = error ?? signedOutReason;
 
   async function submit() {
     const errors = validateSignIn(email, password);
@@ -47,7 +49,7 @@ export default function SignInScreen() {
           <Text style={sharedStyles.secondaryText}>Sign in to scan and compare products.</Text>
         </View>
 
-        {error ? <ErrorBanner message={error} /> : null}
+        {banner ? <ErrorBanner message={banner} /> : null}
 
         <TextField
           label="Email"

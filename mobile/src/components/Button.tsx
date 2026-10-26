@@ -25,6 +25,8 @@ type Props = {
   /** Shows a spinner instead of the title and ignores presses. */
   loading?: boolean;
   disabled?: boolean;
+  /** What a screen reader says, when the title alone is ambiguous, e.g. "Deactivate a@b.com". */
+  accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -42,6 +44,7 @@ export default function Button({
   icon,
   loading = false,
   disabled = false,
+  accessibilityLabel = title,
   style,
 }: Props) {
   const color = contentColors[variant];
@@ -51,7 +54,7 @@ export default function Button({
       onPress={onPress}
       disabled={disabled || loading}
       accessibilityRole="button"
-      accessibilityLabel={title}
+      accessibilityLabel={accessibilityLabel}
       accessibilityState={{ busy: loading }}
       style={({ pressed }) => [
         styles.base,

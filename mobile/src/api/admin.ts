@@ -1,4 +1,5 @@
 import type { AdminProduct, AdminProductBody, AdminProductStock, StockBody } from '@/types/admin';
+import type { AdminUserAccount, UserUpdateBody } from '@/types/user';
 
 import { api, type CallOptions } from './client';
 
@@ -30,4 +31,12 @@ export function setStock(
 /** DELETE /admin/products/{id}/stock/{store_id}: hands a store's stock back to automatic updates. */
 export function clearStock(productId: number, storeId: number, options?: CallOptions) {
   return api.delete(`/admin/products/${productId}/stock/${storeId}`, options);
+}
+
+/**
+ * PATCH /admin/users/{id}: changes a user's role and/or deactivates or reactivates them (404
+ * user_not_found; 409 cannot_change_own_account for an admin's own role or account).
+ */
+export function updateUser(userId: string, body: UserUpdateBody, options?: CallOptions) {
+  return api.patch<AdminUserAccount>(`/admin/users/${userId}`, body, options);
 }

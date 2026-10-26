@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 
 import { getMe } from '@/api/me';
+import { DEACTIVATED_MESSAGE } from '@/auth';
 
 // T039 acceptance: users must create an account or sign in before using the app, and can sign
 // out again. Supabase is faked by __mocks__/@supabase/supabase-js.ts, and GET /me (which gives
@@ -224,5 +225,83 @@ describe('roles', () => {
 
     expect(await screen.findByText(`Signed in as ${EMAIL}`)).toBeOnTheScreen();
     expect(getMeMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// T097 acceptance: when an admin deactivates a user, that user can no longer sign in. Supabase
+// still accepts their password, but the API refuses them (403 account_deactivated), so the app
+// signs them straight back out and says why. This uses the real getMe against a fake API.
+describe('deactivated accounts', () => {
+  const getMeMock = jest.mocked(getMe);
+  const { getMe: realGetMe } = jest.requireActual<typeof import('@/api/me')>('@/api/me');
+  const originalFetch = globalThis.fetch;
+  /** Whether the fake API refuses the signed-in user as deactivated. */
+  let deactivated = true;
+
+  const fetchMock = jest.fn(async () => {
+    const [status, body] = deactivated
+      ? [403, { code: 'account_deactivated', message: 'This account has been deactivated.' }]
+      : [200, { id: 'user-1', email: EMAIL, role: 'user' }];
+    return {
+      ok: status === 200,
+      status,
+      headers: { get: () => null },
+      text: async () => JSON.stringify(body),
+    } as unknown as Response;
+  });
+
+  beforeEach(() => {
+    deactivated = true;
+    getMeMock.mockImplementation(realGetMe);
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    // What jest.setup.ts gives every other test.
+    getMeMock.mockImplementation(async () => ({
+      ok: true,
+      status: 200,
+      data: { id: 'user-1', email: EMAIL, role: 'user' },
+    }));
+  });
+
+  it("can't sign in: they're signed straight back out and told why", async () => {
+    await openSignIn();
+
+    fillIn({ Email: EMAIL, Password: PASSWORD });
+    fireEvent.press(screen.getByText('Sign In'));
+
+    expect(await screen.findByText(DEACTIVATED_MESSAGE)).toBeOnTheScreen();
+    expect(screen).toHavePathname('/sign-in');
+    expect(mockAuth.signOut).toHaveBeenCalled();
+    expect(screen.queryByText(`Signed in as ${EMAIL}`)).not.toBeOnTheScreen();
+  });
+
+  it('are signed out when the app opens with their saved session', async () => {
+    mockAuth.reset(makeSession(EMAIL));
+
+    renderRouter('src/app');
+
+    expect(await screen.findByText(DEACTIVATED_MESSAGE)).toBeOnTheScreen();
+    expect(screen).toHavePathname('/sign-in');
+  });
+
+  it('can sign in again once reactivated, and the message is gone', async () => {
+    await openSignIn();
+    fillIn({ Email: EMAIL, Password: PASSWORD });
+    fireEvent.press(screen.getByText('Sign In'));
+    await screen.findByText(DEACTIVATED_MESSAGE);
+
+    deactivated = false;
+    fillIn({ Email: EMAIL, Password: PASSWORD });
+    fireEvent.press(screen.getByText('Sign In'));
+    expect(await screen.findByText(`Signed in as ${EMAIL}`)).toBeOnTheScreen();
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('Sign out'));
+    });
+    expect(await screen.findByText('Welcome back.')).toBeOnTheScreen();
+    expect(screen.queryByText(DEACTIVATED_MESSAGE)).not.toBeOnTheScreen();
   });
 });
