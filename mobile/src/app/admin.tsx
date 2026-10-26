@@ -3,11 +3,12 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { useAuth } from '@/auth';
 import AdminActivityList from '@/components/AdminActivityList';
 import AdminGate, { AccessDenied } from '@/components/AdminGate';
+import AdminUserRow from '@/components/AdminUserRow';
 import AsyncContent from '@/components/AsyncContent';
 import Button from '@/components/Button';
-import Card from '@/components/Card';
 import SearchResultsList from '@/components/SearchResultsList';
 import { useApiGet } from '@/hooks/useApiGet';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
@@ -183,15 +184,31 @@ function AdminProducts({ query }: { query: string }) {
   );
 }
 
-/** Every user in the order they joined, with their role and whether their account is active. */
+/**
+ * Every user in the order they joined, with their role and whether their account is active.
+ * Admins can change a user's role, or deactivate them so they can't sign in (T097).
+ */
 function AdminUsers({ query }: { query: string }) {
+  const { user: me } = useAuth();
   const params = new URLSearchParams({ limit: String(ADMIN_PAGE_SIZE) });
   if (query) params.set('email', query);
   const { loading, data, error, reload } = useApiGet<AdminUserAccount[]>(`/admin/users?${params}`);
+  const [denied, setDenied] = useState(false);
+  // Users changed since the list loaded, shown in place of their rows until it loads again.
+  const [changed, setChanged] = useState<{
+    list: AdminUserAccount[] | null;
+    byId: Record<string, AdminUserAccount>;
+  }>({ list: null, byId: {} });
 
-  if (error?.status === 403) return <AccessDenied />;
+  if (denied || error?.status === 403) return <AccessDenied />;
 
-  const users = data ?? [];
+  const byId = changed.list === data ? changed.byId : {};
+  const users = (data ?? []).map((user) => byId[user.id] ?? user);
+  const showUpdated = (user: AdminUserAccount) =>
+    setChanged((prev) => ({
+      list: data,
+      byId: { ...(prev.list === data ? prev.byId : {}), [user.id]: user },
+    }));
   return (
     <AsyncContent
       loading={loading}
@@ -207,7 +224,14 @@ function AdminUsers({ query }: { query: string }) {
         keyExtractor={(user) => user.id}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.list}
-        renderItem={({ item }) => <UserRow user={item} />}
+        renderItem={({ item }) => (
+          <AdminUserRow
+            user={item}
+            isSelf={item.id === me?.id}
+            onUpdated={showUpdated}
+            onDenied={() => setDenied(true)}
+          />
+        )}
       />
     </AsyncContent>
   );
@@ -269,43 +293,6 @@ function activityCountText(count: number): string {
   if (count === 0) return 'No changes yet.';
   if (count >= ADMIN_PAGE_SIZE) return `Showing the latest ${ADMIN_PAGE_SIZE} changes.`;
   return `${count} ${count === 1 ? 'change' : 'changes'}`;
-}
-
-function UserRow({ user }: { user: AdminUserAccount }) {
-  const email = user.email ?? 'No email';
-  const joined = new Date(user.created_at).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-  const status = [user.role === 'admin' ? 'Admin' : 'User', user.active ? null : 'Deactivated']
-    .filter(Boolean)
-    .join(', ');
-
-  return (
-    <View accessible accessibilityLabel={`${email}, ${status}, joined ${joined}`}>
-      <Card style={styles.userRow}>
-        <View style={styles.userText}>
-          <Text style={styles.email} numberOfLines={1}>
-            {email}
-          </Text>
-          <Text style={styles.joined}>Joined {joined}</Text>
-        </View>
-        <View style={styles.badges}>
-          {user.role === 'admin' ? <Badge label="Admin" tone="accent" /> : null}
-          {user.active ? null : <Badge label="Deactivated" tone="danger" />}
-        </View>
-      </Card>
-    </View>
-  );
-}
-
-function Badge({ label, tone }: { label: string; tone: 'accent' | 'danger' }) {
-  return (
-    <Text style={[styles.badge, tone === 'accent' ? styles.badgeAccent : styles.badgeDanger]}>
-      {label}
-    </Text>
-  );
 }
 
 /** "12 products", "1 user", "No users match "x".", or "Showing the first 100 products…". */
@@ -411,41 +398,5 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.xl,
-  },
-  userRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  userText: {
-    flex: 1,
-    gap: spacing.xxs,
-  },
-  email: {
-    ...textStyles.bodyStrong,
-    color: colors.textPrimary,
-  },
-  joined: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-  },
-  badges: {
-    alignItems: 'flex-end',
-    gap: spacing.xs,
-  },
-  badge: {
-    ...textStyles.caption,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xxs,
-    borderRadius: radius.pill,
-    overflow: 'hidden',
-  },
-  badgeAccent: {
-    color: colors.accent,
-    backgroundColor: colors.accentSoft,
-  },
-  badgeDanger: {
-    color: colors.danger,
-    backgroundColor: colors.dangerSoft,
   },
 });

@@ -1,7 +1,7 @@
 import type { Session, User } from '@supabase/supabase-js';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { getMe, setAccessTokenProvider } from '@/api';
+import { getMe, setAccessTokenProvider, setAccountDeactivatedHandler } from '@/api';
 import type { Role } from '@/types/user';
 
 import { authErrorMessage } from './errors';
@@ -9,6 +9,10 @@ import { supabase } from './supabase';
 
 /** What signIn/signUp resolve to. They never throw. */
 export type AuthResult = { ok: true; needsConfirmation: boolean } | { ok: false; message: string };
+
+/** Shown on the sign-in screen after the app signs out a user whose account was deactivated. */
+export const DEACTIVATED_MESSAGE =
+  'This account has been deactivated, so it can’t sign in. If you think this is a mistake, contact an admin.';
 
 type AuthContextValue = {
   session: Session | null;
@@ -23,6 +27,11 @@ type AuthContextValue = {
   isAdmin: boolean;
   /** True until the saved session has been loaded from the device. */
   initializing: boolean;
+  /**
+   * Why the app signed the user out, e.g. DEACTIVATED_MESSAGE, for the sign-in screen to show.
+   * Cleared when they next sign in or create an account.
+   */
+  signedOutReason: string | null;
   signIn: (email: string, password: string) => Promise<AuthResult>;
   /** needsConfirmation is true when Supabase requires the user to confirm their email first. */
   signUp: (email: string, password: string) => Promise<AuthResult>;
@@ -62,6 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [initializing, setInitializing] = useState(true);
   // Kept with the user ID it belongs to, so a previous user's role is never shown for the next.
   const [loadedRole, setLoadedRole] = useState<{ userId: string; role: Role | null } | null>(null);
+  const [signedOutReason, setSignedOutReason] = useState<string | null>(null);
 
   useEffect(() => {
     // Fires INITIAL_SESSION right away with the saved session (or null), then on every change.
@@ -78,6 +88,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async () => (await supabase.auth.getSession()).data.session?.access_token,
     );
     return () => setAccessTokenProvider(null);
+  }, []);
+
+  useEffect(() => {
+    // Supabase still lets a deactivated user sign in, but the API refuses every request they make.
+    // The app calls GET /me right after signing in and on every launch, so they're signed out
+    // straight away, and also mid-session as soon as any request is refused.
+    setAccountDeactivatedHandler(async (token) => {
+      // Only if the refused request was this session's, not one still answering from a previous
+      // user (or from before signing out).
+      const { session: current } = (await supabase.auth.getSession()).data;
+      if (!current || current.access_token !== token) return;
+      setSignedOutReason(DEACTIVATED_MESSAGE);
+      await signOut();
+    });
+    return () => setAccountDeactivatedHandler(null);
   }, []);
 
   const userId = session?.user.id;
@@ -104,11 +129,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       roleLoading,
       isAdmin: role === 'admin',
       initializing,
-      signIn,
-      signUp,
+      signedOutReason,
+      signIn: (email: string, password: string) => {
+        setSignedOutReason(null);
+        return signIn(email, password);
+      },
+      signUp: (email: string, password: string) => {
+        setSignedOutReason(null);
+        return signUp(email, password);
+      },
       signOut,
     }),
-    [session, role, roleLoading, initializing],
+    [session, role, roleLoading, initializing, signedOutReason],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

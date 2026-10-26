@@ -113,9 +113,23 @@ const ACTIVITY: AuditLogEntry[] = [
 /** What GET /admin/audit-log answers: these entries (filtered by target_type), or an error. */
 let auditLog: { status: number } | null = null;
 let auditEntries: AuditLogEntry[] = ACTIVITY;
+/** The users GET /admin/users lists and PATCH /admin/users/{id} changes. */
+let userList: AdminUserAccount[] = USERS;
+/** What PATCH /admin/users/{id} answers instead of the changed user, if set. */
+let userUpdateFails: { status: number; code: string; message: string } | null = null;
 
-const fetchMock = jest.fn(async (url: string) => {
+const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
   const { pathname, searchParams } = new URL(url);
+  const userId = pathname.match(/^\/admin\/users\/(.+)$/)?.[1];
+  if (userId && init?.method === 'PATCH') {
+    if (userUpdateFails) return jsonResponse(userUpdateFails.status, userUpdateFails);
+    const user = {
+      ...userList.find((item) => item.id === userId)!,
+      ...JSON.parse(init.body as string),
+    };
+    userList = userList.map((item) => (item.id === userId ? user : item));
+    return jsonResponse(200, user);
+  }
   if (pathname === '/admin/products') {
     if (adminProducts)
       return jsonResponse(adminProducts.status, { code: 'forbidden', message: 'No' });
@@ -138,7 +152,7 @@ const fetchMock = jest.fn(async (url: string) => {
     const email = (searchParams.get('email') ?? '').toLowerCase();
     return jsonResponse(
       200,
-      USERS.filter((user) => user.email!.includes(email)),
+      userList.filter((user) => user.email!.includes(email)),
     );
   }
   return jsonResponse(404, { code: 'not_found', message: 'Not Found' });
@@ -160,12 +174,22 @@ const activityRequests = () =>
   fetchMock.mock.calls.filter(([url]) => new URL(url).pathname === '/admin/audit-log');
 const userRequests = () =>
   fetchMock.mock.calls.filter(([url]) => new URL(url).pathname === '/admin/users');
+/** Each PATCH /admin/users/{id}: the path and the body sent. */
+const userUpdates = () =>
+  fetchMock.mock.calls
+    .filter(([, init]) => init?.method === 'PATCH')
+    .map(([url, init]) => ({
+      path: new URL(url).pathname,
+      body: JSON.parse(init!.body as string),
+    }));
 
 beforeEach(() => {
   adminProducts = null;
   adminUsers = null;
   auditLog = null;
   auditEntries = ACTIVITY;
+  userList = USERS;
+  userUpdateFails = null;
   fetchMock.mockClear();
   globalThis.fetch = fetchMock as unknown as typeof fetch;
 });
@@ -364,6 +388,161 @@ describe('users list', () => {
     await openUsers();
 
     expect(await screen.findByText('Admins only')).toBeOnTheScreen();
+  });
+});
+
+// T097: admins can change a user's role, and deactivate them so they can't sign in (see
+// auth.test.tsx for what a deactivated user sees). Every change is confirmed first.
+describe('managing users', () => {
+  const ACTIVE_SHOPPER: AdminUserAccount = { ...USERS[1], active: true };
+
+  beforeEach(() => signedInAs('admin'));
+
+  async function openUsers() {
+    renderRouter('src/app', { initialUrl: '/admin' });
+    await screen.findByText('Diet Pepsi');
+    fireEvent.press(screen.getByRole('tab', { name: 'Users' }));
+    await screen.findByText(/^\d+ users?$/);
+  }
+
+  it('deactivates a user after the admin confirms', async () => {
+    userList = [ACTIVE_SHOPPER];
+    await openUsers();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Deactivate shopper@example.com' }));
+    expect(
+      screen.getByText(
+        "Deactivate shopper@example.com? They'll be signed out and won't be able to sign in.",
+      ),
+    ).toBeOnTheScreen();
+    expect(userUpdates()).toHaveLength(0);
+
+    await act(async () =>
+      fireEvent.press(screen.getByRole('button', { name: 'Deactivate shopper@example.com' })),
+    );
+
+    expect(userUpdates()).toEqual([{ path: '/admin/users/u-2', body: { active: false } }]);
+    expect(
+      screen.getByLabelText('shopper@example.com, User, Deactivated, joined Oct 15, 2026'),
+    ).toBeOnTheScreen();
+    expect(
+      screen.getByRole('button', { name: 'Reactivate shopper@example.com' }),
+    ).toBeOnTheScreen();
+    expect(screen.queryByText(/^Deactivate shopper/)).not.toBeOnTheScreen();
+  });
+
+  it('sends nothing when the admin cancels', async () => {
+    userList = [ACTIVE_SHOPPER];
+    await openUsers();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Deactivate shopper@example.com' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByText(/^Deactivate shopper/)).not.toBeOnTheScreen();
+    expect(
+      screen.getByRole('button', { name: 'Deactivate shopper@example.com' }),
+    ).toBeOnTheScreen();
+    expect(userUpdates()).toHaveLength(0);
+  });
+
+  it('reactivates a user and makes them an admin', async () => {
+    await openUsers();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Reactivate shopper@example.com' }));
+    expect(
+      screen.getByText("Reactivate shopper@example.com? They'll be able to sign in again."),
+    ).toBeOnTheScreen();
+    await act(async () =>
+      fireEvent.press(screen.getByRole('button', { name: 'Reactivate shopper@example.com' })),
+    );
+    fireEvent.press(screen.getByRole('button', { name: 'Make admin shopper@example.com' }));
+    await act(async () =>
+      fireEvent.press(screen.getByRole('button', { name: 'Make admin shopper@example.com' })),
+    );
+
+    expect(userUpdates()).toEqual([
+      { path: '/admin/users/u-2', body: { active: true } },
+      { path: '/admin/users/u-2', body: { role: 'admin' } },
+    ]);
+    expect(
+      screen.getByLabelText('shopper@example.com, Admin, joined Oct 15, 2026'),
+    ).toBeOnTheScreen();
+  });
+
+  it('removes an admin role', async () => {
+    await openUsers();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Remove admin admin@example.com' }));
+    await act(async () =>
+      fireEvent.press(screen.getByRole('button', { name: 'Remove admin admin@example.com' })),
+    );
+
+    expect(userUpdates()).toEqual([{ path: '/admin/users/u-1', body: { role: 'user' } }]);
+    expect(screen.getByLabelText('admin@example.com, User, joined Oct 1, 2026')).toBeOnTheScreen();
+  });
+
+  it("offers no changes on the admin's own row", async () => {
+    // The signed-in user is user-1 (see __mocks__/@supabase/supabase-js.ts).
+    userList = [
+      ...USERS,
+      { ...USERS[0], id: 'user-1', email: 'me@example.com', created_at: '2026-09-01T12:00:00Z' },
+    ];
+    await openUsers();
+
+    expect(
+      screen.getByLabelText('me@example.com, You, Admin, joined Sep 1, 2026'),
+    ).toBeOnTheScreen();
+    expect(screen.queryByRole('button', { name: /me@example\.com$/ })).not.toBeOnTheScreen();
+    // The other rows still offer their changes.
+    expect(
+      screen.getByRole('button', { name: 'Remove admin admin@example.com' }),
+    ).toBeOnTheScreen();
+  });
+
+  it('says why a change failed and leaves the user as they were', async () => {
+    userList = [ACTIVE_SHOPPER];
+    userUpdateFails = { status: 500, code: 'internal_error', message: 'Boom' };
+    await openUsers();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Deactivate shopper@example.com' }));
+    await act(async () =>
+      fireEvent.press(screen.getByRole('button', { name: 'Deactivate shopper@example.com' })),
+    );
+
+    expect(
+      screen.getByText(
+        "Couldn't update shopper@example.com. Something went wrong on our end. Please try again in a moment.",
+      ),
+    ).toBeOnTheScreen();
+    expect(
+      screen.getByLabelText('shopper@example.com, User, joined Oct 15, 2026'),
+    ).toBeOnTheScreen();
+  });
+
+  it('says when the user no longer exists', async () => {
+    userList = [ACTIVE_SHOPPER];
+    userUpdateFails = { status: 404, code: 'user_not_found', message: 'User not found' };
+    await openUsers();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Deactivate shopper@example.com' }));
+    await act(async () =>
+      fireEvent.press(screen.getByRole('button', { name: 'Deactivate shopper@example.com' })),
+    );
+
+    expect(screen.getByText('shopper@example.com no longer exists.')).toBeOnTheScreen();
+  });
+
+  it('shows "Admins only" if the API refuses the change', async () => {
+    userList = [ACTIVE_SHOPPER];
+    userUpdateFails = { status: 403, code: 'forbidden', message: 'No' };
+    await openUsers();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Deactivate shopper@example.com' }));
+    await act(async () =>
+      fireEvent.press(screen.getByRole('button', { name: 'Deactivate shopper@example.com' })),
+    );
+
+    expect(screen.getByText('Admins only')).toBeOnTheScreen();
   });
 });
 

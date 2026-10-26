@@ -17,3 +17,6 @@ export type AdminUserAccount = Account & {
   /** When the user first signed in (ISO 8601). */
   created_at: string;
 };
+
+/** Body of PATCH /admin/users/{id}: one or both fields. Mirrors UserUpdate in the backend. */
+export type UserUpdateBody = { role?: Role; active?: boolean };

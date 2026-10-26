@@ -19,6 +19,19 @@ export function setAccessTokenProvider(provider: AccessTokenProvider | null): vo
   getAccessToken = provider;
 }
 
+/** Called with the access token of the request the API refused. */
+type AccountDeactivatedHandler = (token: string | null) => void;
+
+let onAccountDeactivated: AccountDeactivatedHandler | null = null;
+
+/**
+ * Set by AuthProvider to sign the user out when the API says an admin deactivated their account
+ * (403 account_deactivated, from any request). Pass null to stop.
+ */
+export function setAccountDeactivatedHandler(handler: AccountDeactivatedHandler | null): void {
+  onAccountDeactivated = handler;
+}
+
 export type ApiErrorKind =
   | 'network' // couldn't reach the server: offline, wrong address, or server down
   | 'timeout' // server didn't answer within timeoutMs
@@ -155,9 +168,10 @@ export async function request<T>(
   try {
     let response: Response;
     let text: string;
+    let token: string | null | undefined;
     try {
       // A failure to read the token just sends the request without one; the API answers 401.
-      const token = getAccessToken ? await getAccessToken().catch(() => null) : null;
+      token = getAccessToken ? await getAccessToken().catch(() => null) : null;
       response = await fetch(`${getApiBaseUrl()}${path}`, {
         method,
         headers: {
@@ -177,12 +191,16 @@ export async function request<T>(
     const data = parseJson(text);
 
     if (!response.ok) {
+      const serverError = readServerError(data);
+      if (response.status === 403 && serverError.code === 'account_deactivated') {
+        onAccountDeactivated?.(token ?? null);
+      }
       return fail({
         kind: 'http',
         message: messageForStatus(response.status),
         status: response.status,
         requestId,
-        ...readServerError(data),
+        ...serverError,
       });
     }
     if (data === undefined) {

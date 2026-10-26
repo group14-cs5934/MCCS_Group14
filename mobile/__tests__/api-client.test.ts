@@ -1,6 +1,13 @@
 import Constants from 'expo-constants';
 
-import { DEFAULT_TIMEOUT_MS, api, checkHealth, getApiBaseUrl, setAccessTokenProvider } from '@/api';
+import {
+  DEFAULT_TIMEOUT_MS,
+  api,
+  checkHealth,
+  getApiBaseUrl,
+  setAccessTokenProvider,
+  setAccountDeactivatedHandler,
+} from '@/api';
 
 // T015 acceptance: when the API is unreachable, the client returns a friendly error instead of
 // crashing the app.
@@ -293,6 +300,46 @@ describe('signed-in requests', () => {
     expect(result).toEqual({ ok: true, status: 200, data: account });
     expect(fetchMock.mock.calls[0][0]).toMatch(/\/me$/);
     expect(sentHeaders()).toHaveProperty('Authorization', 'Bearer abc123');
+  });
+});
+
+// T097: when an admin deactivates a user, the API refuses their requests and the app signs them out.
+describe('deactivated accounts', () => {
+  const onDeactivated = jest.fn();
+
+  beforeEach(() => {
+    onDeactivated.mockClear();
+    setAccountDeactivatedHandler(onDeactivated);
+  });
+
+  afterEach(() => setAccountDeactivatedHandler(null));
+
+  it('tells AuthProvider, with the refused token, when the API says the account is deactivated', async () => {
+    setAccessTokenProvider(async () => 'abc123');
+    respondWith(
+      403,
+      '{"code":"account_deactivated","message":"This account has been deactivated."}',
+    );
+
+    const result = await api.get('/products/1');
+
+    // AuthProvider only signs out if that's still the current session's token.
+    expect(onDeactivated).toHaveBeenCalledTimes(1);
+    expect(onDeactivated).toHaveBeenCalledWith('abc123');
+    expect(result).toEqual({
+      ok: false,
+      error: expect.objectContaining({ status: 403, code: 'account_deactivated' }),
+    });
+  });
+
+  it("doesn't for other refusals", async () => {
+    respondWith(403, '{"code":"forbidden","message":"You don\'t have permission to do that."}');
+    respondWith(401, '{"code":"not_authenticated","message":"Not authenticated"}');
+
+    await api.get('/admin/users');
+    await api.get('/me');
+
+    expect(onDeactivated).not.toHaveBeenCalled();
   });
 });
 
