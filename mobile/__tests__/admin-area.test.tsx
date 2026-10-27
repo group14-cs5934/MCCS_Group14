@@ -57,6 +57,12 @@ const USERS: AdminUserAccount[] = [
   },
 ];
 
+/** GET /locations: the stores a worker or manager can be at. */
+const STORES = [
+  { id: 1, name: 'Camp Lejeune MCX', slug: 'camp-lejeune-mcx', address: null, hours: null },
+  { id: 4, name: 'Quantico MCX', slug: 'quantico-mcx', address: null, hours: null },
+];
+
 /** What GET /admin/products answers: the catalog (filtered by q), or an error status. */
 let adminProducts: { status: number } | null = null;
 /** What GET /admin/users answers: USERS (filtered by email), or an error status. */
@@ -123,10 +129,12 @@ const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
   const userId = pathname.match(/^\/admin\/users\/(.+)$/)?.[1];
   if (userId && init?.method === 'PATCH') {
     if (userUpdateFails) return jsonResponse(userUpdateFails.status, userUpdateFails);
-    const user = {
+    const user: AdminUserAccount = {
       ...userList.find((item) => item.id === userId)!,
       ...JSON.parse(init.body as string),
     };
+    // Like the API: only workers and managers have a store.
+    if (user.role !== 'worker' && user.role !== 'manager') user.store_id = null;
     userList = userList.map((item) => (item.id === userId ? user : item));
     return jsonResponse(200, user);
   }
@@ -147,6 +155,7 @@ const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
       auditEntries.filter((entry) => !targetType || entry.target_type === targetType),
     );
   }
+  if (pathname === '/locations') return jsonResponse(200, STORES);
   if (pathname === '/admin/users') {
     if (adminUsers) return jsonResponse(adminUsers.status, { code: 'forbidden', message: 'No' });
     const email = (searchParams.get('email') ?? '').toLowerCase();
@@ -455,9 +464,15 @@ describe('managing users', () => {
     await act(async () =>
       fireEvent.press(screen.getByRole('button', { name: 'Reactivate shopper@example.com' })),
     );
-    fireEvent.press(screen.getByRole('button', { name: 'Make admin shopper@example.com' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Change role of shopper@example.com' }));
+    fireEvent.press(screen.getByRole('radio', { name: 'Admin' }));
+    expect(
+      screen.getByText(
+        "Make shopper@example.com an admin? They'll be able to manage products, users and reviews.",
+      ),
+    ).toBeOnTheScreen();
     await act(async () =>
-      fireEvent.press(screen.getByRole('button', { name: 'Make admin shopper@example.com' })),
+      fireEvent.press(screen.getByRole('button', { name: 'Save role of shopper@example.com' })),
     );
 
     expect(userUpdates()).toEqual([
@@ -472,9 +487,10 @@ describe('managing users', () => {
   it('removes an admin role', async () => {
     await openUsers();
 
-    fireEvent.press(screen.getByRole('button', { name: 'Remove admin admin@example.com' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Change role of admin@example.com' }));
+    fireEvent.press(screen.getByRole('radio', { name: 'User' }));
     await act(async () =>
-      fireEvent.press(screen.getByRole('button', { name: 'Remove admin admin@example.com' })),
+      fireEvent.press(screen.getByRole('button', { name: 'Save role of admin@example.com' })),
     );
 
     expect(userUpdates()).toEqual([{ path: '/admin/users/u-1', body: { role: 'user' } }]);
@@ -495,7 +511,62 @@ describe('managing users', () => {
     expect(screen.queryByRole('button', { name: /me@example\.com$/ })).not.toBeOnTheScreen();
     // The other rows still offer their changes.
     expect(
-      screen.getByRole('button', { name: 'Remove admin admin@example.com' }),
+      screen.getByRole('button', { name: 'Change role of admin@example.com' }),
+    ).toBeOnTheScreen();
+  });
+
+  it('makes someone a worker at a store, which needs a store chosen first', async () => {
+    userList = [ACTIVE_SHOPPER];
+    await openUsers();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Change role of shopper@example.com' }));
+    fireEvent.press(screen.getByRole('radio', { name: 'Worker' }));
+    expect(screen.getByText('Choose their store.')).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole('button', { name: 'Save role of shopper@example.com' }));
+    expect(userUpdates()).toHaveLength(0);
+
+    fireEvent.press(screen.getByRole('radio', { name: 'Quantico MCX' }));
+    expect(
+      screen.getByText(
+        "Make shopper@example.com a worker at Quantico MCX? They'll edit its stock.",
+      ),
+    ).toBeOnTheScreen();
+    await act(async () =>
+      fireEvent.press(screen.getByRole('button', { name: 'Save role of shopper@example.com' })),
+    );
+
+    expect(userUpdates()).toEqual([
+      { path: '/admin/users/u-2', body: { role: 'worker', store_id: 4 } },
+    ]);
+    expect(
+      screen.getByLabelText('shopper@example.com, Worker at Quantico MCX, joined Oct 15, 2026'),
+    ).toBeOnTheScreen();
+  });
+
+  it("shows a manager's store, and can move them to another", async () => {
+    userList = [{ ...ACTIVE_SHOPPER, role: 'manager', store_id: 4 }];
+    await openUsers();
+
+    expect(
+      await screen.findByLabelText(
+        'shopper@example.com, Manager at Quantico MCX, joined Oct 15, 2026',
+      ),
+    ).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole('button', { name: 'Change role of shopper@example.com' }));
+    expect(screen.getByRole('radio', { name: 'Manager' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Quantico MCX' })).toBeChecked();
+    fireEvent.press(screen.getByRole('radio', { name: 'Camp Lejeune MCX' }));
+    await act(async () =>
+      fireEvent.press(screen.getByRole('button', { name: 'Save role of shopper@example.com' })),
+    );
+
+    expect(userUpdates()).toEqual([
+      { path: '/admin/users/u-2', body: { role: 'manager', store_id: 1 } },
+    ]);
+    expect(
+      screen.getByLabelText(
+        'shopper@example.com, Manager at Camp Lejeune MCX, joined Oct 15, 2026',
+      ),
     ).toBeOnTheScreen();
   });
 

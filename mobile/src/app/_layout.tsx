@@ -64,6 +64,7 @@ function RootNavigator() {
           <Stack.Screen name="stores" options={{ title: 'Your store' }} />
           <Stack.Screen name="store/[id]" options={{ title: 'Store' }} />
           <Stack.Screen name="admin" options={{ title: 'Admin' }} />
+          <Stack.Screen name="my-store" options={{ title: 'My store' }} />
           <Stack.Screen name="admin-product/[id]" options={{ title: 'Product' }} />
           <Stack.Screen name="theme-preview" options={{ title: 'Theme preview' }} />
         </Stack.Protected>

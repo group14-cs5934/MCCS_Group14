@@ -23,6 +23,25 @@ export type StoreStock = {
   updated_at: string | null;
 };
 
+/** A product and its stock at one store, as store staff see it (GET /staff/stores/{id}/stock). */
+export type StaffStockRow = {
+  product: {
+    id: number;
+    barcode: string;
+    name: string;
+    size: string | null;
+    image_url: string | null;
+  };
+  /** False when out of stock, or when the store has no record of the product. */
+  in_stock: boolean;
+  quantity: number | null;
+  aisle: string | null;
+  /** When this store's stock was last updated; null if never. */
+  updated_at: string | null;
+  /** When an admin or the store's staff set it by hand; null when automatic updates manage it. */
+  admin_set_at: string | null;
+};
+
 /** GET /products/{id}/availability: every store, in-stock stores first. */
 export type ProductAvailability = {
   product_id: number;

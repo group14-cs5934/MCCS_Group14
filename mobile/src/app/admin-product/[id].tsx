@@ -1,15 +1,16 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text } from 'react-native';
 
 import { clearStock, createProduct, setStock, updateProduct, type ApiError } from '@/api';
 import AdminGate, { AccessDenied } from '@/components/AdminGate';
 import AsyncContent from '@/components/AsyncContent';
 import Button from '@/components/Button';
 import ErrorState from '@/components/ErrorState';
+import StockChoiceEditor from '@/components/StockChoiceEditor';
 import TextField from '@/components/TextField';
 import { useApiGet } from '@/hooks/useApiGet';
-import { colors, radius, sharedStyles, spacing, textStyles } from '@/theme';
+import { colors, sharedStyles, spacing, textStyles } from '@/theme';
 import type { AdminProductStock, Store } from '@/types/admin';
 import type { Product } from '@/types/product';
 import {
@@ -25,7 +26,6 @@ import {
   validateStock,
   type ProductFormErrors,
   type ProductFormValues,
-  type StockChoice,
   type StockFormRow,
 } from '@/utils/productForm';
 
@@ -312,8 +312,9 @@ function ProductForm({
       </Text>
       {stock.length === 0 ? <Text style={styles.hint}>No stores yet.</Text> : null}
       {stock.map((row) => (
-        <StockRow
+        <StockChoiceEditor
           key={row.storeId}
+          title={row.storeName}
           row={row}
           error={stockErrors[row.storeId]}
           onChange={(change) => changeStock(row.storeId, change)}
@@ -341,61 +342,6 @@ function ProductForm({
   );
 }
 
-const choices: { key: StockChoice; label: string }[] = [
-  { key: 'auto', label: 'Automatic' },
-  { key: 'in', label: 'In stock' },
-  { key: 'out', label: 'Out of stock' },
-];
-
-function StockRow({
-  row,
-  error,
-  onChange,
-}: {
-  row: StockFormRow;
-  error?: string;
-  onChange: (change: Partial<StockFormRow>) => void;
-}) {
-  return (
-    <View style={styles.stockRow}>
-      <Text style={styles.storeName}>{row.storeName}</Text>
-      {row.choice === 'auto' ? <Text style={styles.hint}>Now: {row.current}</Text> : null}
-      <View
-        style={styles.choices}
-        accessibilityRole="radiogroup"
-        accessibilityLabel={row.storeName}
-      >
-        {choices.map((choice) => {
-          const selected = choice.key === row.choice;
-          return (
-            <Pressable
-              key={choice.key}
-              onPress={() => onChange({ choice: choice.key })}
-              accessibilityRole="radio"
-              accessibilityLabel={`${row.storeName}: ${choice.label}`}
-              accessibilityState={{ checked: selected }}
-              style={[styles.choice, selected && styles.choiceSelected]}
-            >
-              <Text style={[styles.choiceText, selected && styles.choiceTextSelected]}>
-                {choice.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-      {row.choice === 'in' ? (
-        <TextField
-          label={`Quantity at ${row.storeName} (optional)`}
-          keyboardType="number-pad"
-          value={row.quantity}
-          error={error}
-          onChangeText={(quantity) => onChange({ quantity })}
-        />
-      ) : null}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   form: {
     gap: spacing.md,
@@ -412,38 +358,6 @@ const styles = StyleSheet.create({
   description: {
     minHeight: spacing.xxxl * 2,
     textAlignVertical: 'top',
-  },
-  stockRow: {
-    ...sharedStyles.card,
-    gap: spacing.sm,
-  },
-  storeName: {
-    ...textStyles.bodyStrong,
-    color: colors.textPrimary,
-  },
-  choices: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  choice: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  choiceSelected: {
-    borderColor: colors.accent,
-    backgroundColor: colors.accentSoft,
-  },
-  choiceText: {
-    ...textStyles.label,
-    color: colors.textSecondary,
-  },
-  choiceTextSelected: {
-    color: colors.accent,
   },
   message: {
     ...textStyles.body,
