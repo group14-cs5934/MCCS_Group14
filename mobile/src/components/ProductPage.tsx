@@ -19,6 +19,7 @@ import RateProduct from '@/components/RateProduct';
 import ReviewForm from '@/components/ReviewForm';
 import ReviewList from '@/components/ReviewList';
 import StarRating from '@/components/StarRating';
+import StoreAvailability from '@/components/StoreAvailability';
 import type { ProductState } from '@/hooks/useProduct';
 import { useRatingSummary, type RatingSummaryState } from '@/hooks/useRatingSummary';
 import { useReviews } from '@/hooks/useReviews';
@@ -234,6 +235,9 @@ function ProductDetails({ product }: { product: Product }) {
           </View>
         ) : (
           <View style={styles.details}>
+            {/* Which stores have it, the shopper's own store first (T079). */}
+            <StoreAvailability productId={product.id} />
+
             {brand ? <DetailRow icon="◇" label="Brand" value={brand} /> : null}
 
             {category ? <DetailRow icon="⬡" label="Category" value={category} /> : null}

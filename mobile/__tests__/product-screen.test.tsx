@@ -55,13 +55,19 @@ function respondWith(status: number, body: unknown) {
 
 const RATINGS_PATH = /\/products\/\d+\/ratings$/;
 const MY_RATING_PATH = /\/products\/\d+\/ratings\/me$/;
+const AVAILABILITY_PATH = /\/products\/\d+\/availability$/;
 
 /** What GET /products/{id}/ratings answers; each test starts with no ratings. */
 let ratings: RatingSummary | Error = { product_id: 1, average: null, count: 0 };
 
-/** The product requests made (the page also asks for the product's ratings once it loads). */
+/**
+ * The product requests made (the page also asks for the product's ratings and which stores have
+ * it once it loads).
+ */
 const productRequests = () =>
-  fetchMock.mock.calls.filter(([url]) => !RATINGS_PATH.test(url) && !MY_RATING_PATH.test(url));
+  fetchMock.mock.calls.filter(
+    ([url]) => !RATINGS_PATH.test(url) && !MY_RATING_PATH.test(url) && !AVAILABILITY_PATH.test(url),
+  );
 
 /** The URLs requested, in order. */
 const requestedUrls = () => fetchMock.mock.calls.map(([url]) => url);
@@ -74,6 +80,9 @@ beforeEach(() => {
   fetchMock.mockImplementation(async (url) => {
     if (MY_RATING_PATH.test(url)) {
       return jsonResponse(404, { code: 'rating_not_found', message: 'Not rated' });
+    }
+    if (AVAILABILITY_PATH.test(url)) {
+      return jsonResponse(200, { product_id: 1, stores: [] }); // see store-availability.test.tsx
     }
     if (!RATINGS_PATH.test(url)) {
       return jsonResponse(500, { code: 'internal_error', message: 'Not set up by this test' });
