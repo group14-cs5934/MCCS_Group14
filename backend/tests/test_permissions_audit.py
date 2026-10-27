@@ -10,13 +10,17 @@ call it; then each level is checked for every endpoint that has it, with real si
 - public: works without signing in, and never changes data (GET only, plus endpoints that are
   known to save nothing);
 - signed_in: 401 without a valid token, works for any signed-in user;
-- admin: lives under /admin, 401 without a valid token, 403 for regular users.
+- admin: lives under /admin, 401 without a valid token, 403 for regular users;
+- store_staff: lives under /staff/stores/{store_id}; works for that store's workers and managers
+  and for admins; 403 for regular users and for staff of another store (migration 016);
+- store_manager: the same, except that store's workers get 403 too.
 
 Data access is replaced by tripwires (see test_admin_access.py), so these never need a database:
 a request that gets past the access check either succeeds or trips one.
 """
 
 from typing import Any, Literal
+from uuid import UUID
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -35,7 +39,7 @@ from tests.conftest import VALID_DATABASE_URL, VALID_SUPABASE_URL
 from tests.fakes import FakeUsers
 from tests.test_admin_access import ADMIN_ID, ISSUER, SHOPPER_ID, TrippedError, Tripwire, token
 
-Access = Literal["public", "signed_in", "admin"]
+Access = Literal["public", "signed_in", "admin", "store_staff", "store_manager"]
 
 # Every endpoint and who may call it. Adding an endpoint means adding it here.
 ACCESS: dict[tuple[str, str], Access] = {
@@ -73,7 +77,19 @@ ACCESS: dict[tuple[str, str], Access] = {
     ("POST", "/admin/stores"): "admin",
     ("PATCH", "/admin/stores/{store_id}"): "admin",
     ("DELETE", "/admin/stores/{store_id}"): "admin",
+    ("GET", "/staff/stores/{store_id}/stock"): "store_staff",
+    ("PUT", "/staff/stores/{store_id}/stock/{product_id}"): "store_staff",
+    ("DELETE", "/staff/stores/{store_id}/stock/{product_id}"): "store_staff",
+    ("GET", "/staff/stores/{store_id}/staff"): "store_manager",
+    ("POST", "/staff/stores/{store_id}/staff"): "store_manager",
+    ("DELETE", "/staff/stores/{store_id}/staff/{user_id}"): "store_manager",
 }
+
+# Store staff for the store_staff and store_manager checks; requests go to store 2 (PATH_VALUES).
+WORKER_ID = UUID("c0000000-0000-4000-8000-000000000003")
+MANAGER_ID = UUID("c0000000-0000-4000-8000-000000000004")
+OTHER_STORE_WORKER_ID = UUID("c0000000-0000-4000-8000-000000000005")
+OTHER_STORE_MANAGER_ID = UUID("c0000000-0000-4000-8000-000000000006")
 
 # Public endpoints that aren't GET; each must save nothing.
 PUBLIC_NON_GET = {("POST", "/products/validate")}
@@ -96,6 +112,7 @@ BODY = {
     "active": True,
     "hidden": True,
     "in_stock": False,
+    "email": "shopper@example.com",
 }
 
 
@@ -140,6 +157,13 @@ def test_admin_endpoints_are_exactly_the_ones_under_admin() -> None:
     assert set(with_access("admin")) == under_admin
 
 
+def test_store_staff_endpoints_are_exactly_the_ones_under_staff() -> None:
+    # Kept out of /admin, so test_admin_access.py's "every /admin route is admins only" holds.
+    under_staff = {endpoint for endpoint in ACCESS if endpoint[1].startswith("/staff/stores/")}
+
+    assert set(with_access("store_staff") + with_access("store_manager")) == under_staff
+
+
 def test_public_endpoints_never_change_data() -> None:
     changing = {endpoint for endpoint in with_access("public") if endpoint[0] != "GET"}
 
@@ -160,6 +184,14 @@ def users() -> FakeUsers:
     users.get_or_create(SHOPPER_ID, "shopper@example.com")
     users.get_or_create(ADMIN_ID, "admin@example.com")
     users.update(ADMIN_ID, role="admin")
+    for user_id, role, store_id in [
+        (WORKER_ID, "worker", 2),
+        (MANAGER_ID, "manager", 2),
+        (OTHER_STORE_WORKER_ID, "worker", 9),
+        (OTHER_STORE_MANAGER_ID, "manager", 9),
+    ]:
+        users.get_or_create(user_id, f"{user_id.hex[:6]}@example.com")
+        users.update(user_id, role=role, store_id=store_id)
     return users
 
 
@@ -235,3 +267,48 @@ def test_admin_endpoints_turn_away_regular_users_and_need_a_token(
 
     assert as_user is not None and as_user.status_code == 403
     assert anonymous is not None and anonymous.status_code == 401
+
+
+STORE_LEVELS = with_access("store_staff") + with_access("store_manager")
+
+
+@pytest.mark.parametrize("endpoint", STORE_LEVELS, ids=ids(STORE_LEVELS))
+def test_store_endpoints_turn_away_regular_users_other_stores_and_no_token(
+    client, private_key, endpoint
+) -> None:
+    anonymous = call(client, *endpoint)
+    as_user = call(client, *endpoint, auth=token(private_key, SHOPPER_ID))
+    other_worker = call(client, *endpoint, auth=token(private_key, OTHER_STORE_WORKER_ID))
+    other_manager = call(client, *endpoint, auth=token(private_key, OTHER_STORE_MANAGER_ID))
+
+    assert anonymous is not None and anonymous.status_code == 401
+    assert as_user is not None and as_user.status_code == 403
+    assert as_user.json()["code"] == "forbidden"
+    for response in (other_worker, other_manager):
+        assert response is not None and response.status_code == 403
+        assert response.json()["code"] == "not_your_store"
+
+
+@pytest.mark.parametrize("endpoint", STORE_LEVELS, ids=ids(STORE_LEVELS))
+def test_store_endpoints_work_for_the_stores_manager_and_admins(
+    client, private_key, endpoint
+) -> None:
+    assert passed_access_check(call(client, *endpoint, auth=token(private_key, MANAGER_ID)))
+    assert passed_access_check(call(client, *endpoint, auth=token(private_key, ADMIN_ID)))
+
+
+@pytest.mark.parametrize(
+    "endpoint", with_access("store_staff"), ids=ids(with_access("store_staff"))
+)
+def test_stock_endpoints_work_for_the_stores_workers(client, private_key, endpoint) -> None:
+    assert passed_access_check(call(client, *endpoint, auth=token(private_key, WORKER_ID)))
+
+
+@pytest.mark.parametrize(
+    "endpoint", with_access("store_manager"), ids=ids(with_access("store_manager"))
+)
+def test_staff_endpoints_turn_away_the_stores_workers(client, private_key, endpoint) -> None:
+    response = call(client, *endpoint, auth=token(private_key, WORKER_ID))
+
+    assert response is not None and response.status_code == 403
+    assert response.json()["code"] == "managers_only"

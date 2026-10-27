@@ -39,9 +39,11 @@ class TokenUser(BaseModel):
 
 
 class AuthUser(TokenUser):
-    """The signed-in user, with their role from the users table."""
+    """The signed-in user, with their role (and, for store staff, their store) from the users
+    table."""
 
     role: Role
+    store_id: int | None = None
 
 
 class AuthUnavailableError(Exception):
@@ -146,7 +148,9 @@ def get_current_user(
             "account_deactivated",
             "This account has been deactivated.",
         )
-    return AuthUser(id=account.id, email=account.email, role=account.role)
+    return AuthUser(
+        id=account.id, email=account.email, role=account.role, store_id=account.store_id
+    )
 
 
 # Use as a route parameter: def get_thing(user: CurrentUser) -> ...
@@ -168,3 +172,21 @@ def require_role(*roles: Role) -> Callable[[AuthUser], AuthUser]:
 
 # Use as a route parameter for admin-only routes: def delete_thing(user: AdminUser) -> ...
 AdminUser = Annotated[AuthUser, Depends(require_role("admin"))]
+
+# Store staff routes (app/api/staff.py): workers, managers, and admins. Which store they may act
+# on is checked per route, with can_edit_stock / can_manage_staff below.
+StaffUser = Annotated[AuthUser, Depends(require_role("worker", "manager", "admin"))]
+
+
+def can_edit_stock(user: AuthUser, store_id: int) -> bool:
+    """Admins edit stock anywhere; workers and managers only at their own store."""
+    if user.role == "admin":
+        return True
+    return user.role in ("worker", "manager") and user.store_id == store_id
+
+
+def can_manage_staff(user: AuthUser, store_id: int) -> bool:
+    """Admins manage any store's staff; a manager only their own store's workers."""
+    if user.role == "admin":
+        return True
+    return user.role == "manager" and user.store_id == store_id

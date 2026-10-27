@@ -16,13 +16,19 @@ ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email
 WHERE users.email IS DISTINCT FROM EXCLUDED.email
 """
 
-_COLUMNS = "id, email, role, created_at, deactivated_at IS NULL AS active"
+_COLUMNS = "id, email, role, store_id, created_at, deactivated_at IS NULL AS active"
 
-# Changes only what's given: a NULL role or active keeps the current value. Deactivating an
+# Changes only what's given: a NULL role, store_id, or active keeps the current value. Only
+# workers and managers have a store (migration 016), so any other role clears it. Deactivating an
 # already deactivated user keeps the original time.
 _UPDATE = f"""
 UPDATE users SET
     role = COALESCE(%(role)s::text, role),
+    store_id = CASE
+        WHEN COALESCE(%(role)s::text, role) IN ('worker', 'manager')
+            THEN COALESCE(%(store_id)s::integer, store_id)
+        ELSE NULL
+    END,
     deactivated_at = CASE
         WHEN %(active)s::boolean IS NULL THEN deactivated_at
         WHEN %(active)s::boolean THEN NULL
@@ -79,14 +85,52 @@ class UserRepository:
             return [UserAccount.model_validate(row) for row in cursor.fetchall()]
 
     def update(
-        self, user_id: UUID, role: Role | None = None, active: bool | None = None
+        self,
+        user_id: UUID,
+        role: Role | None = None,
+        active: bool | None = None,
+        store_id: int | None = None,
     ) -> UserAccount | None:
-        """Change the user's role and/or deactivate (active=False) or reactivate them. None if
-        there's no user with this ID."""
+        """Change the user's role and/or store, and/or deactivate (active=False) or reactivate
+        them. A worker or manager needs a store (given here, or the one they have); any other
+        role clears it. None if there's no user with this ID."""
         with self._connection.cursor(row_factory=dict_row) as cursor:
-            cursor.execute(_UPDATE, {"id": user_id, "role": role, "active": active})
+            cursor.execute(
+                _UPDATE, {"id": user_id, "role": role, "active": active, "store_id": store_id}
+            )
             row = cursor.fetchone()
         return UserAccount.model_validate(row) if row is not None else None
+
+    def find_by_email(self, email: str) -> UserAccount | None:
+        """The user with exactly this email (any case), or None."""
+        email = email.strip().lower()
+        if not email or "\x00" in email:
+            return None
+        with self._connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                f"SELECT {_COLUMNS} FROM users WHERE lower(email) = %s ORDER BY created_at LIMIT 1",
+                (email,),
+            )
+            row = cursor.fetchone()
+        return UserAccount.model_validate(row) if row is not None else None
+
+    def list_staff(self, store_id: int) -> list[UserAccount]:
+        """The store's managers, then its workers, each by email."""
+        with self._connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                f"SELECT {_COLUMNS} FROM users WHERE store_id = %s "
+                "ORDER BY role = 'manager' DESC, lower(email), id",
+                (store_id,),
+            )
+            return [UserAccount.model_validate(row) for row in cursor.fetchall()]
+
+    def remove_store_staff(self, store_id: int) -> int:
+        """Make every worker and manager at this store a regular user again (before the store is
+        deleted); returns how many there were."""
+        cursor = self._connection.execute(
+            "UPDATE users SET role = 'user', store_id = NULL WHERE store_id = %s", (store_id,)
+        )
+        return cursor.rowcount
 
 
 def get_user_repository(db: DbConnection) -> UserRepository:

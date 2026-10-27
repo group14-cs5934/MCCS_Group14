@@ -115,6 +115,34 @@ class AdminStoreStock(StoreAvailability):
     )
 
 
+class StockProduct(BaseModel):
+    """The product a store stock row is for, as store staff see it in a list."""
+
+    id: int
+    barcode: str
+    name: str
+    size: str | None = None
+    image_url: str | None = None
+
+
+class StaffStockRow(BaseModel):
+    """A product and its stock at one store (GET /staff/stores/{id}/stock). A product the store
+    has no record for is out of stock, with nothing else known."""
+
+    product: StockProduct
+    in_stock: bool
+    quantity: int | None = None
+    aisle: str | None = None
+    updated_at: datetime | None = Field(
+        default=None, description="When this store's stock was last updated; null if never"
+    )
+    admin_set_at: datetime | None = Field(
+        default=None,
+        description="When an admin or the store's staff set it by hand; automatic updates "
+        "leave it alone until it's handed back",
+    )
+
+
 class AdminProductStock(BaseModel):
     """A product's stock at every store, in-stock stores first, as admins see it."""
 

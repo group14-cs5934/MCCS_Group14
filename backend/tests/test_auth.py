@@ -96,7 +96,7 @@ def get_me(client, token):
 def test_valid_token_returns_the_user(client, private_key):
     response = get_me(client, make_token(private_key))
     assert response.status_code == 200
-    assert response.json() == {"id": USER_ID, "email": EMAIL, "role": "user"}
+    assert response.json() == {"id": USER_ID, "email": EMAIL, "role": "user", "store_id": None}
 
 
 def test_first_request_adds_the_user_with_the_user_role(client, private_key, users):
