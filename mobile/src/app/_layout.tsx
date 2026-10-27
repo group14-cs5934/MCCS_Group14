@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
 import { AuthProvider, useAuth } from '@/auth';
+import { PreferredStoreProvider } from '@/hooks/usePreferredStore';
 import { colors, fontAssets, fonts } from '@/theme';
 
 // Keep the splash screen up until fonts load so text never flashes in the system font.
@@ -13,7 +14,9 @@ SplashScreen.preventAutoHideAsync();
 export default function RootLayout() {
   return (
     <AuthProvider>
-      <RootNavigator />
+      <PreferredStoreProvider>
+        <RootNavigator />
+      </PreferredStoreProvider>
     </AuthProvider>
   );
 }
@@ -58,6 +61,7 @@ function RootNavigator() {
           <Stack.Screen name="product/[id]" options={{ title: 'Product' }} />
           <Stack.Screen name="product/barcode/[code]" options={{ title: 'Product' }} />
           <Stack.Screen name="search" options={{ title: 'Search' }} />
+          <Stack.Screen name="stores" options={{ title: 'Your store' }} />
           <Stack.Screen name="admin" options={{ title: 'Admin' }} />
           <Stack.Screen name="admin-product/[id]" options={{ title: 'Product' }} />
           <Stack.Screen name="theme-preview" options={{ title: 'Theme preview' }} />
