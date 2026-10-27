@@ -97,7 +97,7 @@ function StoreDetails({ store }: { store: Store }) {
           title="Make this my store"
           variant="secondary"
           icon="storefront-outline"
-          onPress={() => setStore({ id: store.id, name: store.name })}
+          onPress={() => setStore({ id: store.id, name: store.name, slug: store.slug })}
         />
       )}
     </ScrollView>

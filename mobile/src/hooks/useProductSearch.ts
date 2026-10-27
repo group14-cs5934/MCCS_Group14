@@ -22,20 +22,37 @@ export type ProductSearchState = {
   reload: () => void;
 };
 
+/** Narrows a search (T096); they combine the way the API's store and in_stock parameters do. */
+export type SearchFilters = {
+  /** Only products this store (its slug) carries; with inStock, only those in stock there. */
+  store?: string | null;
+  /** Only products in stock: at `store`, or at any store. */
+  inStock?: boolean;
+};
+
 /**
- * Searches product names with GET /products/search (small typos are fine). Searches as soon as
- * `query` changes, so pass it through useDebouncedValue to search only when typing pauses. A
- * blank query searches nothing. A search still running when the query changes is cancelled.
+ * Searches product names with GET /products/search (small typos are fine), optionally only
+ * products a store carries or has in stock. Searches as soon as `query` or `filters` change, so
+ * pass the query through useDebouncedValue to search only when typing pauses. A blank query
+ * searches nothing. A search still running when they change is cancelled.
  */
-export function useProductSearch(query: string): ProductSearchState {
+export function useProductSearch(query: string, filters?: SearchFilters): ProductSearchState {
   const trimmed = query.trim();
+  const store = filters?.store;
+  const inStock = filters?.inStock;
   const [attempt, setAttempt] = useState(0);
   const [loaded, setLoaded] = useState<{
     request: string;
     result: ApiResult<Product[]>;
   } | null>(null);
+  // e.g. /products/search?q=chips&store=camp-lejeune-mcx&in_stock=true. Built here, not in a
+  // helper function: the React Compiler can't keep reload's memoization across that call.
+  const path =
+    `/products/search?q=${encodeURIComponent(trimmed)}` +
+    (store ? `&store=${encodeURIComponent(store)}` : '') +
+    (inStock ? '&in_stock=true' : '');
   // Names the search this render wants, so an older search's results are never shown as current.
-  const request = `${trimmed}#${attempt}`;
+  const request = `${path}#${attempt}`;
 
   useEffect(() => {
     if (!trimmed) {
@@ -43,7 +60,7 @@ export function useProductSearch(query: string): ProductSearchState {
     }
     const controller = new AbortController();
     api
-      .get<Product[]>(`/products/search?q=${encodeURIComponent(trimmed)}`, {
+      .get<Product[]>(path, {
         signal: controller.signal,
       })
       .then((result) => {
@@ -52,7 +69,7 @@ export function useProductSearch(query: string): ProductSearchState {
         }
       });
     return () => controller.abort();
-  }, [trimmed, request]);
+  }, [trimmed, path, request]);
 
   const reload = useCallback(() => setAttempt((count) => count + 1), []);
 

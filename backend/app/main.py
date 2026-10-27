@@ -23,7 +23,7 @@ from app.api import (
 )
 from app.core.auth import TokenVerifier
 from app.core.config import ConfigError, Settings, get_settings
-from app.core.database import create_pool
+from app.core.database import create_connection_slots, create_pool
 from app.core.errors import add_error_handlers
 from app.core.request_logging import REQUEST_ID_HEADER, add_request_logging
 
@@ -46,6 +46,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         pool = create_pool(settings)
         pool.open(wait=False)
         app.state.db_pool = pool
+        app.state.db_slots = create_connection_slots()
         try:
             yield
         finally:

@@ -49,7 +49,7 @@ export default function StoresScreen() {
             <StoreRow
               store={item}
               selected={item.id === preferred?.id}
-              onPress={() => pick({ id: item.id, name: item.name })}
+              onPress={() => pick({ id: item.id, name: item.name, slug: item.slug })}
               onOpen={() => router.push(`/store/${item.id}`)}
             />
           )}

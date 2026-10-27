@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 
 import { SEARCH_DEBOUNCE_MS } from '@/hooks/useProductSearch';
@@ -48,6 +49,11 @@ function searchedFor(): string[] {
   return fetchMock.mock.calls.map(([url]) => new URL(url).searchParams.get('q') ?? '');
 }
 
+/** Every parameter of each search request so far, e.g. { q: 'coffee', in_stock: 'true' }. */
+function searchParams(): Record<string, string>[] {
+  return fetchMock.mock.calls.map(([url]) => Object.fromEntries(new URL(url).searchParams));
+}
+
 const searchBox = () => screen.getByLabelText('Search products');
 
 /** Opens the search screen and waits for it to appear. */
@@ -70,7 +76,8 @@ async function pause() {
   await act(async () => jest.advanceTimersByTime(SEARCH_DEBOUNCE_MS));
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await AsyncStorage.clear(); // no preferred store (T078) unless a test saves one
   jest.useFakeTimers();
   fetchMock.mockReset();
   globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -235,4 +242,103 @@ it('shows each result’s name, price, and photo, and tapping one opens its prod
   fetchMock.mockReturnValue(new Promise(() => {}));
   fireEvent.press(screen.getByText('Folgers Classic Roast Coffee'));
   expect(screen).toHavePathname('/product/2');
+});
+
+// T096: search can be narrowed to products in stock at the shopper's own store (T078), or at any
+// store if they haven't picked one, using the API's store and in_stock filters (T075).
+describe('In stock filter', () => {
+  const LEJEUNE = { id: 1, name: 'Camp Lejeune MCX', slug: 'camp-lejeune-mcx' };
+
+  /** Saves user-1's preferred store, as the store picker does. */
+  async function preferStore(store: { id: number; name: string; slug?: string }) {
+    await AsyncStorage.setItem('preferred-store:user-1', JSON.stringify(store));
+  }
+
+  /** Answers searches with `results`, and GET /locations/1 with Camp Lejeune MCX. */
+  function fakeApi(results: Product[]) {
+    fetchMock.mockImplementation(async (url) => {
+      const body = new URL(url).pathname.startsWith('/locations/')
+        ? { ...LEJEUNE, address: null, hours: null }
+        : results;
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        text: async () => JSON.stringify(body),
+      } as unknown as Response;
+    });
+  }
+
+  /** The parameters of each search request so far (not the store lookups). */
+  const searches = () =>
+    searchParams().filter((_, index) =>
+      new URL(fetchMock.mock.calls[index][0]).pathname.endsWith('/search'),
+    );
+
+  /** Turns the filter on or off; the search runs again at once, without waiting for a pause. */
+  async function toggle(name: string) {
+    await act(async () => fireEvent.press(screen.getByRole('switch', { name })));
+  }
+
+  it("narrows to products in stock at the shopper's store", async () => {
+    await preferStore(LEJEUNE);
+    fakeApi([FOLGERS]);
+    await openSearch();
+    typeQuickly('coffee');
+    await pause();
+
+    await toggle('In stock at Camp Lejeune MCX');
+    expect(screen.getByRole('switch', { name: 'In stock at Camp Lejeune MCX' })).toBeChecked();
+    await toggle('In stock at Camp Lejeune MCX');
+
+    expect(searches()).toEqual([
+      { q: 'coffee' },
+      { q: 'coffee', store: 'camp-lejeune-mcx', in_stock: 'true' },
+      { q: 'coffee' },
+    ]);
+  });
+
+  it('narrows to in stock at any store without a store, and offers to choose one', async () => {
+    fakeApi([FOLGERS]);
+    await openSearch();
+    typeQuickly('coffee');
+    await pause();
+
+    await toggle('In stock at any store');
+
+    expect(searches()).toEqual([{ q: 'coffee' }, { q: 'coffee', in_stock: 'true' }]);
+    fireEvent.press(screen.getByRole('button', { name: 'Choose your store to filter by it' }));
+    expect(screen).toHavePathname('/stores');
+  });
+
+  it('says the filter is on when nothing matches', async () => {
+    await preferStore(LEJEUNE);
+    fakeApi([]);
+    await openSearch();
+    await screen.findByRole('switch', { name: 'In stock at Camp Lejeune MCX' });
+    await toggle('In stock at Camp Lejeune MCX');
+
+    typeQuickly('coffee');
+    await pause();
+
+    expect(
+      await screen.findByText(
+        'No products match "coffee" in stock at Camp Lejeune MCX. Try turning off "In stock".',
+      ),
+    ).toBeOnTheScreen();
+  });
+
+  it('looks up the slug of a store saved without one, so it can filter by it', async () => {
+    await preferStore({ id: 1, name: 'Camp Lejeune MCX' });
+    fakeApi([]);
+    await openSearch();
+
+    expect(
+      await screen.findByRole('switch', { name: 'In stock at Camp Lejeune MCX' }),
+    ).toBeOnTheScreen();
+    expect(
+      screen.queryByRole('button', { name: 'Choose your store to filter by it' }),
+    ).not.toBeOnTheScreen();
+    expect(JSON.parse((await AsyncStorage.getItem('preferred-store:user-1'))!)).toEqual(LEJEUNE);
+  });
 });
