@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter, type Href } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -7,6 +8,7 @@ import { useAuth } from '@/auth';
 import Button from '@/components/Button';
 import Card from '@/components/Card';
 import IconBadge from '@/components/IconBadge';
+import { usePreferredStore } from '@/hooks/usePreferredStore';
 import { colors, sharedStyles, spacing, textStyles } from '@/theme';
 
 /** Shortcuts for developers, shown only in development builds. */
@@ -21,6 +23,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, isAdmin, signOut } = useAuth();
+  const { store, loading: storeLoading } = usePreferredStore();
 
   // Admins start in the admin area: once their role loads, it opens on top of Home, so Back
   // still reaches the shopper side. Only once per sign-in (Home stays mounted until sign-out).
@@ -62,6 +65,30 @@ export default function HomeScreen() {
         />
         <Button title="Search manually" variant="text" onPress={() => router.push('/search')} />
       </Card>
+
+      {/* Waits for the saved store, so "Not chosen yet" never flashes before it. */}
+      {storeLoading ? null : (
+        <Card style={styles.storeCard}>
+          <Ionicons
+            name="storefront-outline"
+            size={textStyles.subheading.lineHeight}
+            color={colors.accent}
+          />
+          <View style={styles.storeText}>
+            <Text style={[textStyles.caption, { color: colors.textSecondary }]}>Your store</Text>
+            <Text style={[textStyles.bodyStrong, { color: colors.textPrimary }]}>
+              {store ? store.name : 'Not chosen yet'}
+            </Text>
+          </View>
+          <Button
+            title={store ? 'Change' : 'Choose'}
+            variant="text"
+            onPress={() => router.push('/stores')}
+            accessibilityLabel={store ? 'Change your store' : 'Choose your store'}
+            style={styles.storeButton}
+          />
+        </Card>
+      )}
 
       {isAdmin ? (
         <Button
@@ -115,6 +142,17 @@ const styles = StyleSheet.create({
   stretch: {
     alignSelf: 'stretch',
     marginTop: spacing.sm,
+  },
+  storeCard: {
+    ...sharedStyles.row,
+    gap: spacing.md,
+  },
+  storeText: {
+    flex: 1,
+    gap: spacing.xxs,
+  },
+  storeButton: {
+    alignSelf: 'auto',
   },
   account: {
     alignItems: 'center',

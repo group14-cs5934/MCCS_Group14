@@ -2,17 +2,13 @@
 // update both together.
 
 import type { Product } from '@/types/product';
+import type { Store } from '@/types/store';
+
+// Shoppers use stores too, so the type lives in store.ts; re-exported for the admin screens.
+export type { Store };
 
 /** A product as admins see it: also which fields an admin set (the sync leaves those alone). */
 export type AdminProduct = Product & { admin_fields: string[] };
-
-/** An MCCS store, from GET /locations. */
-export type Store = {
-  id: number;
-  name: string;
-  slug: string;
-  address: string | null;
-};
 
 /** One store's stock of a product, from GET /admin/products/{id}/stock. */
 export type AdminStoreStock = {
