@@ -1,5 +1,13 @@
 import type { Session, User } from '@supabase/supabase-js';
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 
 import { getMe, setAccessTokenProvider, setAccountDeactivatedHandler } from '@/api';
 import type { Role } from '@/types/user';
@@ -25,6 +33,17 @@ type AuthContextValue = {
   /** True while a signed-in user's role is still loading, so screens can wait before deciding. */
   roleLoading: boolean;
   isAdmin: boolean;
+  /** True for a store worker or manager (not admins, who aren't tied to one store). */
+  isStaff: boolean;
+  /** True for a store manager. */
+  isManager: boolean;
+  /** The store a worker or manager works at, from GET /me; null for anyone else. */
+  storeId: number | null;
+  /**
+   * Loads the role and store again, e.g. when the API says the user's access changed (they were
+   * removed from their store, or moved) since they signed in.
+   */
+  refreshRole: () => void;
   /** True until the saved session has been loaded from the device. */
   initializing: boolean;
   /**
@@ -70,7 +89,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [initializing, setInitializing] = useState(true);
   // Kept with the user ID it belongs to, so a previous user's role is never shown for the next.
-  const [loadedRole, setLoadedRole] = useState<{ userId: string; role: Role | null } | null>(null);
+  const [loadedRole, setLoadedRole] = useState<{
+    userId: string;
+    role: Role | null;
+    storeId: number | null;
+  } | null>(null);
   const [signedOutReason, setSignedOutReason] = useState<string | null>(null);
 
   useEffect(() => {
@@ -106,19 +129,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const userId = session?.user.id;
+  // Bumped by refreshRole to load the role again; the current role stays until the new one loads.
+  const [roleRequest, setRoleRequest] = useState(0);
+  const refreshRole = useCallback(() => setRoleRequest((count) => count + 1), []);
   useEffect(() => {
     if (!userId) return;
     // GET /me also adds the user's row (with the 'user' role) the first time they sign in.
     const controller = new AbortController();
     getMe({ signal: controller.signal }).then((result) => {
       if (!controller.signal.aborted) {
-        setLoadedRole({ userId, role: result.ok ? result.data.role : null });
+        setLoadedRole({
+          userId,
+          role: result.ok ? result.data.role : null,
+          storeId: result.ok ? (result.data.store_id ?? null) : null,
+        });
       }
     });
     return () => controller.abort();
-  }, [userId]);
+  }, [userId, roleRequest]);
   const roleLoaded = !!loadedRole && loadedRole.userId === userId;
   const role = roleLoaded ? loadedRole.role : null;
+  const storeId = roleLoaded ? loadedRole.storeId : null;
   const roleLoading = !!userId && !roleLoaded;
 
   const value = useMemo(
@@ -128,6 +159,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role,
       roleLoading,
       isAdmin: role === 'admin',
+      // Staff without a store can't happen (the API requires one), but never treat them as staff.
+      isStaff: (role === 'worker' || role === 'manager') && storeId !== null,
+      isManager: role === 'manager' && storeId !== null,
+      storeId,
+      refreshRole,
       initializing,
       signedOutReason,
       signIn: (email: string, password: string) => {
@@ -140,7 +176,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       signOut,
     }),
-    [session, role, roleLoading, initializing, signedOutReason],
+    [session, role, storeId, refreshRole, roleLoading, initializing, signedOutReason],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

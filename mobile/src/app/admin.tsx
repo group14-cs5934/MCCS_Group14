@@ -18,6 +18,7 @@ import { colors, radius, sharedStyles, spacing, textStyles } from '@/theme';
 import type { AuditLogEntry } from '@/types/audit';
 import type { Product } from '@/types/product';
 import type { AdminReview } from '@/types/review';
+import type { Store } from '@/types/store';
 import type { AdminUserAccount } from '@/types/user';
 
 /** Most rows a list loads at once (the API's limit for GET /admin/products, /users, /audit-log). */
@@ -202,13 +203,16 @@ function AdminProducts({ query }: { query: string }) {
 
 /**
  * Every user in the order they joined, with their role and whether their account is active.
- * Admins can change a user's role, or deactivate them so they can't sign in (T097).
+ * Admins can change a user's role (making them a store worker or manager at a store), or
+ * deactivate them so they can't sign in (T097).
  */
 function AdminUsers({ query }: { query: string }) {
   const { user: me } = useAuth();
   const params = new URLSearchParams({ limit: String(ADMIN_PAGE_SIZE) });
   if (query) params.set('email', query);
   const { loading, data, error, reload } = useApiGet<AdminUserAccount[]>(`/admin/users?${params}`);
+  // To name staff members' stores and choose one; without it, stores show as "store #3".
+  const locations = useApiGet<Store[]>('/locations');
   const [denied, setDenied] = useState(false);
   const [users, setUser] = useChangedRows(data);
 
@@ -232,6 +236,7 @@ function AdminUsers({ query }: { query: string }) {
         renderItem={({ item }) => (
           <AdminUserRow
             user={item}
+            stores={locations.data ?? []}
             isSelf={item.id === me?.id}
             onUpdated={(user) => setUser(user.id, user)}
             onDenied={() => setDenied(true)}
