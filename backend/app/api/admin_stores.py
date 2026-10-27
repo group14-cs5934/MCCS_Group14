@@ -63,7 +63,7 @@ def _check_slug(stores: Stores, slug: str, store_id: int | None) -> None:
 
 
 def _store_fields(store: StoreRead) -> dict[str, object]:
-    return {"name": store.name, "slug": store.slug, "address": store.address}
+    return {"name": store.name, "slug": store.slug, "address": store.address, "hours": store.hours}
 
 
 def _record(
@@ -91,7 +91,7 @@ def create_store(
     slug = store.slug or slugify(store.name)[:_MAX_SLUG_LENGTH].strip("-")
     _check_slug(stores, slug, store_id=None)
     try:
-        created = stores.create_store(store.name, slug, store.address)
+        created = stores.create_store(store.name, slug, store.address, store.hours)
     except psycopg.errors.UniqueViolation:  # another admin took the slug just now
         raise _slug_taken() from None
     _record(
@@ -105,7 +105,7 @@ def create_store(
 def update_store(
     store_id: int, change: StoreUpdate, admin: AdminUser, stores: Stores, audit: AuditLog
 ) -> StoreRead:
-    """Change a store's name, slug, or address; only the fields sent change."""
+    """Change a store's name, slug, address, or hours; only the fields sent change."""
     before = stores.get_store(store_id, lock=True)
     if before is None:
         raise _store_not_found()

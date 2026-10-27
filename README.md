@@ -266,6 +266,7 @@ payloads get `422` with every problem listed.
 | `GET /products/{id}/reviews`   | A page of reviews, newest first (`limit`, `offset`), or `404`.              |
 | `POST /products/{id}/reviews`  | Saves the signed-in user's review (one per product); `401` if signed out.   |
 | `GET /locations`               | Every MCCS store, sorted by name.                                           |
+| `GET /locations/{id}`          | One store with its `address` and `hours` (free text; `null` if not listed), or `404 store_not_found`. |
 | `GET /products/{id}/availability` | Each store with `in_stock` for the product (in stock first), or `404`.   |
 
 Search also takes `store=<slug>` (only products that store carries) and `in_stock=true` (only
@@ -463,8 +464,8 @@ To log a new admin change, take an `AuditLog` parameter and call `audit.record(.
 
 | Endpoint                                        | Does                                                       |
 | ----------------------------------------------- | ---------------------------------------------------------- |
-| `POST /admin/stores`                            | Adds a store (`201`): `name`, optional `address`, and `slug` (made from the name if not sent; `409 slug_taken` if another store has it). |
-| `PATCH /admin/stores/{id}`                      | Changes `name`, `slug`, or `address`.                      |
+| `POST /admin/stores`                            | Adds a store (`201`): `name`, optional `address` and `hours`, and `slug` (made from the name if not sent; `409 slug_taken` if another store has it). |
+| `PATCH /admin/stores/{id}`                      | Changes `name`, `slug`, `address`, or `hours` (migration 014; `null` clears it). |
 | `DELETE /admin/stores/{id}`                     | Removes a store and its stock records (`204`).             |
 | `GET /admin/products/{id}/stock`                | The product at every store, with `admin_set_at` for stock an admin set. |
 | `PUT /admin/products/{id}/stock/{store_id}`     | Sets stock there, e.g. `{"in_stock": false}`; optional `quantity` (must agree with `in_stock`) and `aisle` (kept if not sent). |

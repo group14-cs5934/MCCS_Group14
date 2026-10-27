@@ -285,10 +285,42 @@ def test_editing_a_store_changes_only_what_was_sent(client, setup) -> None:
         "name": "Quantico MCX",
         "slug": "quantico-mcx",
         "address": "Bldg. 2",
+        "hours": None,
     }
 
 
-@pytest.mark.parametrize("body", [{}, {"name": None}, {"name": ""}, {"phone": "555"}])
+def test_admins_can_set_and_clear_a_stores_hours(client, setup) -> None:
+    store_id = setup["quantico"]["id"]
+
+    set_response = client.patch(f"/admin/stores/{store_id}", json={"hours": " Mon–Sat 9 AM–9 PM "})
+    shown = client.get(f"/locations/{store_id}").json()["hours"]
+    cleared = client.patch(f"/admin/stores/{store_id}", json={"hours": None}).json()["hours"]
+
+    assert set_response.json()["hours"] == "Mon–Sat 9 AM–9 PM"
+    assert set_response.json()["address"] is None  # left alone
+    assert shown == "Mon–Sat 9 AM–9 PM"
+    assert cleared is None
+
+
+def test_blank_hours_are_saved_as_none(client, setup) -> None:
+    store_id = setup["quantico"]["id"]
+
+    response = client.patch(f"/admin/stores/{store_id}", json={"hours": "   "})
+
+    assert response.status_code == 200
+    assert response.json()["hours"] is None
+
+
+def test_a_new_store_can_have_hours(client) -> None:
+    response = client.post("/admin/stores", json={"name": "Quantico MCX", "hours": "Daily 9–9"})
+
+    assert response.status_code == 201
+    assert response.json()["hours"] == "Daily 9–9"
+
+
+@pytest.mark.parametrize(
+    "body", [{}, {"name": None}, {"name": ""}, {"phone": "555"}, {"hours": "x" * 201}]
+)
 def test_invalid_store_edits_are_422(client, setup, body) -> None:
     assert client.patch(f"/admin/stores/{setup['quantico']['id']}", json=body).status_code == 422
 

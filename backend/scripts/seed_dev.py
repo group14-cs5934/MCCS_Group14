@@ -46,22 +46,26 @@ SAMPLE_PRODUCTS = [
 ]
 
 
+# The hours are samples for development (T080's store page), not the stores' real hours.
 SAMPLE_STORES = [
     {
         "name": "Camp Lejeune MCX",
         "slug": "camp-lejeune-mcx",
         "address": "Bldg. 1231 Birch St., Camp Lejeune, NC 28547",
+        "hours": "Mon–Sat 9 AM–9 PM · Sun 10 AM–6 PM (sample hours)",
     },
     {
         "name": "New River MCX",
         "slug": "new-river-mcx",
         "address": "Bldg. AS-4040 Curtis Rd., MCAS New River, NC 28540",
+        "hours": "Mon–Fri 9 AM–8 PM · Sat–Sun 10 AM–6 PM (sample hours)",
     },
     {
         # The MCCS online store, where jobs/product-monitor reads prices and stock from.
         "name": "MCX Online Store",
         "slug": "mcx-online",
         "address": None,
+        "hours": "Open 24/7 online (sample hours)",
     },
 ]
 
@@ -142,14 +146,15 @@ def seed() -> None:
 
 
 def seed_store_locations(cursor: psycopg.Cursor) -> int:
-    """Insert demo MCCS stores; skip existing store slugs."""
+    """Insert demo MCCS stores; skip existing store slugs, but give them sample hours if they
+    have none yet (stores seeded before T080 added hours)."""
     added = 0
 
     for store in SAMPLE_STORES:
         cursor.execute(
             """
-            INSERT INTO store_locations (name, slug, address)
-            VALUES (%s, %s, %s)
+            INSERT INTO store_locations (name, slug, address, hours)
+            VALUES (%s, %s, %s, %s)
             ON CONFLICT (slug) DO NOTHING
             RETURNING id
             """,
@@ -157,11 +162,17 @@ def seed_store_locations(cursor: psycopg.Cursor) -> int:
                 store["name"],
                 store["slug"],
                 store["address"],
+                store["hours"],
             ),
         )
 
         if cursor.fetchone() is not None:
             added += 1
+        else:
+            cursor.execute(
+                "UPDATE store_locations SET hours = %s WHERE slug = %s AND hours IS NULL",
+                (store["hours"], store["slug"]),
+            )
 
     return added
 

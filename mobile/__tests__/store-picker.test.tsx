@@ -18,8 +18,9 @@ const STORES: Store[] = [
     name: 'Camp Lejeune MCX',
     slug: 'camp-lejeune-mcx',
     address: 'Bldg. 1231 Birch St., Camp Lejeune, NC',
+    hours: null,
   },
-  { id: 2, name: 'Camp Pendleton MCX', slug: 'camp-pendleton-mcx', address: null },
+  { id: 2, name: 'Camp Pendleton MCX', slug: 'camp-pendleton-mcx', address: null, hours: null },
 ];
 
 /** True while GET /locations fails. */

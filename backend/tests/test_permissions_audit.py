@@ -42,6 +42,7 @@ ACCESS: dict[tuple[str, str], Access] = {
     ("GET", "/"): "public",
     ("GET", "/health"): "public",
     ("GET", "/locations"): "public",
+    ("GET", "/locations/{store_id}"): "public",
     ("GET", "/products/barcode/{code}"): "public",
     ("GET", "/products/search"): "public",
     ("POST", "/products/validate"): "public",  # checks a payload; saves nothing

@@ -15,8 +15,8 @@ import type { Role } from '@/types/user';
 const getMeMock = jest.mocked(getMe);
 
 const STORES: Store[] = [
-  { id: 1, name: 'Camp Lejeune MCX', slug: 'camp-lejeune-mcx', address: null },
-  { id: 2, name: 'Quantico MCX', slug: 'quantico-mcx', address: null },
+  { id: 1, name: 'Camp Lejeune MCX', slug: 'camp-lejeune-mcx', address: null, hours: null },
+  { id: 2, name: 'Quantico MCX', slug: 'quantico-mcx', address: null, hours: null },
 ];
 
 const AT = '2026-10-26T12:00:00Z';

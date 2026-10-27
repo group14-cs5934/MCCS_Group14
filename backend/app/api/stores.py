@@ -18,6 +18,15 @@ def list_locations(stores: Stores) -> list[StoreRead]:
     return stores.list_locations()
 
 
+@router.get("/locations/{store_id:int}", responses={404: error_response("No store with this ID")})
+def get_location(store_id: int, stores: Stores) -> StoreRead:
+    """One store, with its address and hours (the app's store page, T080)."""
+    store = stores.get_store(store_id)
+    if store is None:
+        raise ApiError(404, "store_not_found", "Store not found")
+    return store
+
+
 @router.get(
     "/products/{product_id:int}/availability",
     responses={404: error_response("No product with this ID")},

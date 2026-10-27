@@ -1,11 +1,13 @@
 // Shapes of the stores API (backend/app/schemas/store.py); update both together.
 
-/** An MCCS store, from GET /locations. */
+/** An MCCS store, from GET /locations and GET /locations/{id}. */
 export type Store = {
   id: number;
   name: string;
   slug: string;
   address: string | null;
+  /** Opening hours as the store words them, e.g. "Mon–Sat 9 AM–9 PM"; null if not listed. */
+  hours: string | null;
 };
 
 /** Whether one store has a product. Mirrors StoreAvailability. */

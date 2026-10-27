@@ -16,7 +16,8 @@ from app.schemas.store import (
 # products.id is a Postgres INTEGER; larger IDs can't exist, and querying one raises an error.
 _MAX_ID = 2**31 - 1
 
-_STORE_COLUMNS = "s.id, s.name, s.slug, s.address"
+_STORE_COLUMNS = "s.id, s.name, s.slug, s.address, s.hours"
+_STORE_KEYS = ("id", "name", "slug", "address", "hours")
 
 # Every store, with the product's stock row if the store has one. Stores without a row are out of
 # stock (in_stock false, nothing else known). In-stock stores come first, then by name.
@@ -55,12 +56,12 @@ ON CONFLICT (product_id, store_id) DO UPDATE SET
 
 
 def _to_availability(row: dict[str, Any]) -> StoreAvailability:
-    store = {key: row.pop(key) for key in ("id", "name", "slug", "address")}
+    store = {key: row.pop(key) for key in _STORE_KEYS}
     return StoreAvailability.model_validate({**row, "store": store})
 
 
 def _to_admin_stock(row: dict[str, Any]) -> AdminStoreStock:
-    store = {key: row.pop(key) for key in ("id", "name", "slug", "address")}
+    store = {key: row.pop(key) for key in _STORE_KEYS}
     return AdminStoreStock.model_validate({**row, "store": store})
 
 
@@ -123,18 +124,21 @@ class StoreRepository:
         ).fetchone()
         return row is not None
 
-    def create_store(self, name: str, slug: str, address: str | None) -> StoreRead:
+    def create_store(
+        self, name: str, slug: str, address: str | None, hours: str | None = None
+    ) -> StoreRead:
         (store_id,) = self._connection.execute(
-            "INSERT INTO store_locations (name, slug, address) VALUES (%s, %s, %s) RETURNING id",
-            (name, slug, address),
+            "INSERT INTO store_locations (name, slug, address, hours) "
+            "VALUES (%s, %s, %s, %s) RETURNING id",
+            (name, slug, address, hours),
         ).fetchone()
         created = self.get_store(store_id)
         assert created is not None
         return created
 
     def update_store(self, store_id: int, fields: dict[str, Any]) -> StoreRead:
-        """Change the given columns (name, slug, address) of a store that exists."""
-        allowed = [column for column in ("name", "slug", "address") if column in fields]
+        """Change the given columns (name, slug, address, hours) of a store that exists."""
+        allowed = [column for column in ("name", "slug", "address", "hours") if column in fields]
         if allowed:
             # Column names only ever come from the constant list above.
             assignments = ", ".join(f"{column} = %({column})s" for column in allowed)
