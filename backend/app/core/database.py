@@ -3,12 +3,14 @@
 The app opens one connection pool when it starts (see the lifespan in app/main.py). Each request
 that needs the database borrows its own connection from the pool through DbConnection, so
 requests running at the same time never share a connection. A request's queries run in one
-transaction: committed when the route returns, rolled back if it raises.
+transaction: committed when the route returns, rolled back if it raises. At most POOL_MAX_SIZE
+requests use the database at once; the rest wait their turn without tying up a worker thread.
 """
 
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Annotated
 
+import anyio
 import psycopg
 from fastapi import Depends, Request
 from psycopg_pool import ConnectionPool
@@ -38,8 +40,33 @@ def create_pool(settings: Settings) -> ConnectionPool:
     )
 
 
-def get_connection(request: Request) -> Iterator[psycopg.Connection]:
-    """FastAPI dependency: this request's own pooled connection, inside one transaction."""
+async def _connection_slot(request: Request) -> AsyncIterator[None]:
+    """FastAPI dependency: waits until fewer than POOL_MAX_SIZE requests are using a connection.
+
+    Waiting here doesn't use a worker thread. Without it, a burst of requests (T096: 50 searches at
+    once) filled every worker thread with requests blocked in pool.connection(), so the requests
+    that already had a connection couldn't get a thread to finish and give it back; everything
+    stalled until the waiters timed out after POOL_TIMEOUT_SECONDS. Now only requests sure to get
+    a connection take a thread.
+    """
+    slots: anyio.Semaphore | None = getattr(request.app.state, "db_slots", None)
+    if slots is None:  # the app's lifespan didn't run (some unit tests)
+        yield
+        return
+    async with slots:
+        yield
+
+
+def create_connection_slots() -> anyio.Semaphore:
+    """One slot per pooled connection. Create it inside the running app (its lifespan)."""
+    return anyio.Semaphore(POOL_MAX_SIZE)
+
+
+def get_connection(
+    request: Request, _slot: Annotated[None, Depends(_connection_slot, scope="function")]
+) -> Iterator[psycopg.Connection]:
+    """FastAPI dependency: this request's own pooled connection, inside one transaction. The
+    connection goes back to the pool before its slot is freed."""
     pool: ConnectionPool | None = getattr(request.app.state, "db_pool", None)
     if pool is None:
         raise RuntimeError("The database pool isn't open; it opens when the app starts.")

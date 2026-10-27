@@ -573,6 +573,19 @@ with `app.dependency_overrides[get_product_repository] = lambda: fake`, using `F
 from `tests/fakes.py` (see `tests/test_product_search_unit.py`). Keep a few database tests too,
 so the real SQL is covered.
 
+**Search load test (T096).** `scripts/load_test_search.py` checks that 95% of 50 simultaneous
+searches return in under 1 second on a full-size catalog. It builds a synthetic catalog (20,000
+products at 8 stores by default) in a throwaway schema, starts the API on it, sends the app's
+kinds of search (name, category, store, in stock), prints p50/p95/p99, and exits with 1 if the
+target is missed. It only runs against a database on this computer:
+
+```sh
+uv run python -m scripts.load_test_search --database-url postgresql://postgres:postgres@localhost:5433/postgres
+uv run python -m scripts.load_test_search --products 100000 --requests 1000
+```
+
+Results and what it found: [docs/performance/2026-10-27-search-load-test.md](docs/performance/2026-10-27-search-load-test.md).
+
 ## Product data sync
 
 `scripts/sync_products.py` pulls real products into the catalog: it fetches them from the data

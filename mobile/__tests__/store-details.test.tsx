@@ -152,6 +152,7 @@ it('can make the store the shopper’s own', async () => {
   expect(JSON.parse((await AsyncStorage.getItem('preferred-store:user-1'))!)).toEqual({
     id: 1,
     name: 'Camp Lejeune MCX',
+    slug: 'camp-lejeune-mcx', // so searches can filter by it (T096)
   });
 });
 
