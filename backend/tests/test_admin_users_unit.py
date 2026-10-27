@@ -127,7 +127,7 @@ def test_admin_lists_users_with_role_and_status(client) -> None:
         ("admin@example.com", "admin", True),
         ("shopper@example.com", "user", True),
     ]
-    assert set(response.json()[0]) == {"id", "email", "role", "active", "created_at"}
+    assert set(response.json()[0]) == {"id", "email", "role", "store_id", "active", "created_at"}
 
 
 def test_list_passes_the_email_search_and_paging(client, users) -> None:

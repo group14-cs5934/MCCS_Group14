@@ -363,9 +363,13 @@ without the right role gets `403` with code `forbidden`; if Supabase's keys can'
 **Users and roles.** Accounts live in Supabase Auth; the `users` table
 (`migrations/004_create_users.sql`) stores each user's role. A user's row is added with the
 `user` role the first time they call the API. The app calls `GET /me` right after signing in, so
-this happens at sign-up, or at the first sign-in when email confirmation is on. There are two
-roles, `user` and `admin`. `require_role(...)` in `app/core/auth.py` builds a check for other
-combinations. To make the first admin (after they've signed in once), run in the Supabase SQL
+this happens at sign-up, or at the first sign-in when email confirmation is on. There are four
+roles (migration 016): `user` (shoppers), `worker` (edits their store's stock), `manager` (also
+adds and removes their store's workers), and `admin` (everything, at every store). Workers and
+managers belong to exactly one store, `users.store_id`; nobody else has one, and the database
+enforces both. `require_role(...)` in `app/core/auth.py` builds a check for other combinations,
+and `can_edit_stock` / `can_manage_staff` there decide who may act on which store. To make the
+first admin (after they've signed in once), run in the Supabase SQL
 editor, or locally with `docker exec -it mccs-db psql -U postgres -d mccs`:
 
 ```sql
@@ -399,8 +403,8 @@ It should return no rows.
 
 | Endpoint                  | Does                                                                              |
 | ------------------------- | --------------------------------------------------------------------------------- |
-| `GET /admin/users`        | Users in join order (`id`, `email`, `role`, `active`, `created_at`). Takes `email` (contains, any case), `limit` (1–100, default 50), `offset`. |
-| `PATCH /admin/users/{id}` | Changes `role` and/or `active`, e.g. `{"role": "admin"}` or `{"active": false}`; returns the user. `404 user_not_found` if there's no such user. |
+| `GET /admin/users`        | Users in join order (`id`, `email`, `role`, `store_id`, `active`, `created_at`). Takes `email` (contains, any case), `limit` (1–100, default 50), `offset`. |
+| `PATCH /admin/users/{id}` | Changes `role`, `store_id`, and/or `active`, e.g. `{"role": "admin"}`, `{"role": "manager", "store_id": 3}`, or `{"active": false}`; returns the user. Making someone a worker or manager needs a `store_id` (`422 store_required`); other roles can't have one (`422 store_not_allowed`) and leave their store. `404 user_not_found` / `store_not_found`. |
 
 Changes apply to the user's next request. A deactivated user (`deactivated_at` set, migration
 006) gets `403` with code `account_deactivated` from every signed-in endpoint until an admin sets
@@ -466,7 +470,7 @@ To log a new admin change, take an `AuditLog` parameter and call `audit.record(.
 | ----------------------------------------------- | ---------------------------------------------------------- |
 | `POST /admin/stores`                            | Adds a store (`201`): `name`, optional `address` and `hours`, and `slug` (made from the name if not sent; `409 slug_taken` if another store has it). |
 | `PATCH /admin/stores/{id}`                      | Changes `name`, `slug`, `address`, or `hours` (migration 014; `null` clears it). |
-| `DELETE /admin/stores/{id}`                     | Removes a store and its stock records (`204`).             |
+| `DELETE /admin/stores/{id}`                     | Removes a store and its stock records (`204`); its workers and managers become regular users. |
 | `GET /admin/products/{id}/stock`                | The product at every store, with `admin_set_at` for stock an admin set. |
 | `PUT /admin/products/{id}/stock/{store_id}`     | Sets stock there, e.g. `{"in_stock": false}`; optional `quantity` (must agree with `in_stock`) and `aisle` (kept if not sent). |
 | `DELETE /admin/products/{id}/stock/{store_id}`  | Hands that store's stock back to automatic updates (`204`); the values stay until the monitor next updates them. `404 admin_stock_not_found` if an admin hadn't set it. |
@@ -476,10 +480,29 @@ monitor and `scripts/generate_store_stock.py --reset` leave it alone. The app re
 `GET /products/{id}/availability`, so a change shows there right away. Every change is in the
 audit log.
 
+**Store staff (workers and managers).** A store's staff look after that store only; admins can
+use these for any store. `401` without a valid token; `403 forbidden` for regular users,
+`403 not_your_store` for another store's staff, `403 managers_only` when a worker calls a staff
+endpoint. Stock is set exactly as admins set it (`app/api/stock_edits.py`), so the monitor keeps
+it too, and every change is in the audit log under whoever made it.
+
+| Endpoint                                            | Who                | Does |
+| --------------------------------------------------- | ------------------ | ---- |
+| `GET /staff/stores/{id}/stock`                      | workers, managers  | Products with their stock here: `q` matches names (typos OK) or an exact barcode; products with no record here are listed out of stock, so they can be stocked. `limit` (1–50) and `offset`. |
+| `PUT /staff/stores/{id}/stock/{product_id}`         | workers, managers  | Sets stock here, as `PUT /admin/products/{id}/stock/{store_id}` does. |
+| `DELETE /staff/stores/{id}/stock/{product_id}`      | workers, managers  | Hands it back to automatic updates (`204`). |
+| `GET /staff/stores/{id}/staff`                      | managers           | The store's managers, then its workers. |
+| `POST /staff/stores/{id}/staff`                     | managers           | `{"email": ...}` makes someone a worker here (`201`). They must have signed up (`404 user_not_found`), be a regular user (`409 already_staff`), and be active (`409 account_deactivated`). |
+| `DELETE /staff/stores/{id}/staff/{user_id}`         | managers           | Makes one of this store's workers a regular user (`204`). Only admins remove managers (`403 admins_only`); nobody removes themselves (`409`). |
+
+Only admins make someone a manager (`PATCH /admin/users/{id}`).
+
 **Who may call what (T093).** `tests/test_permissions_audit.py` lists every endpoint as
-`public` (works signed out, never changes data), `signed_in` (`401` without a valid token), or
-`admin` (under `/admin`; `403` for regular users), and checks each one behaves that way. When you
-add an endpoint, add it to `ACCESS` there too: the test fails for an endpoint that isn't listed.
+`public` (works signed out, never changes data), `signed_in` (`401` without a valid token),
+`admin` (under `/admin`; `403` for regular users), or `store_staff` / `store_manager` (under
+`/staff/stores/{id}`; `403` for regular users and other stores' staff, and for workers on
+`store_manager` ones), and checks each one behaves that way for every role. When you add an
+endpoint, add it to `ACCESS` there too: the test fails for an endpoint that isn't listed.
 
 New admin endpoints go under `/admin` and take an `AdminUser` parameter.
 `tests/test_admin_access.py` finds every `/admin` route by itself and checks that regular

@@ -12,10 +12,11 @@ from typing import Any
 import psycopg
 from fastapi import APIRouter, Response, status
 
+from app.api import stock_edits
 from app.core.auth import AdminUser
 from app.core.errors import ApiError, error_response
 from app.ingest.load import slugify
-from app.repositories import AuditLog, Stores
+from app.repositories import AuditLog, Stores, Users
 from app.repositories.audit_log import changed_fields
 from app.schemas.store import (
     AdminProductStock,
@@ -126,49 +127,35 @@ def update_store(
 @stores_router.delete(
     "/{store_id:int}", status_code=status.HTTP_204_NO_CONTENT, responses={404: _STORE_NOT_FOUND}
 )
-def delete_store(store_id: int, admin: AdminUser, stores: Stores, audit: AuditLog) -> Response:
-    """Remove a store, along with its stock records. 204 (no body) when done."""
+def delete_store(
+    store_id: int, admin: AdminUser, stores: Stores, users: Users, audit: AuditLog
+) -> Response:
+    """Remove a store, along with its stock records. Its workers and managers become regular
+    users. 204 (no body) when done."""
     before = stores.get_store(store_id, lock=True)
     if before is None:
         raise _store_not_found()
     stock_rows = stores.stock_count(store_id)
+    staff = users.remove_store_staff(store_id)
     stores.delete_store(store_id)
     changes = changed_fields(_store_fields(before), {})
     changes |= changed_fields({"stock_records": stock_rows}, {"stock_records": 0})
+    if staff:
+        changes |= changed_fields({"staff": staff}, {"staff": 0})
     _record(audit, admin, "store.delete", "store", store_id, changes)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-# --- Stock ---
-
-
-def _product_not_found() -> ApiError:
-    return ApiError(status.HTTP_404_NOT_FOUND, "product_not_found", "Product not found")
-
-
-def _stock_fields(store: StoreRead, row: dict | None) -> dict[str, object]:
-    """What the audit log compares for one store's stock, labelled with the store's name, e.g.
-    "Camp Lejeune MCX in_stock"."""
-    row = row or {}
-    return {
-        f"{store.name} in_stock": row.get("in_stock"),
-        f"{store.name} quantity": row.get("quantity"),
-        f"{store.name} aisle": row.get("aisle"),
-    }
-
-
-def _store_stock(stores: Stores, product_id: int, store_id: int) -> AdminStoreStock:
-    availability = stores.admin_availability(product_id)
-    assert availability is not None
-    return next(row for row in availability.stores if row.store.id == store_id)
+# --- Stock (the edits themselves are in stock_edits.py, shared with store staff) ---
 
 
 @stock_router.get("/{product_id:int}/stock", responses={404: error_response("No such product")})
 def get_stock(product_id: int, admin: AdminUser, stores: Stores) -> AdminProductStock:
-    """The product's stock at every store, in-stock stores first, with when an admin set it."""
+    """The product's stock at every store, in-stock stores first, with when it was set by hand
+    (by an admin or the store's staff)."""
     availability = stores.admin_availability(product_id)
     if availability is None:
-        raise _product_not_found()
+        raise stock_edits.product_not_found()
     return availability
 
 
@@ -188,23 +175,11 @@ def set_stock(
     there. Optionally a quantity (which must agree with in_stock) and an aisle; an aisle that
     isn't sent keeps its value. Automatic updates leave this store's stock alone from now on."""
     if not stores.product_exists(product_id):
-        raise _product_not_found()
+        raise stock_edits.product_not_found()
     store = stores.get_store(store_id)
     if store is None:
         raise _store_not_found()
-    before = stores.stock(product_id, store_id)
-    stores.set_stock(
-        product_id,
-        store_id,
-        stock.in_stock,
-        stock.quantity,
-        stock.aisle,
-        keep_aisle="aisle" not in stock.model_fields_set,
-    )
-    after = stores.stock(product_id, store_id)
-    changes = changed_fields(_stock_fields(store, before), _stock_fields(store, after))
-    _record(audit, admin, "stock.set", "product", product_id, changes)
-    return _store_stock(stores, product_id, store_id)
+    return stock_edits.set_stock(stores, audit, admin, product_id, store, stock)
 
 
 @stock_router.delete(
@@ -216,19 +191,12 @@ def clear_stock(
     product_id: int, store_id: int, admin: AdminUser, stores: Stores, audit: AuditLog
 ) -> Response:
     """Hand one store's stock back to automatic updates. The values stay as they are until the
-    product monitor next updates them. 204 when done; 404 with code admin_stock_not_found if an
-    admin hadn't set it."""
+    product monitor next updates them. 204 when done; 404 with code admin_stock_not_found if it
+    wasn't set by hand."""
     if not stores.product_exists(product_id):
-        raise _product_not_found()
+        raise stock_edits.product_not_found()
     store = stores.get_store(store_id)
     if store is None:
         raise _store_not_found()
-    if not stores.clear_admin_stock(product_id, store_id):
-        raise ApiError(
-            status.HTTP_404_NOT_FOUND,
-            "admin_stock_not_found",
-            "An admin hasn't set this product's stock at this store",
-        )
-    changes = changed_fields({f"{store.name} set_by_admin": True}, {})
-    _record(audit, admin, "stock.clear", "product", product_id, changes)
+    stock_edits.clear_stock(stores, audit, admin, product_id, store)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

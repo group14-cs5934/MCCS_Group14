@@ -14,7 +14,7 @@ from app.schemas.review import (
     ReviewPage,
     ReviewRead,
 )
-from app.schemas.user import Role, UserAccount, UserRead, UserUpdate
+from app.schemas.user import STAFF_ROLES, Role, StaffAdd, UserAccount, UserRead, UserUpdate
 
 __all__ = [
     "AuditLogEntry",
@@ -37,6 +37,8 @@ __all__ = [
     "ReviewPage",
     "ReviewRead",
     "Role",
+    "STAFF_ROLES",
+    "StaffAdd",
     "UserAccount",
     "UserRead",
     "UserUpdate",

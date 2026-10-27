@@ -9,6 +9,7 @@ from app.schemas.store import (
     AdminProductStock,
     AdminStoreStock,
     ProductAvailability,
+    StaffStockRow,
     StoreAvailability,
     StoreRead,
 )
@@ -216,6 +217,42 @@ class StoreRepository:
             (product_id, store_id),
         )
         return cursor.rowcount > 0
+
+    def store_stock(
+        self, store_id: int, query: str = "", limit: int = 20, offset: int = 0
+    ) -> list[StaffStockRow]:
+        """Products and their stock at one store, for its staff (GET /staff/stores/{id}/stock).
+        With `query`, products whose name matches it (small typos are fine, best match first) or
+        whose barcode is exactly it; without, every product by name. Products the store has no
+        record for are included (out of stock), so staff can stock them."""
+        query = query.strip()
+        if "\x00" in query:  # Postgres rejects text containing NUL, and no name contains one
+            return []
+        where = "WHERE %(query)s <%% p.name OR p.barcode = %(query)s" if query else ""
+        order = "word_similarity(%(query)s, p.name) DESC, p.name, p.id" if query else "p.name, p.id"
+        with self._connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(
+                # Built only from the constants above; values only ever go in the parameters.
+                f"""
+                SELECT p.id, p.barcode, p.name, p.size, p.image_url,
+                       COALESCE(ps.in_stock, FALSE) AS in_stock, ps.quantity, ps.aisle,
+                       ps.updated_at, ps.admin_set_at
+                FROM products AS p
+                LEFT JOIN product_stock AS ps
+                    ON ps.product_id = p.id AND ps.store_id = %(store_id)s
+                {where}
+                ORDER BY {order}
+                LIMIT %(limit)s OFFSET %(offset)s
+                """,
+                {"store_id": store_id, "query": query, "limit": limit, "offset": offset},
+            )
+            rows = cursor.fetchall()
+        return [_to_staff_stock(row) for row in rows]
+
+
+def _to_staff_stock(row: dict[str, Any]) -> StaffStockRow:
+    product = {key: row.pop(key) for key in ("id", "barcode", "name", "size", "image_url")}
+    return StaffStockRow.model_validate({**row, "product": product})
 
 
 def get_store_repository(db: DbConnection) -> StoreRepository:

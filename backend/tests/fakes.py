@@ -228,15 +228,38 @@ class FakeUsers:
         return found[offset : offset + limit]
 
     def update(
-        self, user_id: UUID, role: Role | None = None, active: bool | None = None
+        self,
+        user_id: UUID,
+        role: Role | None = None,
+        active: bool | None = None,
+        store_id: int | None = None,
     ) -> UserAccount | None:
         account = self.accounts.get(user_id)
         if account is None:
             return None
         changes = {"role": role, "active": active}
         account = account.model_copy(update={k: v for k, v in changes.items() if v is not None})
+        # Like the real query: only workers and managers keep (or get) a store.
+        staff = account.role in ("worker", "manager")
+        account = account.model_copy(
+            update={"store_id": (store_id or account.store_id) if staff else None}
+        )
         self.accounts[user_id] = account
         return account
+
+    def find_by_email(self, email: str) -> UserAccount | None:
+        needle = email.strip().lower()
+        return next((a for a in self.accounts.values() if (a.email or "").lower() == needle), None)
+
+    def list_staff(self, store_id: int) -> list[UserAccount]:
+        staff = [a for a in self.accounts.values() if a.store_id == store_id]
+        return sorted(staff, key=lambda a: (a.role != "manager", (a.email or "").lower()))
+
+    def remove_store_staff(self, store_id: int) -> int:
+        staff = self.list_staff(store_id)
+        for account in staff:
+            self.update(account.id, role="user")
+        return len(staff)
 
 
 class FakeAuditLog:
