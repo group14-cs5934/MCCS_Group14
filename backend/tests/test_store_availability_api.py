@@ -24,10 +24,13 @@ def client(db_url: str) -> Iterator[TestClient]:
         yield client
 
 
-def add_store(connection: psycopg.Connection, name: str, slug: str, address=None) -> int:
+def add_store(
+    connection: psycopg.Connection, name: str, slug: str, address=None, hours=None
+) -> int:
     (store_id,) = connection.execute(
-        "INSERT INTO store_locations (name, slug, address) VALUES (%s, %s, %s) RETURNING id",
-        (name, slug, address),
+        "INSERT INTO store_locations (name, slug, address, hours) "
+        "VALUES (%s, %s, %s, %s) RETURNING id",
+        (name, slug, address, hours),
     ).fetchone()
     return store_id
 
@@ -45,7 +48,9 @@ def add_stock(connection, product_id, store_id, in_stock, quantity=None, aisle=N
 @pytest.fixture
 def stores(connection: psycopg.Connection) -> dict[str, int]:
     ids = {
-        "lejeune": add_store(connection, "Camp Lejeune MCX", "camp-lejeune-mcx", "Bldg. 1231"),
+        "lejeune": add_store(
+            connection, "Camp Lejeune MCX", "camp-lejeune-mcx", "Bldg. 1231", "Daily 9 AM–9 PM"
+        ),
         "new-river": add_store(connection, "New River MCX", "new-river-mcx"),
         "pendleton": add_store(connection, "Camp Pendleton MCX", "camp-pendleton-mcx"),
     }
@@ -63,20 +68,56 @@ def test_locations_lists_every_store_by_name(client, stores) -> None:
             "name": "Camp Lejeune MCX",
             "slug": "camp-lejeune-mcx",
             "address": "Bldg. 1231",
+            "hours": "Daily 9 AM–9 PM",
         },
         {
             "id": stores["pendleton"],
             "name": "Camp Pendleton MCX",
             "slug": "camp-pendleton-mcx",
             "address": None,
+            "hours": None,
         },
         {
             "id": stores["new-river"],
             "name": "New River MCX",
             "slug": "new-river-mcx",
             "address": None,
+            "hours": None,
         },
     ]
+
+
+# T080 acceptance (API side): opening a store shows its address and hours.
+def test_one_store_with_its_address_and_hours(client, stores) -> None:
+    response = client.get(f"/locations/{stores['lejeune']}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": stores["lejeune"],
+        "name": "Camp Lejeune MCX",
+        "slug": "camp-lejeune-mcx",
+        "address": "Bldg. 1231",
+        "hours": "Daily 9 AM–9 PM",
+    }
+
+
+@pytest.mark.parametrize("store_id", [999_999, 2**31])
+def test_unknown_store_is_404(client, stores, store_id) -> None:
+    response = client.get(f"/locations/{store_id}")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "store_not_found"
+
+
+def test_availability_includes_each_stores_hours(client, connection, stores) -> None:
+    product_id = add_product(connection)
+    connection.commit()
+
+    rows = client.get(f"/products/{product_id}/availability").json()["stores"]
+
+    hours = {row["store"]["name"]: row["store"]["hours"] for row in rows}
+    assert hours["Camp Lejeune MCX"] == "Daily 9 AM–9 PM"
+    assert hours["New River MCX"] is None
 
 
 def test_no_stores_gives_an_empty_list(client, db_url) -> None:

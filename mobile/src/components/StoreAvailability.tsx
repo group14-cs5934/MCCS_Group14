@@ -1,5 +1,6 @@
 import { useRouter } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import Badge from '@/components/Badge';
 import Button from '@/components/Button';
@@ -14,6 +15,9 @@ import type { ProductAvailability, StoreStock } from '@/types/store';
  * "Available at" on the product page (T079): every MCCS store with whether it has the product.
  * The shopper's own store (T078) comes first, then the API's order: in-stock stores first. When no
  * store has it, says "Out of stock at all locations".
+ *
+ * Kept short so it doesn't push the rest of the page down: a summary and only the shopper's own
+ * store, with "Show all N stores" to see the rest.
  */
 export default function StoreAvailability({ productId }: { productId: number }) {
   const router = useRouter();
@@ -21,6 +25,7 @@ export default function StoreAvailability({ productId }: { productId: number }) 
   const { loading, data, error, reload } = useApiGet<ProductAvailability>(
     `/products/${productId}/availability`,
   );
+  const [expanded, setExpanded] = useState(false);
 
   let content;
   // Also waits for the shopper's store, so the list doesn't jump when it moves to the top.
@@ -33,8 +38,12 @@ export default function StoreAvailability({ productId }: { productId: number }) 
   } else {
     const stores = withPreferredFirst(data?.stores ?? [], preferred?.id);
     const inStock = stores.filter((row) => row.in_stock).length;
+    const preferredRow = stores.find((row) => row.store.id === preferred?.id);
+    // Collapsed, only the shopper's own store shows (none, if they haven't picked one).
+    const shown = expanded ? stores : preferredRow ? [preferredRow] : [];
+    const canExpand = stores.length > (preferredRow ? 1 : 0);
     // Also offered when the saved store is no longer listed (e.g. it was removed).
-    const offerChoice = stores.length > 0 && !stores.some((row) => row.store.id === preferred?.id);
+    const offerChoice = stores.length > 0 && !preferredRow;
     content = (
       <>
         <Text style={[styles.summary, inStock === 0 && styles.summaryOut]}>
@@ -44,9 +53,29 @@ export default function StoreAvailability({ productId }: { productId: number }) 
               ? 'Out of stock at all locations'
               : `In stock at ${inStock} of ${stores.length} ${stores.length === 1 ? 'store' : 'stores'}`}
         </Text>
-        {stores.map((row) => (
-          <StoreRow key={row.store.id} row={row} isPreferred={row.store.id === preferred?.id} />
+        {shown.map((row) => (
+          <StoreRow
+            key={row.store.id}
+            row={row}
+            isPreferred={row === preferredRow}
+            onPress={() => router.push(`/store/${row.store.id}`)}
+          />
         ))}
+        {canExpand ? (
+          <Button
+            title={
+              expanded
+                ? 'Hide stores'
+                : stores.length === 1
+                  ? 'Show the store'
+                  : `Show all ${stores.length} stores`
+            }
+            variant="text"
+            icon={expanded ? 'chevron-up' : 'chevron-down'}
+            onPress={() => setExpanded((open) => !open)}
+            style={styles.toggle}
+          />
+        ) : null}
         {offerChoice ? (
           <Button
             title="Choose your store to see it first"
@@ -75,7 +104,16 @@ function withPreferredFirst(stores: StoreStock[], preferredId: number | undefine
   return preferred ? [preferred, ...stores.filter((row) => row !== preferred)] : stores;
 }
 
-function StoreRow({ row, isPreferred }: { row: StoreStock; isPreferred: boolean }) {
+/** A store and whether it has the product. Tapping it opens the store's page (T080). */
+function StoreRow({
+  row,
+  isPreferred,
+  onPress,
+}: {
+  row: StoreStock;
+  isPreferred: boolean;
+  onPress: () => void;
+}) {
   const status = row.in_stock ? 'In stock' : 'Out of stock';
   const details = row.in_stock
     ? [row.quantity !== null ? `${row.quantity} on hand` : null, row.aisle]
@@ -87,10 +125,16 @@ function StoreRow({ row, isPreferred }: { row: StoreStock; isPreferred: boolean 
     .join(', ');
 
   return (
-    <View
-      style={[styles.row, isPreferred && styles.preferredRow]}
-      accessible
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.row,
+        isPreferred && styles.preferredRow,
+        pressed && styles.pressed,
+      ]}
+      accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityHint="Opens the store's address, hours, and directions"
     >
       <View style={styles.storeInfo}>
         <View style={styles.nameLine}>
@@ -105,7 +149,7 @@ function StoreRow({ row, isPreferred }: { row: StoreStock; isPreferred: boolean 
           {status}
         </Text>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -140,6 +184,12 @@ const styles = StyleSheet.create({
   },
   preferredRow: {
     borderColor: colors.accent,
+  },
+  pressed: {
+    backgroundColor: colors.surfaceMuted,
+  },
+  toggle: {
+    alignSelf: 'flex-start',
   },
   storeInfo: {
     flexShrink: 1,

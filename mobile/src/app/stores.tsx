@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import AsyncContent from '@/components/AsyncContent';
 import Button from '@/components/Button';
@@ -13,7 +13,7 @@ import type { Store } from '@/types/store';
 /**
  * Store picker (T078): every MCCS store, to pick the one the shopper uses most. It's remembered on
  * this device, and product pages list it first (T079). Picking one goes back to where it was
- * opened from (or Home).
+ * opened from (or Home). Each store's details button opens its page (T080).
  */
 export default function StoresScreen() {
   const router = useRouter();
@@ -50,6 +50,7 @@ export default function StoresScreen() {
               store={item}
               selected={item.id === preferred?.id}
               onPress={() => pick({ id: item.id, name: item.name })}
+              onOpen={() => router.push(`/store/${item.id}`)}
             />
           )}
           ListFooterComponent={
@@ -71,26 +72,48 @@ function StoreRow({
   store,
   selected,
   onPress,
+  onOpen,
 }: {
   store: Store;
   selected: boolean;
+  /** Picks this store. */
   onPress: () => void;
+  /** Opens the store's page: address, hours, and directions (T080). */
+  onOpen: () => void;
 }) {
+  // Two buttons side by side, not one inside the other, so screen readers can reach both.
   return (
-    <Card
-      onPress={onPress}
-      accessibilityLabel={selected ? `${store.name}, your store` : store.name}
-      style={[styles.row, selected && styles.selected]}
-    >
-      <View style={styles.text}>
-        <Text style={styles.name}>{store.name}</Text>
-        {store.address ? <Text style={styles.address}>{store.address}</Text> : null}
-      </View>
-      <Ionicons
-        name={selected ? 'checkmark-circle' : 'ellipse-outline'}
-        size={textStyles.subheading.lineHeight}
-        color={selected ? colors.accent : colors.textMuted}
-      />
+    <Card style={[styles.row, selected && styles.selected]}>
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={selected ? `${store.name}, your store` : store.name}
+        accessibilityState={{ selected }}
+        style={({ pressed }) => [styles.pick, pressed && styles.pressed]}
+      >
+        <Ionicons
+          name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+          size={textStyles.subheading.lineHeight}
+          color={selected ? colors.accent : colors.textMuted}
+        />
+        <View style={styles.text}>
+          <Text style={styles.name}>{store.name}</Text>
+          {store.address ? <Text style={styles.address}>{store.address}</Text> : null}
+        </View>
+      </Pressable>
+      <Pressable
+        onPress={onOpen}
+        accessibilityRole="button"
+        accessibilityLabel={`${store.name} details`}
+        // The icon is small; this makes the tap target about 48 points, like a Button.
+        hitSlop={spacing.md}
+      >
+        <Ionicons
+          name="information-circle-outline"
+          size={textStyles.subheading.lineHeight}
+          color={colors.accent}
+        />
+      </Pressable>
     </Card>
   );
 }
@@ -102,6 +125,14 @@ const styles = StyleSheet.create({
   },
   selected: {
     backgroundColor: colors.accentSoft,
+  },
+  pick: {
+    ...sharedStyles.row,
+    flex: 1,
+    gap: spacing.md,
+  },
+  pressed: {
+    opacity: 0.6,
   },
   text: {
     flex: 1,

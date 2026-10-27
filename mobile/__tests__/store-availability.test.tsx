@@ -38,7 +38,7 @@ function stock(
   { address = null, ...extra }: Partial<StoreStock> & { address?: string | null } = {},
 ): StoreStock {
   return {
-    store: { id, name, slug: name.toLowerCase().replace(/ /g, '-'), address },
+    store: { id, name, slug: name.toLowerCase().replace(/ /g, '-'), address, hours: null },
     in_stock: inStock,
     quantity: null,
     aisle: null,
@@ -110,13 +110,20 @@ async function openProduct() {
 
 /** Each store row's screen-reader label, top to bottom. */
 const storeRows = () =>
-  screen.getAllByLabelText(/, (In|Out of) stock/).map((row) => row.props.accessibilityLabel);
+  screen.queryAllByLabelText(/, (In|Out of) stock/).map((row) => row.props.accessibilityLabel);
+
+/** Opens the full list of stores ("Show all N stores"). */
+async function showAllStores() {
+  const toggle = await screen.findByRole('button', { name: /^Show all \d+ stores$/ });
+  await act(async () => fireEvent.press(toggle));
+}
 
 it('shows which stores have the product, in-stock stores first', async () => {
   await openProduct();
 
   expect(await screen.findByText('In stock at 2 of 3 stores')).toBeOnTheScreen();
   expect(screen.getByRole('header', { name: 'Available at' })).toBeOnTheScreen();
+  await showAllStores();
   expect(storeRows()).toEqual([
     'Camp Lejeune MCX, In stock, 12 on hand · Aisle 7',
     'Quantico MCX, In stock',
@@ -125,12 +132,47 @@ it('shows which stores have the product, in-stock stores first', async () => {
   expect(screen.getByText('MCB Quantico, VA')).toBeOnTheScreen();
 });
 
+it('starts short, showing only the summary until the list is opened', async () => {
+  await openProduct();
+
+  expect(await screen.findByText('In stock at 2 of 3 stores')).toBeOnTheScreen();
+  expect(storeRows()).toEqual([]);
+
+  await showAllStores();
+  expect(storeRows()).toHaveLength(3);
+
+  await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Hide stores' })));
+  expect(storeRows()).toEqual([]);
+  expect(screen.getByRole('button', { name: 'Show all 3 stores' })).toBeOnTheScreen();
+});
+
+it("shows only the shopper's own store until the list is opened", async () => {
+  await preferStore(2, 'Quantico MCX');
+
+  await openProduct();
+
+  expect(await screen.findByText('In stock at 2 of 3 stores')).toBeOnTheScreen();
+  expect(storeRows()).toEqual(['Quantico MCX, your store, In stock']);
+});
+
+it("has nothing to open when the shopper's store is the only one", async () => {
+  api.stores = [QUANTICO];
+  await preferStore(2, 'Quantico MCX');
+
+  await openProduct();
+
+  expect(await screen.findByText('In stock at 1 of 1 store')).toBeOnTheScreen();
+  expect(storeRows()).toEqual(['Quantico MCX, your store, In stock']);
+  expect(screen.queryByRole('button', { name: /^Show / })).not.toBeOnTheScreen();
+});
+
 it("lists the shopper's own store first, even when it's out of stock", async () => {
   await preferStore(3, 'Camp Pendleton MCX');
 
   await openProduct();
 
   expect(await screen.findByText('In stock at 2 of 3 stores')).toBeOnTheScreen();
+  await showAllStores();
   expect(storeRows()).toEqual([
     'Camp Pendleton MCX, your store, Out of stock',
     'Camp Lejeune MCX, In stock, 12 on hand · Aisle 7',
@@ -148,6 +190,7 @@ it('offers to choose again when the saved store is no longer listed', async () =
   await openProduct();
 
   expect(await screen.findByText('In stock at 2 of 3 stores')).toBeOnTheScreen();
+  await showAllStores();
   expect(storeRows()[0]).toBe('Camp Lejeune MCX, In stock, 12 on hand · Aisle 7');
   expect(
     screen.getByRole('button', { name: 'Choose your store to see it first' }),
@@ -170,7 +213,9 @@ it('says "Out of stock at all locations" when no store has it', async () => {
 
   await openProduct();
 
+  // Said straight away, without opening the list.
   expect(await screen.findByText('Out of stock at all locations')).toBeOnTheScreen();
+  await showAllStores();
   expect(storeRows()).toHaveLength(2);
 });
 
