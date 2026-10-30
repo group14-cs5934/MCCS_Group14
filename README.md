@@ -635,30 +635,42 @@ its commands from that folder.
 
 For each entry in `products.yaml` it opens the product page in a headless browser (it obeys
 robots.txt and waits `PER_DOMAIN_DELAY` seconds between requests to one site), so reviews added
-by the page's scripts have loaded. It reads schema.org reviews and the average rating directly
-from the page, without reviewers' names, and a model returns up to `MAX_REVIEWS` of the newest
-reviews. Then, in one transaction, it:
+by the page's scripts have loaded. It reads the average rating and schema.org reviews directly
+from the page, without reviewers' names, clicking through up to `MAX_REVIEW_PAGES` pages of
+them, newest first. A model checks that the page is for the right product. Only on a page
+without review markup does the model read the reviews itself (up to `MAX_REVIEWS`). Then, in one
+transaction, it:
 
 - saves reviews it hasn't seen before to `agent_reviews` (migration 017): product ID, source, stars
   (out of 5, whatever scale the source uses), title, text and date. **Reviewers' names are never
   saved.** A review is recognised by its product, source, text and stars, so one the page still
   shows on the next run isn't saved twice, and its `first_seen_at` stays the first time it was
   read;
-- replaces the product's `agent_review_summaries` row for that source: the page's average rating
+- replaces the product's `agent_source_ratings` row for that source: the page's average rating
   and total review count, which cover all the product's reviews, not only the ones saved.
 
-These are the agent's own tables, meant to be aggregated later into one overall review per
-product. By default the job writes nothing else, so the app's tables (including `reviews` and
-`ratings`, which hold app users' own reviews) are untouched and the app doesn't show this data.
+Then, for each product with reviews it hasn't summarized yet, it sends all the reviews collected
+for that product (the newest `MAX_SUMMARY_REVIEWS`) to the model, and saves the overall review it
+writes to `agent_review_summaries`, one row per product. The model is told how many reviews the
+stores report, so it can say how much of the picture its reviews are. Products with no new reviews are skipped,
+so they cost nothing. `--summaries-only` does this step without fetching any pages. A dry run skips
+it, because it saves no reviews to read. `model` records what wrote each overall review, so
+AI-generated text can be told apart, and `CLAUDE_MODEL` decides which model that is.
+
+These are the agent's own tables. By default the job writes nothing else, so the app's tables
+(including `reviews` and `ratings`, which hold app users' own reviews) are untouched and the app
+doesn't show this data.
 Rows name products by the job's own `product` ID from `products.yaml`, not by barcode, because
 many product pages don't show one. Linking an ID to the catalog is a separate step, for when the
 app shows this data.
 
 A page that's for a different product is skipped. A page with no rating or reviews is logged and
 nothing is saved for it. A review the model returns that isn't found on the page is dropped and
-logged, so an invented one can't be saved. The job reads the first batch of reviews a page shows (8 on the Navy
-Exchange), so it builds up reviews over repeated runs and doesn't collect a product's whole
-history. Sites that block the job, as Walmart does, are logged as failures; it doesn't try to get
+logged, so an invented one can't be saved. Reviews read from markup are saved exactly as written, so
+a name a shopper typed into their own review stays in `agent_reviews`. On the Navy Exchange, the first page has 8 reviews and later ones more, so the default read 128 in
+testing. Raising
+`MAX_REVIEW_PAGES` reads further back, with a pause between pages, but check the store's terms
+first. Sites that block the job, as Walmart does, are logged as failures; it doesn't try to get
 past them.
 
 **Prices and stock** are off by default. With `COLLECT_PRICE_AND_STOCK=1` the job also writes to
@@ -677,6 +689,7 @@ uv run make_products_yaml.py               # build products.yaml from backend/sc
 uv run --env-file .env product-monitor.py --dry-run        # print the rows it would write; doesn't touch the database
 uv run --env-file .env product-monitor.py --only doritos   # only entries whose product, name or barcode has "doritos"
 uv run --env-file .env product-monitor.py                  # write to the database
+uv run --env-file .env product-monitor.py --summaries-only # only write overall reviews
 ```
 
 **Settings** go in `jobs/product-monitor/.env`, which git ignores. To use Virginia Tech's free
@@ -722,7 +735,9 @@ The job reads its settings from environment variables only (not from `backend/.e
 | `PRODUCTS_FILE`           | no              | `products.yaml`             | Relative to the folder the job runs from                     |
 | `USER_AGENT`              | no              | `ProductMonitorBot/1.0 …`   | Set a real contact address before running it on a schedule   |
 | `CLAUDE_MODEL`            | no              | `claude-haiku-5-5`          | Model that reads the pages (`gpt-oss-120b` on ARC)           |
-| `MAX_REVIEWS`             | no              | `10`                        | Most reviews read from one page (the newest)                 |
+| `MAX_REVIEW_PAGES`        | no              | `5`                         | Pages of a product's reviews to read, newest first           |
+| `MAX_REVIEWS`             | no              | `10`                        | Most reviews the model reads from a page without markup      |
+| `MAX_SUMMARY_REVIEWS`     | no              | `200`                       | Most reviews sent to the model for one overall review        |
 | `COLLECT_PRICE_AND_STOCK` | no              | `0`                         | `1` also saves prices and stock                              |
 | `DEFAULT_CURRENCY`        | no              | `USD`                       | Used when a page shows a price but no currency (prices only) |
 | `CONCURRENCY`             | no              | `4`                         | Products processed at once                                   |
