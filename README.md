@@ -6,7 +6,7 @@ Mobile app for scanning retail products and viewing product info, prices, rating
 | ----------------------- | ------------------------------------------------------------------ |
 | `mobile/`               | React Native app (Expo, TypeScript)                                |
 | `backend/`              | FastAPI service (Python 3.13, uv)                                  |
-| `jobs/product-monitor/` | [Job](#product-monitor-job) reading MCCS online store prices/stock |
+| `jobs/product-monitor/` | [Job](#product-monitor-job) gathering MCCS online store reviews    |
 
 ## Mobile app
 
@@ -629,62 +629,107 @@ the sync. UPCitemdb's free trial allows 100 lookups a day, hence `--limit 90`.
 
 ## Product monitor job
 
-`jobs/product-monitor/` is a script, run on a schedule, that keeps prices and stock up to date
-from the MCCS online store. It has its own uv project, so run its commands from that folder.
+`jobs/product-monitor/` is a script that gathers shoppers' reviews from online stores' product
+pages, such as the Navy Exchange (which sells to MCX shoppers). It has its own uv project, so run
+its commands from that folder.
 
-For each entry in `products.yaml` it fetches the product page (it obeys robots.txt and waits
-`PER_DOMAIN_DELAY` seconds between requests to one site), and Claude reads the barcode, price
-and stock from the page. Then, in one transaction, it:
+For each entry in `products.yaml` it opens the product page in a headless browser (it obeys
+robots.txt and waits `PER_DOMAIN_DELAY` seconds between requests to one site), so reviews added
+by the page's scripts have loaded. It reads schema.org reviews and the average rating directly
+from the page, without reviewers' names, and a model returns up to `MAX_REVIEWS` of the newest
+reviews. Then, in one transaction, it:
 
-- adds the product to `products` if its barcode is new (name, size and photo from the page). An
-  existing product is never changed, so edits made in the admin screen stay;
-- adds a row to `prices` with `source` set to the store's slug. The app shows the newest price,
-  so this becomes the product's current price;
-- updates the product's `product_stock` row for that store (`aisle` is left alone).
+- saves reviews it hasn't seen before to `agent_reviews` (migration 017): product ID, source, stars
+  (out of 5, whatever scale the source uses), title, text and date. **Reviewers' names are never
+  saved.** A review is recognised by its product, source, text and stars, so one the page still
+  shows on the next run isn't saved twice, and its `first_seen_at` stays the first time it was
+  read;
+- replaces the product's `agent_review_summaries` row for that source: the page's average rating
+  and total review count, which cover all the product's reviews, not only the ones saved.
 
-Barcodes must pass the same length and check digit rules as the API, and are stored as the
-digits printed on the package (a UPC-A is stored as 12 digits). A page that's for a different
-product, or that shows no price and no stock, is skipped and nothing is written for it.
+These are the agent's own tables, meant to be aggregated later into one overall review per
+product. By default the job writes nothing else, so the app's tables (including `reviews` and
+`ratings`, which hold app users' own reviews) are untouched and the app doesn't show this data.
+Rows name products by the job's own `product` ID from `products.yaml`, not by barcode, because
+many product pages don't show one. Linking an ID to the catalog is a separate step, for when the
+app shows this data.
+
+A page that's for a different product is skipped. A page with no rating or reviews is logged and
+nothing is saved for it. A review the model returns that isn't found on the page is dropped and
+logged, so an invented one can't be saved. The job reads the first batch of reviews a page shows (8 on the Navy
+Exchange), so it builds up reviews over repeated runs and doesn't collect a product's whole
+history. Sites that block the job, as Walmart does, are logged as failures; it doesn't try to get
+past them.
+
+**Prices and stock** are off by default. With `COLLECT_PRICE_AND_STOCK=1` the job also writes to
+the app's tables, which needs a barcode (read off the page, or set in `products.yaml`, quoted) and
+`store` to be a `store_locations.slug`. It adds the product to `products` if its barcode is new (an
+existing product is never changed), adds a row to `prices` (`source` is the store's slug, and the app shows the newest
+price, so this becomes the product's current price), and updates the product's `product_stock`
+row for that store (`aisle` is left alone). A price an admin set, or stock an admin or store staff
+set, is kept.
 
 ```sh
 cd jobs/product-monitor
 uv sync
+uv run playwright install chromium         # once: the browser the job loads pages in
 uv run make_products_yaml.py               # build products.yaml from backend/scripts/demo_products.csv
-uv run product-monitor.py --dry-run        # print the rows it would write; doesn't touch the database
-uv run product-monitor.py --only doritos   # only entries whose name or barcode contains "doritos"
-uv run product-monitor.py                  # write to the database
+uv run --env-file .env product-monitor.py --dry-run        # print the rows it would write; doesn't touch the database
+uv run --env-file .env product-monitor.py --only doritos   # only entries whose product, name or barcode has "doritos"
+uv run --env-file .env product-monitor.py                  # write to the database
 ```
 
-**`products.yaml`**: one entry per product and store. Entries without a `url` are skipped, and
-`store` must be a `store_locations.slug` (the seed adds `mcx-online`, the MCX Online Store).
-`barcode` is optional. It's read off the page, so set it only if the page doesn't show one, or to
-make sure the page is for that product. Quote it, so YAML keeps leading zeros.
+**Settings** go in `jobs/product-monitor/.env`, which git ignores. To use Virginia Tech's free
+[ARC LLM API](https://www.docs.arc.vt.edu/ai/011_llm_api_arc_vt_edu.html) instead of Anthropic's
+API, get a key at <https://llm.arc.vt.edu> (User profile > Settings > Account > API keys):
+
+```sh
+ANTHROPIC_API_KEY=<your ARC key>
+ANTHROPIC_BASE_URL=https://llm-api.arc.vt.edu/api
+CLAUDE_MODEL=gpt-oss-120b
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/mccs
+```
+
+ARC only accepts requests from the VT Campus VPN, so connect to it first. That also means a job
+using ARC can't run from GitHub Actions. ARC limits non-streaming answers to 8,000 tokens, so keep
+`MAX_REVIEWS` at 10 or below when using it.
+
+**`products.yaml`**: one entry per product and store. `product` is our own ID: give a product the
+same ID at every store and its reviews are grouped together. Keep sizes separate (a 12-count and a
+32-count get different IDs), since merging them later is easier than splitting them. `store` says
+where the reviews come from, saved as `source`. Entries without a `url` are skipped.
 
 ```yaml
 products:
-  - name: "Doritos Nacho Cheese Tortilla Chips (9.25 oz bag)"
-    store: "mcx-online"
-    url: "https://<MCCS online store product page>"
-    barcode: null  # optional
+  - product: "starbucks-veranda-blend-k-cup-pods-32-count"
+    name: "Starbucks Veranda Blend K-Cup Pods, 32-Count"
+    store: "navy-exchange"
+    url: "https://www.mynavyexchange.com/starbucks-veranda-blend-k-cup-pods-32-count/12750774"
 ```
 
-`make_products_yaml.py` makes one entry for each product in `demo_products.csv`, with `url` left
-to fill in. Running it again keeps the URLs and barcodes already filled in, and any entries added
-by hand.
+`make_products_yaml.py` makes one entry for each product in `demo_products.csv`, with an ID made
+from its name and `url` left to fill in. Running it again keeps the URLs and IDs already filled in,
+and any entries added by hand.
 
-The job reads its settings from environment variables only (not from `backend/.env`):
+The job reads its settings from environment variables only (not from `backend/.env`), which
+`--env-file .env` fills in:
 
-| Variable            | Required        | Default                   | Notes                                                        |
-| ------------------- | --------------- | ------------------------- | ------------------------------------------------------------ |
-| `DATABASE_URL`      | yes, to write   |                           | Same Postgres connection string as the backend               |
-| `ANTHROPIC_API_KEY` | yes             |                           | Claude API key                                               |
-| `PRODUCTS_FILE`     | no              | `products.yaml`           | Relative to the folder the job runs from                     |
-| `USER_AGENT`        | no              | `ProductMonitorBot/1.0 …` | Set a real contact address before running it on a schedule   |
-| `CLAUDE_MODEL`      | no              | `claude-haiku-5-5`        | Model that reads the pages                                   |
-| `DEFAULT_CURRENCY`  | no              | `USD`                     | Used when a page shows a price but no currency               |
-| `CONCURRENCY`       | no              | `4`                       | Products processed at once                                   |
-| `PER_DOMAIN_DELAY`  | no              | `3`                       | Seconds between requests to the same site                    |
-| `MAX_PAGE_CHARS`    | no              | `40000`                   | Page text sent to Claude per product                         |
+| Variable                  | Required        | Default                     | Notes                                                        |
+| ------------------------- | --------------- | --------------------------- | ------------------------------------------------------------ |
+| `DATABASE_URL`            | yes, to write   |                             | Same Postgres connection string as the backend               |
+| `ANTHROPIC_API_KEY`       | yes             |                             | Anthropic or ARC API key                                     |
+| `ANTHROPIC_BASE_URL`      | no              | Anthropic's API             | Another Anthropic-compatible API, such as ARC                |
+| `PRODUCTS_FILE`           | no              | `products.yaml`             | Relative to the folder the job runs from                     |
+| `USER_AGENT`              | no              | `ProductMonitorBot/1.0 …`   | Set a real contact address before running it on a schedule   |
+| `CLAUDE_MODEL`            | no              | `claude-haiku-5-5`          | Model that reads the pages (`gpt-oss-120b` on ARC)           |
+| `MAX_REVIEWS`             | no              | `10`                        | Most reviews read from one page (the newest)                 |
+| `COLLECT_PRICE_AND_STOCK` | no              | `0`                         | `1` also saves prices and stock                              |
+| `DEFAULT_CURRENCY`        | no              | `USD`                       | Used when a page shows a price but no currency (prices only) |
+| `CONCURRENCY`             | no              | `4`                         | Products processed at once                                   |
+| `PER_DOMAIN_DELAY`        | no              | `3`                         | Seconds between requests to the same site                    |
+| `MAX_PAGE_CHARS`          | no              | `40000`                     | Page text sent to the model per product                      |
+| `PAGE_TIMEOUT_MS`         | no              | `45000`                     | How long to wait for a page to load                          |
+| `REVIEW_WAIT_MS`          | no              | `15000`                     | How long to wait for reviews; a page may have none           |
 
 The job exits with an error only if every product fails. CI doesn't check this folder yet, so
 run `uv run ruff check . && uv run ruff format --check .` in it before pushing.

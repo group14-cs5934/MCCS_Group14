@@ -1,192 +1,196 @@
 # Products the monitor checks. Made by make_products_yaml.py; safe to edit by hand.
-# store must be a store_locations.slug. Entries with a null url are skipped until it's filled in.
-# barcode is read off the product page; set it (quoted) only to make the page match it.
+# product is our own ID: entries with the same one have their reviews grouped together.
+# store says where the reviews come from. Entries with a null url are skipped until filled in.
 products:
-  - name: "Doritos Nacho Cheese Tortilla Chips (9.25 oz bag)"
-    store: "mcx-online"
+  - product: "doritos-nacho-cheese-tortilla-chips-9-25-oz-bag"
+    name: "Doritos Nacho Cheese Tortilla Chips (9.25 oz bag)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Lay's Classic Potato Chips (8 oz bag)"
-    store: "mcx-online"
+  - product: "lay-s-classic-potato-chips-8-oz-bag"
+    name: "Lay's Classic Potato Chips (8 oz bag)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Oreo Chocolate Sandwich Cookies (13.29 oz pack)"
-    store: "mcx-online"
+  - product: "oreo-chocolate-sandwich-cookies-13-29-oz-pack"
+    name: "Oreo Chocolate Sandwich Cookies (13.29 oz pack)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Goldfish Cheddar Crackers (6.6 oz carton)"
-    store: "mcx-online"
+  - product: "goldfish-cheddar-crackers-6-6-oz-carton"
+    name: "Goldfish Cheddar Crackers (6.6 oz carton)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Nature Valley Crunchy Oats 'n Honey Granola Bars (12-bar box)"
-    store: "mcx-online"
+  - product: "nature-valley-crunchy-oats-n-honey-granola-bars-12-bar-box"
+    name: "Nature Valley Crunchy Oats 'n Honey Granola Bars (12-bar box)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Reese's Peanut Butter Cups (1.5 oz 2-cup pack)"
-    store: "mcx-online"
+  - product: "reese-s-peanut-butter-cups-1-5-oz-2-cup-pack"
+    name: "Reese's Peanut Butter Cups (1.5 oz 2-cup pack)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Cheerios (8.9 oz box)"
-    store: "mcx-online"
+  - product: "cheerios-8-9-oz-box"
+    name: "Cheerios (8.9 oz box)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Kraft Macaroni & Cheese Original (7.25 oz box)"
-    store: "mcx-online"
+  - product: "kraft-macaroni-cheese-original-7-25-oz-box"
+    name: "Kraft Macaroni & Cheese Original (7.25 oz box)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Barilla Spaghetti (16 oz box)"
-    store: "mcx-online"
+  - product: "barilla-spaghetti-16-oz-box"
+    name: "Barilla Spaghetti (16 oz box)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Jif Creamy Peanut Butter (16 oz jar)"
-    store: "mcx-online"
+  - product: "jif-creamy-peanut-butter-16-oz-jar"
+    name: "Jif Creamy Peanut Butter (16 oz jar)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Heinz Tomato Ketchup (20 oz squeeze bottle)"
-    store: "mcx-online"
+  - product: "heinz-tomato-ketchup-20-oz-squeeze-bottle"
+    name: "Heinz Tomato Ketchup (20 oz squeeze bottle)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Coca-Cola Classic (12 x 12 oz cans)"
-    store: "mcx-online"
+  - product: "coca-cola-classic-12-x-12-oz-cans"
+    name: "Coca-Cola Classic (12 x 12 oz cans)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Gatorade Thirst Quencher Lemon-Lime (28 oz bottle)"
-    store: "mcx-online"
+  - product: "gatorade-thirst-quencher-lemon-lime-28-oz-bottle"
+    name: "Gatorade Thirst Quencher Lemon-Lime (28 oz bottle)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Folgers Classic Roast Ground Coffee (25.9 oz canister)"
-    store: "mcx-online"
+  - product: "folgers-classic-roast-ground-coffee-25-9-oz-canister"
+    name: "Folgers Classic Roast Ground Coffee (25.9 oz canister)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Starbucks Pike Place Roast K-Cup Pods (22-count box)"
-    store: "mcx-online"
+  - product: "starbucks-pike-place-roast-k-cup-pods-22-count-box"
+    name: "Starbucks Pike Place Roast K-Cup Pods (22-count box)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Celsius Sparkling Orange Energy Drink (12 oz can)"
-    store: "mcx-online"
+  - product: "celsius-sparkling-orange-energy-drink-12-oz-can"
+    name: "Celsius Sparkling Orange Energy Drink (12 oz can)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Crest 3D White Toothpaste (3.8 oz tube)"
-    store: "mcx-online"
+  - product: "crest-3d-white-toothpaste-3-8-oz-tube"
+    name: "Crest 3D White Toothpaste (3.8 oz tube)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Dove Beauty Bar (4-bar pack)"
-    store: "mcx-online"
+  - product: "dove-beauty-bar-4-bar-pack"
+    name: "Dove Beauty Bar (4-bar pack)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Head & Shoulders Classic Clean Shampoo (13.5 oz bottle)"
-    store: "mcx-online"
+  - product: "head-shoulders-classic-clean-shampoo-13-5-oz-bottle"
+    name: "Head & Shoulders Classic Clean Shampoo (13.5 oz bottle)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Old Spice Swagger Deodorant (3 oz stick)"
-    store: "mcx-online"
+  - product: "old-spice-swagger-deodorant-3-oz-stick"
+    name: "Old Spice Swagger Deodorant (3 oz stick)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "CeraVe Moisturizing Cream (16 oz tub)"
-    store: "mcx-online"
+  - product: "cerave-moisturizing-cream-16-oz-tub"
+    name: "CeraVe Moisturizing Cream (16 oz tub)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Advil Ibuprofen Tablets 200 mg (100-count bottle)"
-    store: "mcx-online"
+  - product: "advil-ibuprofen-tablets-200-mg-100-count-bottle"
+    name: "Advil Ibuprofen Tablets 200 mg (100-count bottle)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Band-Aid Flexible Fabric Bandages (30-count box)"
-    store: "mcx-online"
+  - product: "band-aid-flexible-fabric-bandages-30-count-box"
+    name: "Band-Aid Flexible Fabric Bandages (30-count box)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Tide Original Liquid Laundry Detergent (92 oz bottle)"
-    store: "mcx-online"
+  - product: "tide-original-liquid-laundry-detergent-92-oz-bottle"
+    name: "Tide Original Liquid Laundry Detergent (92 oz bottle)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Dawn Ultra Original Dish Soap (19.4 oz bottle)"
-    store: "mcx-online"
+  - product: "dawn-ultra-original-dish-soap-19-4-oz-bottle"
+    name: "Dawn Ultra Original Dish Soap (19.4 oz bottle)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Bounty Select-A-Size Paper Towels (6 double rolls)"
-    store: "mcx-online"
+  - product: "bounty-select-a-size-paper-towels-6-double-rolls"
+    name: "Bounty Select-A-Size Paper Towels (6 double rolls)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Clorox Disinfecting Wipes (75-count canister)"
-    store: "mcx-online"
+  - product: "clorox-disinfecting-wipes-75-count-canister"
+    name: "Clorox Disinfecting Wipes (75-count canister)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Ziploc Storage Bags Gallon (38-count box)"
-    store: "mcx-online"
+  - product: "ziploc-storage-bags-gallon-38-count-box"
+    name: "Ziploc Storage Bags Gallon (38-count box)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Duracell Coppertop AA Batteries (8-pack)"
-    store: "mcx-online"
+  - product: "duracell-coppertop-aa-batteries-8-pack"
+    name: "Duracell Coppertop AA Batteries (8-pack)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Apple AirPods Pro (2nd generation; USB-C)"
-    store: "mcx-online"
+  - product: "apple-airpods-pro-2nd-generation-usb-c"
+    name: "Apple AirPods Pro (2nd generation; USB-C)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Logitech M185 Wireless Mouse"
-    store: "mcx-online"
+  - product: "logitech-m185-wireless-mouse"
+    name: "Logitech M185 Wireless Mouse"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Anker Nano USB-C Charger 20W"
-    store: "mcx-online"
+  - product: "anker-nano-usb-c-charger-20w"
+    name: "Anker Nano USB-C Charger 20W"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Amazon Echo Dot (5th generation)"
-    store: "mcx-online"
+  - product: "amazon-echo-dot-5th-generation"
+    name: "Amazon Echo Dot (5th generation)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "JBL Flip 6 Bluetooth Speaker"
-    store: "mcx-online"
+  - product: "jbl-flip-6-bluetooth-speaker"
+    name: "JBL Flip 6 Bluetooth Speaker"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "SanDisk Ultra microSDXC Card 128GB"
-    store: "mcx-online"
+  - product: "sandisk-ultra-microsdxc-card-128gb"
+    name: "SanDisk Ultra microSDXC Card 128GB"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Stanley Quencher H2.0 FlowState Tumbler 40 oz"
-    store: "mcx-online"
+  - product: "stanley-quencher-h2-0-flowstate-tumbler-40-oz"
+    name: "Stanley Quencher H2.0 FlowState Tumbler 40 oz"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Contigo West Loop Autoseal Travel Mug 16 oz"
-    store: "mcx-online"
+  - product: "contigo-west-loop-autoseal-travel-mug-16-oz"
+    name: "Contigo West Loop Autoseal Travel Mug 16 oz"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Brita Standard Replacement Water Filters (3-pack)"
-    store: "mcx-online"
+  - product: "brita-standard-replacement-water-filters-3-pack"
+    name: "Brita Standard Replacement Water Filters (3-pack)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "BIC Round Stic Ballpoint Pens Black (10-count pack)"
-    store: "mcx-online"
+  - product: "bic-round-stic-ballpoint-pens-black-10-count-pack"
+    name: "BIC Round Stic Ballpoint Pens Black (10-count pack)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Scotch Magic Tape (3/4 in x 1000 in roll)"
-    store: "mcx-online"
+  - product: "scotch-magic-tape-3-4-in-x-1000-in-roll"
+    name: "Scotch Magic Tape (3/4 in x 1000 in roll)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Sharpie Permanent Markers Fine Point Black (12-count pack)"
-    store: "mcx-online"
+  - product: "sharpie-permanent-markers-fine-point-black-12-count-pack"
+    name: "Sharpie Permanent Markers Fine Point Black (12-count pack)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Five Star Spiral Notebook 1-Subject (100 sheets)"
-    store: "mcx-online"
+  - product: "five-star-spiral-notebook-1-subject-100-sheets"
+    name: "Five Star Spiral Notebook 1-Subject (100 sheets)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Post-it Notes 3 x 3 in Canary Yellow (12-pad pack)"
-    store: "mcx-online"
+  - product: "post-it-notes-3-x-3-in-canary-yellow-12-pad-pack"
+    name: "Post-it Notes 3 x 3 in Canary Yellow (12-pad pack)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Greenies Original Regular Dental Dog Treats (12 oz pack)"
-    store: "mcx-online"
+  - product: "greenies-original-regular-dental-dog-treats-12-oz-pack"
+    name: "Greenies Original Regular Dental Dog Treats (12 oz pack)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "Temptations Classic Cat Treats Tasty Chicken (3 oz pouch)"
-    store: "mcx-online"
+  - product: "temptations-classic-cat-treats-tasty-chicken-3-oz-pouch"
+    name: "Temptations Classic Cat Treats Tasty Chicken (3 oz pouch)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "LEGO Classic Medium Creative Brick Box 10696 (484 pieces)"
-    store: "mcx-online"
+  - product: "lego-classic-medium-creative-brick-box-10696-484-pieces"
+    name: "LEGO Classic Medium Creative Brick Box 10696 (484 pieces)"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
-  - name: "UNO Card Game"
-    store: "mcx-online"
+  - product: "uno-card-game"
+    name: "UNO Card Game"
+    store: "navy-exchange"
     url: null  # TODO
-    barcode: null  # optional
+  - product: "starbucks-veranda-blend-k-cup-pods-32-count"
+    name: "Starbucks Veranda Blend K-Cup Pods, 32-Count"
+    store: "navy-exchange"
+    url: "https://www.mynavyexchange.com/starbucks-veranda-blend-k-cup-pods-32-count/12750774"
