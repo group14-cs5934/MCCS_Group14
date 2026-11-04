@@ -34,6 +34,7 @@ from app.main import create_app
 from app.repositories.audit_log import get_audit_log_repository
 from app.repositories.products import get_product_repository
 from app.repositories.ratings import get_rating_repository
+from app.repositories.restock import get_restock_repository
 from app.repositories.reviews import get_review_repository
 from app.repositories.store_roles import get_store_role_repository
 from app.repositories.stores import get_store_repository
@@ -58,6 +59,7 @@ ACCESS: dict[tuple[str, str], Access] = {
     ("GET", "/products/{product_id}/availability"): "public",
     ("GET", "/products/{product_id}/ratings"): "public",
     ("GET", "/products/{product_id}/reviews"): "public",
+    ("POST", "/products/{product_id}/activity"): "public",  # anonymous view and scan counts
     ("GET", "/me"): "signed_in",
     ("GET", "/staff/permissions"): "signed_in",
     ("POST", "/products/{product_id}/ratings"): "signed_in",
@@ -94,6 +96,13 @@ ACCESS: dict[tuple[str, str], Access] = {
     ("POST", "/staff/stores/{store_id}/roles"): "store_permission",
     ("PATCH", "/staff/stores/{store_id}/roles/{role_id}"): "store_permission",
     ("DELETE", "/staff/stores/{store_id}/roles/{role_id}"): "store_permission",
+    ("GET", "/staff/stores/{store_id}/restock"): "store_permission",
+    ("GET", "/staff/stores/{store_id}/restock/summary"): "store_permission",
+    ("GET", "/staff/stores/{store_id}/restock/requests"): "store_permission",
+    ("POST", "/staff/stores/{store_id}/restock/{product_id}/requests"): "store_permission",
+    ("DELETE", "/staff/stores/{store_id}/restock/{product_id}/requests/open"): "store_permission",
+    ("PUT", "/staff/stores/{store_id}/restock/{product_id}/reorder-point"): "store_permission",
+    ("PUT", "/staff/stores/{store_id}/restock/settings"): "store_permission",
 }
 
 # The store_permission endpoints, and the permissions that each allow (any one is enough).
@@ -109,6 +118,13 @@ STORE_PERMISSIONS: dict[tuple[str, str], tuple[Permission, ...]] = {
     ("POST", "/staff/stores/{store_id}/roles"): ("manage_roles",),
     ("PATCH", "/staff/stores/{store_id}/roles/{role_id}"): ("manage_roles",),
     ("DELETE", "/staff/stores/{store_id}/roles/{role_id}"): ("manage_roles",),
+    ("GET", "/staff/stores/{store_id}/restock"): ("view_restock", "request_restock"),
+    ("GET", "/staff/stores/{store_id}/restock/summary"): ("view_restock", "request_restock"),
+    ("GET", "/staff/stores/{store_id}/restock/requests"): ("view_restock", "request_restock"),
+    ("POST", "/staff/stores/{store_id}/restock/{product_id}/requests"): ("request_restock",),
+    ("DELETE", "/staff/stores/{store_id}/restock/{product_id}/requests/open"): ("request_restock",),
+    ("PUT", "/staff/stores/{store_id}/restock/{product_id}/reorder-point"): ("request_restock",),
+    ("PUT", "/staff/stores/{store_id}/restock/settings"): ("request_restock",),
 }
 
 ALL_PERMISSIONS: list[Permission] = list(get_args(Permission))
@@ -131,7 +147,8 @@ def all_but(permissions: tuple[Permission, ...]) -> UUID:
 
 
 # Public endpoints that aren't GET; each must save nothing.
-PUBLIC_NON_GET = {("POST", "/products/validate")}
+# Validating saves nothing; activity only adds to anonymous daily view and scan counts.
+PUBLIC_NON_GET = {("POST", "/products/validate"), ("POST", "/products/{product_id}/activity")}
 
 PATH_VALUES = {
     "product_id": "7",
@@ -260,6 +277,7 @@ def client(make_client, private_key, users) -> TestClient:
         (get_review_repository, "reviews"),
         (get_store_repository, "stores"),
         (get_store_role_repository, "store roles"),
+        (get_restock_repository, "restock"),
         (get_audit_log_repository, "audit log"),
     ]:
         overrides[dependency] = lambda name=name: Tripwire(name)

@@ -114,7 +114,9 @@ it('posts a review as the same request the integration test sends', async () => 
 
   await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Post review' })));
 
-  const post = fetchMock.mock.calls.find(([, init]) => init.method === 'POST');
+  const post = fetchMock.mock.calls.find(
+    ([url, init]) => init.method === 'POST' && !url.endsWith('/activity'),
+  );
   expect(post?.[0]).toBe(`${getApiBaseUrl()}/products/${PRODUCT_ID}/reviews`);
   expect(JSON.parse(post?.[1].body as string)).toEqual({
     title: 'Good value',

@@ -1,10 +1,12 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+import psycopg
+from fastapi import APIRouter, Query, Response, status
 
 from app.core.errors import ApiError, error_response
-from app.repositories import Products
+from app.repositories import Products, Restock, Stores
 from app.schemas import ErrorAction, ProductCreate, ProductRead
+from app.schemas.restock import ActivityCreate
 
 # Most search results returned at once; page through more with offset.
 MAX_SEARCH_LIMIT = 50
@@ -95,3 +97,25 @@ def get_product_by_barcode(code: str, products: Products) -> ProductRead:
     if product is None:
         raise _product_not_found([ErrorAction.RETRY_SCAN, ErrorAction.MANUAL_SEARCH])
     return product
+
+
+@router.post(
+    "/{product_id:int}/activity",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={404: error_response("No product, or store, with this ID")},
+)
+def record_activity(
+    product_id: int, activity: ActivityCreate, stores: Stores, restock: Restock
+) -> Response:
+    """Count a shopper opening this product's page ({"kind": "view"}) or scanning it ({"kind":
+    "scan"}), at the store they picked in the app if any. No sign-in needed: these are anonymous
+    daily counts, which tell store staff what's popular (GET /staff/stores/{id}/restock)."""
+    if not stores.product_exists(product_id):
+        raise _product_not_found()
+    if activity.store_id is not None and stores.get_store(activity.store_id) is None:
+        raise ApiError(404, "store_not_found", "Store not found")
+    try:
+        restock.record_activity(product_id, activity.store_id, activity.kind)
+    except psycopg.errors.ForeignKeyViolation:  # the product or store was deleted just now
+        raise _product_not_found() from None
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

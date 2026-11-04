@@ -8,8 +8,10 @@ import { useAuth } from '@/auth';
 import Button from '@/components/Button';
 import Card from '@/components/Card';
 import IconBadge from '@/components/IconBadge';
+import RestockBadge from '@/components/RestockBadge';
 import { usePreferredStore } from '@/hooks/usePreferredStore';
 import { colors, sharedStyles, spacing, textStyles } from '@/theme';
+import { PERMISSIONS } from '@/types/user';
 
 /** Shortcuts for developers, shown only in development builds. */
 const devLinks: { label: string; href: Href }[] = [
@@ -22,7 +24,7 @@ const devLinks: { label: string; href: Href }[] = [
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, isAdmin, isStaff, storeRole, signOut } = useAuth();
+  const { user, isAdmin, isStaff, storeId, storeRole, can, signOut } = useAuth();
   const { store, loading: storeLoading } = usePreferredStore();
 
   // Admins start in the admin area: once their role loads, it opens on top of Home, so Back
@@ -92,12 +94,19 @@ export default function HomeScreen() {
 
       {/* Store staff look after their store, as far as their store role allows. */}
       {isStaff ? (
-        <Button
-          title="My store"
-          variant="secondary"
-          icon="storefront-outline"
-          onPress={() => router.push('/my-store')}
-        />
+        <View style={styles.myStore}>
+          <Button
+            title="My store"
+            variant="secondary"
+            icon="storefront-outline"
+            onPress={() => router.push('/my-store')}
+            style={styles.myStoreButton}
+          />
+          {/* How many products need restocking, for staff whose role allows seeing that. */}
+          {storeId !== null && can(PERMISSIONS.viewRestock) ? (
+            <RestockBadge storeId={storeId} />
+          ) : null}
+        </View>
       ) : null}
 
       {isAdmin ? (
@@ -171,6 +180,13 @@ const styles = StyleSheet.create({
   },
   storeButton: {
     alignSelf: 'auto',
+  },
+  myStore: {
+    ...sharedStyles.row,
+    gap: spacing.sm,
+  },
+  myStoreButton: {
+    flex: 1,
   },
   account: {
     alignItems: 'center',

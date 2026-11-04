@@ -56,7 +56,7 @@ function SearchResult({ product, onPress }: { product: Product; onPress: () => v
 }
 
 /** The product's photo, or a placeholder icon if it has none or the photo fails to load. */
-function ProductPhoto({ uri, name }: { uri: string | null; name: string }) {
+export function ProductPhoto({ uri, name }: { uri: string | null; name: string }) {
   const [failed, setFailed] = useState(false);
 
   if (!uri || failed) {

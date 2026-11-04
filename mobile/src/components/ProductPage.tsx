@@ -22,17 +22,26 @@ import StarRating from '@/components/StarRating';
 import StoreAvailability from '@/components/StoreAvailability';
 import type { ProductState } from '@/hooks/useProduct';
 import { useRatingSummary, type RatingSummaryState } from '@/hooks/useRatingSummary';
+import { useRecordActivity } from '@/hooks/useRecordActivity';
 import { useReviews } from '@/hooks/useReviews';
 import { colors, fonts, radius, sharedStyles, spacing, textStyles } from '@/theme';
 import type { Product } from '@/types/product';
+import type { ActivityKind } from '@/types/restock';
 import { formatPrice } from '@/utils/formatPrice';
 import ProductNutrition from '@/components/ProductNutrition';
 
 type Props = {
   state: ProductState;
+  /** What opening the page counts as for the store's statistics: a scan, or else a view. */
+  opened?: ActivityKind;
 };
 
-export default function ProductPage({ state: { product, loading, error, reload } }: Props) {
+export default function ProductPage({
+  state: { product, loading, error, reload },
+  opened = 'view',
+}: Props) {
+  useRecordActivity(product?.id, opened);
+
   function goBack() {
     if (router.canGoBack()) {
       router.back();

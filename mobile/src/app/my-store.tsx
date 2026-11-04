@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '@/auth';
 import AsyncContent from '@/components/AsyncContent';
 import Button from '@/components/Button';
 import Card from '@/components/Card';
 import StaffGate, { StaffOnly } from '@/components/StaffGate';
+import RestockBadge from '@/components/RestockBadge';
+import SectionTabs from '@/components/SectionTabs';
 import StoreInfoSection from '@/components/StoreInfoSection';
+import StoreRestockSection from '@/components/StoreRestockSection';
 import StoreRolesSection from '@/components/StoreRolesSection';
 import StoreStaffSection from '@/components/StoreStaffSection';
 import StoreStockRow from '@/components/StoreStockRow';
@@ -15,26 +18,27 @@ import type { OnDenied } from '@/components/storeAccess';
 import { useApiGet } from '@/hooks/useApiGet';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { SEARCH_DEBOUNCE_MS, SEARCH_MAX_LENGTH } from '@/hooks/useProductSearch';
-import { colors, radius, sharedStyles, spacing, textStyles } from '@/theme';
+import { colors, sharedStyles, spacing, textStyles } from '@/theme';
 import type { StaffStockRow, Store } from '@/types/store';
 import { PERMISSIONS } from '@/types/user';
 
 /** Most products the Stock list loads at once (the API's limit). */
 export const STOCK_PAGE_SIZE = 50;
 
-type Section = 'stock' | 'staff' | 'roles' | 'info';
+type Section = 'stock' | 'restock' | 'staff' | 'roles' | 'info';
 
 /** Each section, its tab label, and the permission that shows it. */
-const SECTIONS: { key: Section; label: string; permission: string }[] = [
+const SECTIONS: { key: Section; label: string; shortLabel?: string; permission: string }[] = [
   { key: 'stock', label: 'Stock', permission: PERMISSIONS.editStock },
+  { key: 'restock', label: 'Restock', permission: PERMISSIONS.viewRestock },
   { key: 'staff', label: 'Staff', permission: PERMISSIONS.viewStaff },
   { key: 'roles', label: 'Roles', permission: PERMISSIONS.manageRoles },
-  { key: 'info', label: 'Store info', permission: PERMISSIONS.editStoreInfo },
+  { key: 'info', label: 'Store info', shortLabel: 'Info', permission: PERMISSIONS.editStoreInfo },
 ];
 
 /**
- * My store (store staff): the sections of a store their store role allows: its stock, its staff,
- * its roles and its address and hours. Admins pick any store and see everything. Everyone else
+ * My store (store staff): the sections of a store their store role allows: its stock, what needs
+ * restocking, its staff, its roles and its address and hours. Admins pick any store and see everything. Everyone else
  * sees "Store staff only"; the API checks too.
  */
 export default function MyStoreScreen() {
@@ -71,6 +75,7 @@ function MyStore() {
   const handlers = useMemo(
     () => ({
       stock: ((code) => onDenied(code, 'stock')) as OnDenied,
+      restock: ((code) => onDenied(code, 'restock')) as OnDenied,
       staff: ((code) => onDenied(code, 'staff')) as OnDenied,
       roles: ((code) => onDenied(code, 'roles')) as OnDenied,
       info: ((code) => onDenied(code, 'info')) as OnDenied,
@@ -115,28 +120,24 @@ function MyStore() {
       </View>
 
       {available.length > 1 ? (
-        <View style={styles.switcher} accessibilityRole="tablist">
-          {available.map((item) => {
-            const selected = item.key === current?.key;
-            return (
-              <Pressable
-                key={item.key}
-                onPress={() => setSection(item.key)}
-                accessibilityRole="tab"
-                accessibilityState={{ selected }}
-                style={[styles.switchOption, selected && styles.switchOptionSelected]}
-              >
-                <Text style={[styles.switchText, selected && styles.switchTextSelected]}>
-                  {item.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        <SectionTabs
+          tabs={available.map((item) => ({
+            ...item,
+            badge: item.key === 'restock' ? <RestockBadge storeId={storeId} /> : undefined,
+          }))}
+          selected={current?.key}
+          onSelect={setSection}
+        />
       ) : null}
 
       {current?.key === 'stock' ? (
         <StoreStock storeId={storeId} onDenied={handlers.stock} />
+      ) : current?.key === 'restock' ? (
+        <StoreRestockSection
+          storeId={storeId}
+          canRequest={can(PERMISSIONS.requestRestock)}
+          onDenied={handlers.restock}
+        />
       ) : current?.key === 'staff' ? (
         <StoreStaffSection storeId={storeId} storeName={storeName} onDenied={handlers.staff} />
       ) : current?.key === 'roles' ? (
@@ -269,30 +270,6 @@ const styles = StyleSheet.create({
   },
   left: {
     alignSelf: 'flex-start',
-  },
-  switcher: {
-    flexDirection: 'row',
-    marginHorizontal: spacing.xl,
-    marginTop: spacing.md,
-    padding: spacing.xxs,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-  },
-  switchOption: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderRadius: radius.pill,
-  },
-  switchOptionSelected: {
-    backgroundColor: colors.surface,
-  },
-  switchText: {
-    ...textStyles.label,
-    color: colors.textSecondary,
-  },
-  switchTextSelected: {
-    color: colors.textPrimary,
   },
   search: {
     marginHorizontal: spacing.xl,

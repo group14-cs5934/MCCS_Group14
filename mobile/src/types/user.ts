@@ -34,6 +34,8 @@ export const PERMISSIONS = {
   manageStaff: 'manage_staff',
   manageRoles: 'manage_roles',
   editStoreInfo: 'edit_store_info',
+  viewRestock: 'view_restock',
+  requestRestock: 'request_restock',
 } as const;
 
 /** The signed-in user's account. Named Account so it doesn't clash with Supabase's User. */

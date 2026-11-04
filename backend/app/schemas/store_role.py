@@ -3,14 +3,23 @@
 
 Adding a permission: add its key to Permission and its entry to PERMISSIONS (the app's checklist
 is built from GET /staff/permissions, so it shows up there by itself), check it in the routes it
-allows, and decide whether the starting Manager role in migration 019's trigger should have it.
+allows, and decide whether the starting Manager role (add_default_store_roles, last changed in
+migration 020) should have it.
 """
 
 from typing import Annotated, Literal, Self, get_args
 
 from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, model_validator
 
-Permission = Literal["edit_stock", "view_staff", "manage_staff", "manage_roles", "edit_store_info"]
+Permission = Literal[
+    "edit_stock",
+    "view_staff",
+    "manage_staff",
+    "manage_roles",
+    "edit_store_info",
+    "view_restock",
+    "request_restock",
+]
 
 
 class PermissionInfo(BaseModel):
@@ -48,12 +57,25 @@ PERMISSIONS: tuple[PermissionInfo, ...] = (
         label="Edit store info",
         description="Change the store's address and opening hours.",
     ),
+    PermissionInfo(
+        key="view_restock",
+        label="See low stock",
+        description="See what's low or out of stock, how popular it is, and reorder requests.",
+    ),
+    PermissionInfo(
+        key="request_restock",
+        label="Request reorders",
+        description="Request reorders of low stock and set when each product counts as low.",
+    ),
 )
 
 assert {p.key for p in PERMISSIONS} == set(get_args(Permission)), "PERMISSIONS must list each one"
 
 # Having the key gives these too, e.g. managing staff means seeing them.
-IMPLIED: dict[Permission, tuple[Permission, ...]] = {"manage_staff": ("view_staff",)}
+IMPLIED: dict[Permission, tuple[Permission, ...]] = {
+    "manage_staff": ("view_staff",),
+    "request_restock": ("view_restock",),
+}
 
 _ORDER = {p.key: index for index, p in enumerate(PERMISSIONS)}
 

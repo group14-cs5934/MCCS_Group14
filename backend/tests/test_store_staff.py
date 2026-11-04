@@ -132,7 +132,15 @@ def test_every_new_store_starts_with_a_manager_and_a_worker_role(connection, sto
         assert roles == [
             (
                 "Manager",
-                ["edit_stock", "view_staff", "manage_staff", "manage_roles", "edit_store_info"],
+                [
+                    "edit_stock",
+                    "view_staff",
+                    "manage_staff",
+                    "manage_roles",
+                    "edit_store_info",
+                    "view_restock",
+                    "request_restock",
+                ],
             ),
             ("Worker", ["edit_stock"]),
         ]
