@@ -15,8 +15,10 @@ from fastapi.testclient import TestClient
 
 from app.core.auth import TokenUser, get_token_user
 from app.repositories.audit_log import get_audit_log_repository
+from app.repositories.store_roles import get_store_role_repository
+from app.repositories.stores import get_store_repository
 from app.repositories.users import get_user_repository
-from tests.fakes import FakeAuditLog, FakeUsers
+from tests.fakes import FakeAuditLog, FakeStoreRoles, FakeUsers
 
 ADMIN = TokenUser(id=UUID("a0000000-0000-4000-8000-000000000001"), email="admin@example.com")
 SHOPPER = TokenUser(id=UUID("b0000000-0000-4000-8000-000000000002"), email="shopper@example.com")
@@ -53,6 +55,9 @@ def client(make_client, users: FakeUsers, session: Session, audit: FakeAuditLog)
     client.app.dependency_overrides[get_user_repository] = lambda: users
     client.app.dependency_overrides[get_token_user] = lambda: session.user
     client.app.dependency_overrides[get_audit_log_repository] = lambda: audit
+    client.app.dependency_overrides[get_store_role_repository] = lambda: FakeStoreRoles()
+    # No store roles here, so the stores are never looked at.
+    client.app.dependency_overrides[get_store_repository] = lambda: None
     return client
 
 
@@ -127,7 +132,15 @@ def test_admin_lists_users_with_role_and_status(client) -> None:
         ("admin@example.com", "admin", True),
         ("shopper@example.com", "user", True),
     ]
-    assert set(response.json()[0]) == {"id", "email", "role", "store_id", "active", "created_at"}
+    assert set(response.json()[0]) == {
+        "id",
+        "email",
+        "role",
+        "store_id",
+        "store_role",
+        "active",
+        "created_at",
+    }
 
 
 def test_list_passes_the_email_search_and_paging(client, users) -> None:

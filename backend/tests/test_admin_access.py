@@ -27,6 +27,7 @@ from app.repositories.audit_log import get_audit_log_repository
 from app.repositories.products import get_product_repository
 from app.repositories.ratings import get_rating_repository
 from app.repositories.reviews import get_review_repository
+from app.repositories.store_roles import get_store_role_repository
 from app.repositories.stores import get_store_repository
 from app.repositories.users import get_user_repository
 from tests.conftest import VALID_DATABASE_URL, VALID_SUPABASE_URL
@@ -162,6 +163,7 @@ def client(make_client, private_key, users) -> TestClient:
     client.app.dependency_overrides[get_rating_repository] = lambda: Tripwire("ratings")
     client.app.dependency_overrides[get_review_repository] = lambda: Tripwire("reviews")
     client.app.dependency_overrides[get_store_repository] = lambda: Tripwire("stores")
+    client.app.dependency_overrides[get_store_role_repository] = lambda: Tripwire("store roles")
     client.app.dependency_overrides[get_audit_log_repository] = lambda: Tripwire("audit log")
     return client
 

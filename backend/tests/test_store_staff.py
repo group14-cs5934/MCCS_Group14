@@ -1,8 +1,10 @@
-"""Store staff roles (migration 016, app/api/staff.py); these skip without TEST_DATABASE_URL.
+"""Store staff (migrations 016 and 019, app/api/staff.py); these skip without TEST_DATABASE_URL.
 
-Workers edit their store's stock; managers also add and remove its workers; admins do both at
-every store and are the only ones who make managers. Who may call which endpoint, for every
-role, is in test_permissions_audit.py; these check what each change does.
+Staff have one of their store's roles, which says what they may do there. These use each store's
+starting roles: "Worker" edits stock; "Manager" can do everything, including adding and removing
+staff. Admins can do everything at every store. Custom roles themselves are tested in
+test_store_roles.py; who may call which endpoint, for every permission, in
+test_permissions_audit.py. These check what each change does.
 """
 
 from collections.abc import Iterator
@@ -58,20 +60,34 @@ def stores(client: TestClient, connection: psycopg.Connection) -> dict[str, int]
     }
 
 
+def role_id(connection: psycopg.Connection, store_id: int, name: str) -> int:
+    """The ID of the store's role with this name."""
+    (found,) = connection.execute(
+        "SELECT id FROM store_roles WHERE store_id = %s AND name = %s", (store_id, name)
+    ).fetchone()
+    return found
+
+
 @pytest.fixture
 def team(connection: psycopg.Connection, stores: dict[str, int]) -> dict[str, int]:
-    """The stores, with the manager and worker at Quantico, and OTHER at Camp Lejeune."""
+    """The stores, with the manager and worker at Quantico, and OTHER a worker at Camp Lejeune."""
     users = UserRepository(connection)
-    users.update(MANAGER.id, role="manager", store_id=stores["Quantico MCX"])
-    users.update(WORKER.id, role="worker", store_id=stores["Quantico MCX"])
-    users.update(OTHER.id, role="worker", store_id=stores["Camp Lejeune MCX"])
+    quantico, lejeune = stores["Quantico MCX"], stores["Camp Lejeune MCX"]
+    users.update(MANAGER.id, role="staff", store_role_id=role_id(connection, quantico, "Manager"))
+    users.update(WORKER.id, role="staff", store_role_id=role_id(connection, quantico, "Worker"))
+    users.update(OTHER.id, role="staff", store_role_id=role_id(connection, lejeune, "Worker"))
     connection.commit()
     return stores
 
 
-def account(connection: psycopg.Connection, person: TokenUser) -> tuple[str, int | None]:
+def account(
+    connection: psycopg.Connection, person: TokenUser
+) -> tuple[str, int | None, str | None]:
+    """The person's role, store, and role at that store."""
     return connection.execute(
-        "SELECT role, store_id FROM users WHERE id = %s", (person.id,)
+        "SELECT u.role, u.store_id, r.name FROM users AS u "
+        "LEFT JOIN store_roles AS r ON r.id = u.store_role_id WHERE u.id = %s",
+        (person.id,),
     ).fetchone()
 
 
@@ -81,80 +97,130 @@ def latest_audit(connection: psycopg.Connection) -> tuple:
     ).fetchone()
 
 
-# --- The database rule ---
+# --- The database rules ---
 
 
-def test_staff_must_have_a_store_and_nobody_else_can(db_url: str, connection) -> None:
-    users = UserRepository(connection)
-    users.get_or_create(SHOPPER.id, SHOPPER.email)
-    connection.commit()
+def test_staff_must_have_a_store_and_a_role_and_nobody_else_can(connection, stores) -> None:
+    quantico, lejeune = stores["Quantico MCX"], stores["Camp Lejeune MCX"]
+    lejeune_worker = role_id(connection, lejeune, "Worker")
 
-    for sql in (
-        "UPDATE users SET role = 'worker' WHERE id = %s",  # staff without a store
-        "UPDATE users SET store_id = 1 WHERE id = %s",  # a store for a regular user
-    ):
-        with pytest.raises(psycopg.errors.CheckViolation):
-            connection.execute(sql, (SHOPPER.id,))
+    for sql, values in [
+        ("UPDATE users SET role = 'staff' WHERE id = %s", ()),  # staff without a store
+        ("UPDATE users SET store_id = %s WHERE id = %s", (quantico,)),  # a store for a user
+        # A role at another store than their own.
+        (
+            "UPDATE users SET role = 'staff', store_id = %s, store_role_id = %s WHERE id = %s",
+            (quantico, lejeune_worker),
+        ),
+    ]:
+        with pytest.raises((psycopg.errors.CheckViolation, psycopg.errors.ForeignKeyViolation)):
+            connection.execute(sql, (*values, SHOPPER.id))
         connection.rollback()
+
+
+def test_every_new_store_starts_with_a_manager_and_a_worker_role(connection, stores) -> None:
+    # Also when a script adds the store straight to the database.
+    (scripted,) = connection.execute(
+        "INSERT INTO store_locations (name, slug) VALUES ('Okinawa', 'okinawa') RETURNING id"
+    ).fetchone()
+
+    for store_id in (stores["Quantico MCX"], scripted):
+        roles = connection.execute(
+            "SELECT name, permissions FROM store_roles WHERE store_id = %s ORDER BY name",
+            (store_id,),
+        ).fetchall()
+        assert roles == [
+            (
+                "Manager",
+                ["edit_stock", "view_staff", "manage_staff", "manage_roles", "edit_store_info"],
+            ),
+            ("Worker", ["edit_stock"]),
+        ]
 
 
 # --- Admins assign roles ---
 
 
-def test_admins_make_managers_and_workers_at_a_store(client, signed_in, team, connection):
+def test_admins_make_people_staff_with_a_store_role(client, signed_in, team, connection):
     quantico = team["Quantico MCX"]
+    manager_role = role_id(connection, quantico, "Manager")
 
     response = client.patch(
-        f"/admin/users/{SHOPPER.id}", json={"role": "manager", "store_id": quantico}
+        f"/admin/users/{SHOPPER.id}", json={"role": "staff", "store_role_id": manager_role}
     )
 
     assert response.status_code == 200
-    assert (response.json()["role"], response.json()["store_id"]) == ("manager", quantico)
-    assert latest_audit(connection)[3]["store_id"] == {"from": None, "to": quantico}
+    body = response.json()
+    assert (body["role"], body["store_id"], body["store_role"]["name"]) == (
+        "staff",
+        quantico,
+        "Manager",
+    )
+    changes = latest_audit(connection)[3]
+    assert changes["store_id"] == {"from": None, "to": quantico}
+    assert changes["store_role"] == {"from": None, "to": "Manager"}
     signed_in.user = SHOPPER
-    assert client.get("/me").json()["store_id"] == quantico  # on their next request
+    me = client.get("/me").json()  # on their next request
+    assert me["store_id"] == quantico
+    assert "manage_staff" in me["store_role"]["permissions"]
 
 
-def test_staff_need_a_store_and_only_staff_have_one(client, team) -> None:
-    no_store = client.patch(f"/admin/users/{SHOPPER.id}", json={"role": "worker"})
-    store_for_admin = client.patch(
-        f"/admin/users/{SHOPPER.id}", json={"role": "admin", "store_id": team["Quantico MCX"]}
+def test_staff_need_a_store_role_and_only_staff_have_one(client, team, connection) -> None:
+    worker_role = role_id(connection, team["Quantico MCX"], "Worker")
+
+    no_role = client.patch(f"/admin/users/{SHOPPER.id}", json={"role": "staff"})
+    role_for_admin = client.patch(
+        f"/admin/users/{SHOPPER.id}", json={"role": "admin", "store_role_id": worker_role}
     )
-    unknown_store = client.patch(
-        f"/admin/users/{SHOPPER.id}", json={"role": "worker", "store_id": 999_999}
+    unknown_role = client.patch(
+        f"/admin/users/{SHOPPER.id}", json={"role": "staff", "store_role_id": 999_999}
     )
-
-    too_big = client.patch(f"/admin/users/{SHOPPER.id}", json={"role": "worker", "store_id": 2**31})
+    too_big = client.patch(
+        f"/admin/users/{SHOPPER.id}", json={"role": "staff", "store_role_id": 2**31}
+    )
+    old_store_id = client.patch(
+        f"/admin/users/{SHOPPER.id}", json={"role": "staff", "store_id": team["Quantico MCX"]}
+    )
 
     assert too_big.status_code == 422  # beyond a database ID, so not a database error
-    assert no_store.status_code == 422 and no_store.json()["code"] == "store_required"
-    assert store_for_admin.status_code == 422
-    assert store_for_admin.json()["code"] == "store_not_allowed"
-    assert unknown_store.status_code == 404 and unknown_store.json()["code"] == "store_not_found"
+    assert old_store_id.status_code == 422  # the store comes from the role now
+    assert no_role.status_code == 422 and no_role.json()["code"] == "store_role_required"
+    assert role_for_admin.status_code == 422
+    assert role_for_admin.json()["code"] == "store_role_not_allowed"
+    assert unknown_role.status_code == 404
+    assert unknown_role.json()["code"] == "store_role_not_found"
+    assert account(connection, SHOPPER) == ("user", None, None)
 
 
 def test_admins_move_staff_between_stores_and_any_other_role_leaves_the_store(
     client, team, connection
 ) -> None:
-    moved = client.patch(f"/admin/users/{WORKER.id}", json={"store_id": team["Camp Lejeune MCX"]})
-    assert account(connection, WORKER) == ("worker", team["Camp Lejeune MCX"])
+    lejeune = team["Camp Lejeune MCX"]
+    moved = client.patch(
+        f"/admin/users/{WORKER.id}", json={"store_role_id": role_id(connection, lejeune, "Manager")}
+    )
+    assert account(connection, WORKER) == ("staff", lejeune, "Manager")
 
     promoted = client.patch(f"/admin/users/{WORKER.id}", json={"role": "admin"})
 
     assert moved.status_code == promoted.status_code == 200
-    assert account(connection, WORKER) == ("admin", None)
+    assert account(connection, WORKER) == ("admin", None, None)
 
 
-def test_admins_cant_make_themselves_staff(client, team) -> None:
+def test_admins_cant_make_themselves_staff(client, team, connection) -> None:
     response = client.patch(
-        f"/admin/users/{ADMIN.id}", json={"role": "manager", "store_id": team["Quantico MCX"]}
+        f"/admin/users/{ADMIN.id}",
+        json={
+            "role": "staff",
+            "store_role_id": role_id(connection, team["Quantico MCX"], "Worker"),
+        },
     )
 
     assert response.status_code == 409
     assert response.json()["code"] == "cannot_change_own_account"
 
 
-# --- Workers edit their store's stock ---
+# --- Stock, for roles that may edit it ---
 
 
 def test_a_worker_sets_stock_at_their_store_and_the_app_shows_it(
@@ -196,6 +262,25 @@ def test_a_worker_cant_set_stock_at_another_store(client, signed_in, team, conne
     assert connection.execute("SELECT count(*) FROM product_stock").fetchone() == (0,)
 
 
+def test_a_role_that_cant_edit_stock_cant_see_or_set_it(client, signed_in, team, connection):
+    product_id = add_product(connection)
+    quantico = team["Quantico MCX"]
+    # Workers at Quantico lose stock editing.
+    connection.execute(
+        "UPDATE store_roles SET permissions = '{}' WHERE id = %s",
+        (role_id(connection, quantico, "Worker"),),
+    )
+    connection.commit()
+    signed_in.user = WORKER
+
+    listed = client.get(f"/staff/stores/{quantico}/stock")
+    changed = client.put(f"/staff/stores/{quantico}/stock/{product_id}", json={"in_stock": True})
+
+    for response in (listed, changed):
+        assert response.status_code == 403
+        assert response.json()["code"] == "missing_permission"
+
+
 def test_a_worker_hands_stock_back_to_automatic_updates(client, signed_in, team, connection):
     product_id = add_product(connection)
     connection.commit()
@@ -232,26 +317,50 @@ def test_staff_find_products_by_name_or_barcode_stocked_or_not(
     assert [row["product"]["id"] for row in by_barcode] == [chips]
 
 
-# --- Managers manage their store's workers ---
+# --- Store details, for roles that may edit them ---
 
 
-def test_a_manager_adds_a_worker_by_email(client, signed_in, team, connection) -> None:
+def test_staff_who_may_edit_store_info_change_its_hours(client, signed_in, team, connection):
+    quantico = team["Quantico MCX"]
+    signed_in.user = MANAGER
+
+    response = client.patch(f"/staff/stores/{quantico}", json={"hours": "Mon–Fri 9–5"})
+    renaming = client.patch(f"/staff/stores/{quantico}", json={"name": "Mine"})
+    signed_in.user = WORKER
+    as_worker = client.patch(f"/staff/stores/{quantico}", json={"hours": "Never"})
+
+    assert response.status_code == 200 and response.json()["hours"] == "Mon–Fri 9–5"
+    assert client.get(f"/locations/{quantico}").json()["hours"] == "Mon–Fri 9–5"
+    email, action, _, changes = latest_audit(connection)
+    assert (email, action) == (MANAGER.email, "store.update")
+    assert changes == {"hours": {"from": None, "to": "Mon–Fri 9–5"}}
+    assert renaming.status_code == 422  # the name stays with admins
+    assert as_worker.status_code == 403 and as_worker.json()["code"] == "missing_permission"
+
+
+# --- Staff, for roles that may manage them ---
+
+
+def test_a_manager_adds_someone_by_email_with_a_role(client, signed_in, team, connection):
+    quantico = team["Quantico MCX"]
     signed_in.user = MANAGER
 
     response = client.post(
-        f"/staff/stores/{team['Quantico MCX']}/staff", json={"email": " shopper@example.COM "}
+        f"/staff/stores/{quantico}/staff",
+        json={"email": " shopper@example.COM ", "role_id": role_id(connection, quantico, "Worker")},
     )
 
     assert response.status_code == 201
-    assert account(connection, SHOPPER) == ("worker", team["Quantico MCX"])
+    assert account(connection, SHOPPER) == ("staff", quantico, "Worker")
     email, action, target, changes = latest_audit(connection)
     assert (email, action, target) == (MANAGER.email, "user.update", str(SHOPPER.id))
-    assert changes["role"] == {"from": "user", "to": "worker"}
-    staff = client.get(f"/staff/stores/{team['Quantico MCX']}/staff").json()
-    assert [(person["email"], person["role"]) for person in staff] == [
-        ("manager@example.com", "manager"),
-        ("Shopper@Example.com", "worker"),
-        ("worker@example.com", "worker"),
+    assert changes["role"] == {"from": "user", "to": "staff"}
+    assert changes["store_role"] == {"from": None, "to": "Worker"}
+    staff = client.get(f"/staff/stores/{quantico}/staff").json()
+    assert [(person["email"], person["store_role"]["name"]) for person in staff] == [
+        ("manager@example.com", "Manager"),
+        ("Shopper@Example.com", "Worker"),
+        ("worker@example.com", "Worker"),
     ]
 
 
@@ -263,27 +372,71 @@ def test_a_manager_adds_a_worker_by_email(client, signed_in, team, connection) -
         ("admin@example.com", 409, "already_staff"),
     ],
 )
-def test_a_manager_can_only_add_regular_users(client, signed_in, team, email, status, code) -> None:
+def test_a_manager_can_only_add_regular_users(
+    client, signed_in, team, connection, email, status, code
+) -> None:
+    quantico = team["Quantico MCX"]
     signed_in.user = MANAGER
 
-    response = client.post(f"/staff/stores/{team['Quantico MCX']}/staff", json={"email": email})
+    response = client.post(
+        f"/staff/stores/{quantico}/staff",
+        json={"email": email, "role_id": role_id(connection, quantico, "Worker")},
+    )
 
     assert response.status_code == status
     assert response.json()["code"] == code
 
 
-def test_a_deactivated_account_cant_be_added(client, signed_in, team) -> None:
-    client.patch(f"/admin/users/{SHOPPER.id}", json={"active": False})
+def test_staff_can_only_be_given_their_own_stores_roles(client, signed_in, team, connection):
     signed_in.user = MANAGER
 
     response = client.post(
-        f"/staff/stores/{team['Quantico MCX']}/staff", json={"email": SHOPPER.email}
+        f"/staff/stores/{team['Quantico MCX']}/staff",
+        json={
+            "email": SHOPPER.email,
+            "role_id": role_id(connection, team["Camp Lejeune MCX"], "Worker"),
+        },
+    )
+
+    assert response.status_code == 404 and response.json()["code"] == "store_role_not_found"
+    assert account(connection, SHOPPER) == ("user", None, None)
+
+
+def test_a_deactivated_account_cant_be_added(client, signed_in, team, connection) -> None:
+    client.patch(f"/admin/users/{SHOPPER.id}", json={"active": False})
+    quantico = team["Quantico MCX"]
+    signed_in.user = MANAGER
+
+    response = client.post(
+        f"/staff/stores/{quantico}/staff",
+        json={"email": SHOPPER.email, "role_id": role_id(connection, quantico, "Worker")},
     )
 
     assert response.status_code == 409 and response.json()["code"] == "account_deactivated"
 
 
-def test_a_manager_removes_a_worker_who_then_loses_access(
+def test_a_manager_changes_someones_role(client, signed_in, team, connection) -> None:
+    quantico = team["Quantico MCX"]
+    signed_in.user = MANAGER
+
+    response = client.patch(
+        f"/staff/stores/{quantico}/staff/{WORKER.id}",
+        json={"role_id": role_id(connection, quantico, "Manager")},
+    )
+    themselves = client.patch(
+        f"/staff/stores/{quantico}/staff/{MANAGER.id}",
+        json={"role_id": role_id(connection, quantico, "Worker")},
+    )
+
+    assert response.status_code == 200 and response.json()["store_role"]["name"] == "Manager"
+    assert latest_audit(connection)[3] == {"store_role": {"from": "Worker", "to": "Manager"}}
+    assert themselves.status_code == 409
+    assert themselves.json()["code"] == "cannot_change_own_account"
+    signed_in.user = WORKER  # now a manager, on their next request
+    assert client.get(f"/staff/stores/{quantico}/staff").status_code == 200
+
+
+def test_a_manager_removes_someone_who_then_loses_access(
     client, signed_in, team, connection
 ) -> None:
     quantico = team["Quantico MCX"]
@@ -292,35 +445,62 @@ def test_a_manager_removes_a_worker_who_then_loses_access(
     response = client.delete(f"/staff/stores/{quantico}/staff/{WORKER.id}")
 
     assert response.status_code == 204
-    assert account(connection, WORKER) == ("user", None)
+    assert account(connection, WORKER) == ("user", None, None)
     signed_in.user = WORKER
     assert client.get(f"/staff/stores/{quantico}/stock").status_code == 403
 
 
-def test_a_manager_cant_remove_managers_themselves_or_other_stores_staff(
+def test_a_manager_cant_remove_themselves_or_other_stores_staff(
     client, signed_in, team, connection
 ) -> None:
-    users = UserRepository(connection)
-    users.update(SHOPPER.id, role="manager", store_id=team["Quantico MCX"])
-    connection.commit()
     quantico = team["Quantico MCX"]
     signed_in.user = MANAGER
 
-    other_manager = client.delete(f"/staff/stores/{quantico}/staff/{SHOPPER.id}")
     themselves = client.delete(f"/staff/stores/{quantico}/staff/{MANAGER.id}")
     other_store = client.delete(f"/staff/stores/{quantico}/staff/{OTHER.id}")
 
-    assert other_manager.status_code == 403 and other_manager.json()["code"] == "admins_only"
     assert themselves.status_code == 409
     assert other_store.status_code == 404 and other_store.json()["code"] == "staff_not_found"
-    assert account(connection, SHOPPER) == ("manager", quantico)
+    assert account(connection, OTHER) == ("staff", team["Camp Lejeune MCX"], "Worker")
 
 
-def test_admins_remove_managers_too(client, team, connection) -> None:
+def test_staff_cant_hand_out_or_take_away_roles_that_can_do_more_than_theirs(
+    client, signed_in, team, connection
+) -> None:
+    """A "Shift lead" may manage staff and stock, but not roles or the store's details."""
+    quantico = team["Quantico MCX"]
+    (lead_role,) = connection.execute(
+        "INSERT INTO store_roles (store_id, name, permissions) "
+        "VALUES (%s, 'Shift lead', '{manage_staff,edit_stock}') RETURNING id",
+        (quantico,),
+    ).fetchone()
+    UserRepository(connection).update(SHOPPER.id, role="staff", store_role_id=lead_role)
+    connection.commit()
+    manager_role = role_id(connection, quantico, "Manager")
+    worker_role = role_id(connection, quantico, "Worker")
+    signed_in.user = SHOPPER
+
+    promote_worker = client.patch(
+        f"/staff/stores/{quantico}/staff/{WORKER.id}", json={"role_id": manager_role}
+    )
+    demote_manager = client.patch(
+        f"/staff/stores/{quantico}/staff/{MANAGER.id}", json={"role_id": worker_role}
+    )
+    remove_manager = client.delete(f"/staff/stores/{quantico}/staff/{MANAGER.id}")
+    remove_worker = client.delete(f"/staff/stores/{quantico}/staff/{WORKER.id}")
+
+    for refused in (promote_worker, demote_manager, remove_manager):
+        assert refused.status_code == 403
+        assert refused.json()["code"] == "beyond_your_permissions"
+    assert remove_worker.status_code == 204  # Worker can't do more than a Shift lead
+    assert account(connection, MANAGER) == ("staff", quantico, "Manager")
+
+
+def test_admins_remove_anyone(client, team, connection) -> None:
     response = client.delete(f"/staff/stores/{team['Quantico MCX']}/staff/{MANAGER.id}")
 
     assert response.status_code == 204
-    assert account(connection, MANAGER) == ("user", None)
+    assert account(connection, MANAGER) == ("user", None, None)
 
 
 # --- Stores going away ---
@@ -330,7 +510,11 @@ def test_deleting_a_store_makes_its_staff_regular_users(client, team, connection
     response = client.delete(f"/admin/stores/{team['Quantico MCX']}")
 
     assert response.status_code == 204
-    assert account(connection, MANAGER) == ("user", None)
-    assert account(connection, WORKER) == ("user", None)
-    assert account(connection, OTHER) == ("worker", team["Camp Lejeune MCX"])
+    assert account(connection, MANAGER) == ("user", None, None)
+    assert account(connection, WORKER) == ("user", None, None)
+    assert account(connection, OTHER) == ("staff", team["Camp Lejeune MCX"], "Worker")
     assert latest_audit(connection)[3]["staff"] == {"from": 2, "to": 0}
+    remaining = connection.execute(
+        "SELECT count(*) FROM store_roles WHERE store_id = %s", (team["Quantico MCX"],)
+    )
+    assert remaining.fetchone() == (0,)  # its roles go with it

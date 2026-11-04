@@ -10,7 +10,7 @@ import {
 } from 'react';
 
 import { getMe, setAccessTokenProvider, setAccountDeactivatedHandler } from '@/api';
-import type { Role } from '@/types/user';
+import { PERMISSIONS, type Role, type StoreRoleSummary } from '@/types/user';
 
 import { authErrorMessage } from './errors';
 import { supabase } from './supabase';
@@ -33,12 +33,19 @@ type AuthContextValue = {
   /** True while a signed-in user's role is still loading, so screens can wait before deciding. */
   roleLoading: boolean;
   isAdmin: boolean;
-  /** True for a store worker or manager (not admins, who aren't tied to one store). */
+  /** True for a store's staff (not admins, who aren't tied to one store). */
   isStaff: boolean;
-  /** True for a store manager. */
-  isManager: boolean;
-  /** The store a worker or manager works at, from GET /me; null for anyone else. */
+  /** The store a staff member works at, from GET /me; null for anyone else. */
   storeId: number | null;
+  /** A staff member's role at their store, from GET /me; null for anyone else. */
+  storeRole: StoreRoleSummary | null;
+  /** The permissions their store role gives them (empty for anyone but staff). */
+  permissions: string[];
+  /**
+   * Whether they may do something at their store, e.g. can('edit_stock'). Admins can do
+   * everything; manage_staff includes view_staff. The API checks too.
+   */
+  can: (permission: string) => boolean;
   /**
    * Loads the role and store again, e.g. when the API says the user's access changed (they were
    * removed from their store, or moved) since they signed in.
@@ -93,6 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     userId: string;
     role: Role | null;
     storeId: number | null;
+    storeRole: StoreRoleSummary | null;
   } | null>(null);
   const [signedOutReason, setSignedOutReason] = useState<string | null>(null);
 
@@ -142,6 +150,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           userId,
           role: result.ok ? result.data.role : null,
           storeId: result.ok ? (result.data.store_id ?? null) : null,
+          storeRole: result.ok ? (result.data.store_role ?? null) : null,
         });
       }
     });
@@ -150,7 +159,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const roleLoaded = !!loadedRole && loadedRole.userId === userId;
   const role = roleLoaded ? loadedRole.role : null;
   const storeId = roleLoaded ? loadedRole.storeId : null;
+  const storeRole = roleLoaded ? loadedRole.storeRole : null;
   const roleLoading = !!userId && !roleLoaded;
+  // Staff without a store can't happen (the API requires one), but never treat them as staff.
+  const isStaff = role === 'staff' && storeId !== null;
+  const permissions = useMemo(
+    () => (isStaff ? (storeRole?.permissions ?? []) : []),
+    [isStaff, storeRole],
+  );
+  const can = useCallback(
+    (permission: string) =>
+      role === 'admin' ||
+      permissions.includes(permission) ||
+      (permission === PERMISSIONS.viewStaff && permissions.includes(PERMISSIONS.manageStaff)),
+    [role, permissions],
+  );
 
   const value = useMemo(
     () => ({
@@ -159,10 +182,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role,
       roleLoading,
       isAdmin: role === 'admin',
-      // Staff without a store can't happen (the API requires one), but never treat them as staff.
-      isStaff: (role === 'worker' || role === 'manager') && storeId !== null,
-      isManager: role === 'manager' && storeId !== null,
+      isStaff,
       storeId,
+      storeRole,
+      permissions,
+      can,
       refreshRole,
       initializing,
       signedOutReason,
@@ -176,7 +200,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       signOut,
     }),
-    [session, role, storeId, refreshRole, roleLoading, initializing, signedOutReason],
+    [
+      session,
+      role,
+      isStaff,
+      storeId,
+      storeRole,
+      permissions,
+      can,
+      refreshRole,
+      roleLoading,
+      initializing,
+      signedOutReason,
+    ],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

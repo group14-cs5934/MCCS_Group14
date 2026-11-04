@@ -2,7 +2,7 @@
 token, 403 for anyone else.
 
 User management (T081): list users, change a user's role, and deactivate or reactivate them.
-Admins also make users store workers or managers, at a store (migration 016).
+Admins also make users store staff, with one of a store's roles (migration 019).
 Changes take effect on the user's next request, because the API reads their role and status from
 the users table on every request. Each change is recorded in the audit log (T083).
 """
@@ -13,11 +13,12 @@ from uuid import UUID
 import psycopg
 from fastapi import APIRouter, Query, status
 
+from app.api.staff import locked_role, role_not_found, user_audit_fields
 from app.core.auth import AdminUser
 from app.core.errors import ApiError, error_response
-from app.repositories import AuditLog, Users
+from app.repositories import AuditLog, StoreRoles, Stores, Users
 from app.repositories.audit_log import changed_fields
-from app.schemas import STAFF_ROLES, UserAccount, UserUpdate
+from app.schemas import UserAccount, UserUpdate
 
 MAX_USERS_PER_PAGE = 100
 
@@ -49,7 +50,7 @@ def list_users(
 @router.patch(
     "/users/{user_id}",
     responses={
-        404: error_response("No user or store with this ID"),
+        404: error_response("No user or store role with this ID"),
         409: error_response("Admins can't demote or deactivate themselves"),
     },
 )
@@ -58,15 +59,18 @@ def update_user(
     change: UserUpdate,
     admin: AdminUser,
     users: Users,
+    stores: Stores,
+    roles: StoreRoles,
     audit: AuditLog,
 ) -> UserAccount:
-    """Change a user's role or store and/or deactivate or reactivate them, e.g.
-    {"role": "admin"}, {"role": "manager", "store_id": 3}, or {"active": false}. It takes effect
-    on the user's next request: a deactivated user gets 403 with code account_deactivated.
+    """Change a user's role or store role and/or deactivate or reactivate them, e.g.
+    {"role": "admin"}, {"role": "staff", "store_role_id": 3}, or {"active": false}. It takes
+    effect on the user's next request: a deactivated user gets 403 with code account_deactivated.
 
-    Workers and managers belong to one store: making someone staff needs a store_id (422
-    store_required), and only staff can have one (422 store_not_allowed). Any other role takes
-    them off their store.
+    Staff have one of a store's roles, and work at that store: making someone staff needs a
+    store_role_id (422 store_role_required), and only staff can have one (422
+    store_role_not_allowed). Sending only store_role_id gives existing staff another role, at
+    their store or another. Any other role takes them off their store.
 
     Admins can't remove their own admin role or deactivate themselves (409), so the app can't be
     left without an admin by accident.
@@ -81,13 +85,13 @@ def update_user(
         raise ApiError(status.HTTP_404_NOT_FOUND, "user_not_found", "User not found")
     before = users.get(user_id)
     assert before is not None  # locked above
-    _check_store(change, before)
+    _check_store_role(change, before, stores, roles)
     try:
         updated = users.update(
-            user_id, role=change.role, active=change.active, store_id=change.store_id
+            user_id, role=change.role, active=change.active, store_role_id=change.store_role_id
         )
-    except psycopg.errors.ForeignKeyViolation:  # users.store_id references store_locations
-        raise ApiError(status.HTTP_404_NOT_FOUND, "store_not_found", "Store not found") from None
+    except psycopg.errors.ForeignKeyViolation:  # the role was deleted just now
+        raise role_not_found() from None
     assert updated is not None  # found above, in this same transaction
     audit.record(
         admin_id=admin.id,
@@ -100,29 +104,32 @@ def update_user(
     return updated
 
 
-def _check_store(change: UserUpdate, before: UserAccount) -> None:
-    """Staff need a store, and nobody else has one. (Whether it exists, the database checks.)"""
+def _check_store_role(
+    change: UserUpdate, before: UserAccount, stores: Stores, roles: StoreRoles
+) -> None:
+    """Staff need a store role that exists, and nobody else has one. A new role and its store
+    are locked until the request ends (see staff.locked_role)."""
     role = change.role or before.role
-    if role in STAFF_ROLES:
-        if change.store_id is None and before.store_id is None:
+    if role == "staff":
+        if change.store_role_id is None and before.store_role is None:
             raise ApiError(
                 status.HTTP_422_UNPROCESSABLE_CONTENT,
-                "store_required",
-                "A worker or manager needs a store; send store_id.",
+                "store_role_required",
+                "Staff need one of a store's roles; send store_role_id.",
             )
-    elif change.store_id is not None:
+        if change.store_role_id is not None:
+            role = roles.get(change.store_role_id)
+            if role is None:
+                raise role_not_found()
+            locked_role(stores, roles, role.store_id, role.id)
+    elif change.store_role_id is not None:
         raise ApiError(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "store_not_allowed",
-            "Only workers and managers belong to a store.",
+            "store_role_not_allowed",
+            "Only staff have a store role.",
         )
 
 
 def _user_fields(user: UserAccount) -> dict[str, object]:
     """What the audit log compares for a user."""
-    return {
-        "email": user.email,
-        "role": user.role,
-        "store_id": user.store_id,
-        "active": user.active,
-    }
+    return {"email": user.email, **user_audit_fields(user), "active": user.active}

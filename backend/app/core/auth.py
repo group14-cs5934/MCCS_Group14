@@ -8,7 +8,7 @@ Each user's role is kept in our users table. Their row is added with the "user" 
 time they call the API (the app calls GET /me right after signing in).
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Annotated, Any, Self
 from uuid import UUID
 
@@ -20,7 +20,8 @@ from pydantic import BaseModel, ValidationError
 from app.core.config import Settings
 from app.core.errors import ApiError
 from app.repositories.users import Users
-from app.schemas import Role
+from app.schemas import Permission, Role, StoreRoleSummary
+from app.schemas.store_role import IMPLIED
 
 # Supabase gives signed-in users' tokens this audience.
 AUDIENCE = "authenticated"
@@ -39,11 +40,12 @@ class TokenUser(BaseModel):
 
 
 class AuthUser(TokenUser):
-    """The signed-in user, with their role (and, for store staff, their store) from the users
-    table."""
+    """The signed-in user, with their role (and, for store staff, their store and their role
+    there) from the users table."""
 
     role: Role
     store_id: int | None = None
+    store_role: StoreRoleSummary | None = None
 
 
 class AuthUnavailableError(Exception):
@@ -149,7 +151,11 @@ def get_current_user(
             "This account has been deactivated.",
         )
     return AuthUser(
-        id=account.id, email=account.email, role=account.role, store_id=account.store_id
+        id=account.id,
+        email=account.email,
+        role=account.role,
+        store_id=account.store_id,
+        store_role=account.store_role,
     )
 
 
@@ -173,20 +179,31 @@ def require_role(*roles: Role) -> Callable[[AuthUser], AuthUser]:
 # Use as a route parameter for admin-only routes: def delete_thing(user: AdminUser) -> ...
 AdminUser = Annotated[AuthUser, Depends(require_role("admin"))]
 
-# Store staff routes (app/api/staff.py): workers, managers, and admins. Which store they may act
-# on is checked per route, with can_edit_stock / can_manage_staff below.
-StaffUser = Annotated[AuthUser, Depends(require_role("worker", "manager", "admin"))]
+# Store staff routes (app/api/staff.py): staff and admins. What they may do at which store is
+# checked per route, with has_permission below.
+StaffUser = Annotated[AuthUser, Depends(require_role("staff", "admin"))]
 
 
-def can_edit_stock(user: AuthUser, store_id: int) -> bool:
-    """Admins edit stock anywhere; workers and managers only at their own store."""
+def granted_permissions(user: AuthUser) -> frozenset[Permission]:
+    """What a staff member's role lets them do at their store, including what that implies (e.g.
+    managing staff means seeing them). Empty for anyone else; admins are checked separately."""
+    if user.role != "staff" or user.store_role is None:
+        return frozenset()
+    granted = set(user.store_role.permissions)
+    for permission in user.store_role.permissions:
+        granted.update(IMPLIED.get(permission, ()))
+    return frozenset(granted)
+
+
+def has_permission(user: AuthUser, store_id: int, permission: Permission) -> bool:
+    """Admins may do anything at every store; staff only what their role allows, at their own."""
     if user.role == "admin":
         return True
-    return user.role in ("worker", "manager") and user.store_id == store_id
+    return user.store_id == store_id and permission in granted_permissions(user)
 
 
-def can_manage_staff(user: AuthUser, store_id: int) -> bool:
-    """Admins manage any store's staff; a manager only their own store's workers."""
-    if user.role == "admin":
-        return True
-    return user.role == "manager" and user.store_id == store_id
+def can_hand_out(user: AuthUser, permissions: Iterable[Permission]) -> bool:
+    """Whether the user may give out (or take away) a role with these permissions. Admins may;
+    staff only if they have every one themselves, so nobody can give anyone, themselves
+    included, more than they have."""
+    return user.role == "admin" or set(permissions) <= granted_permissions(user)

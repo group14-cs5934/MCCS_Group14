@@ -70,5 +70,11 @@ def test_me_adds_one_user_record(client, connection) -> None:
     second = client.get("/me")
 
     assert first.status_code == second.status_code == 200
-    assert second.json() == {"id": str(USER_ID), "email": EMAIL, "role": "user", "store_id": None}
+    assert second.json() == {
+        "id": str(USER_ID),
+        "email": EMAIL,
+        "role": "user",
+        "store_id": None,
+        "store_role": None,
+    }
     assert stored_users(connection) == [(USER_ID, EMAIL, "user")]

@@ -20,6 +20,7 @@ from app.api import (
     ratings,
     reviews,
     staff,
+    store_roles,
     stores,
 )
 from app.core.auth import TokenVerifier
@@ -82,6 +83,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(admin_stores.stores_router)
     app.include_router(admin_stores.stock_router)
     app.include_router(staff.router)
+    app.include_router(store_roles.permissions_router)
+    app.include_router(store_roles.router)
 
     @app.get("/")
     def root() -> dict[str, str]:

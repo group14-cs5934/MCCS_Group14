@@ -11,15 +11,17 @@ call it; then each level is checked for every endpoint that has it, with real si
   known to save nothing);
 - signed_in: 401 without a valid token, works for any signed-in user;
 - admin: lives under /admin, 401 without a valid token, 403 for regular users;
-- store_staff: lives under /staff/stores/{store_id}; works for that store's workers and managers
-  and for admins; 403 for regular users and for staff of another store (migration 016);
-- store_manager: the same, except that store's workers get 403 too.
+- store_member: lives under /staff/stores/{store_id}; works for any of that store's staff, whatever
+  their role, and for admins; 403 for regular users and for staff of another store, even with
+  every permission (migrations 016 and 019);
+- store_permission: the same, but the store's staff also need one of the permissions listed for
+  it in STORE_PERMISSIONS; 403 for staff whose role has none of them.
 
 Data access is replaced by tripwires (see test_admin_access.py), so these never need a database:
 a request that gets past the access check either succeeds or trips one.
 """
 
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 from uuid import UUID
 
 import pytest
@@ -33,13 +35,15 @@ from app.repositories.audit_log import get_audit_log_repository
 from app.repositories.products import get_product_repository
 from app.repositories.ratings import get_rating_repository
 from app.repositories.reviews import get_review_repository
+from app.repositories.store_roles import get_store_role_repository
 from app.repositories.stores import get_store_repository
 from app.repositories.users import get_user_repository
+from app.schemas import Permission
 from tests.conftest import VALID_DATABASE_URL, VALID_SUPABASE_URL
 from tests.fakes import FakeUsers
 from tests.test_admin_access import ADMIN_ID, ISSUER, SHOPPER_ID, TrippedError, Tripwire, token
 
-Access = Literal["public", "signed_in", "admin", "store_staff", "store_manager"]
+Access = Literal["public", "signed_in", "admin", "store_member", "store_permission"]
 
 # Every endpoint and who may call it. Adding an endpoint means adding it here.
 ACCESS: dict[tuple[str, str], Access] = {
@@ -55,6 +59,7 @@ ACCESS: dict[tuple[str, str], Access] = {
     ("GET", "/products/{product_id}/ratings"): "public",
     ("GET", "/products/{product_id}/reviews"): "public",
     ("GET", "/me"): "signed_in",
+    ("GET", "/staff/permissions"): "signed_in",
     ("POST", "/products/{product_id}/ratings"): "signed_in",
     ("GET", "/products/{product_id}/ratings/me"): "signed_in",
     ("DELETE", "/products/{product_id}/ratings/me"): "signed_in",
@@ -77,19 +82,53 @@ ACCESS: dict[tuple[str, str], Access] = {
     ("POST", "/admin/stores"): "admin",
     ("PATCH", "/admin/stores/{store_id}"): "admin",
     ("DELETE", "/admin/stores/{store_id}"): "admin",
-    ("GET", "/staff/stores/{store_id}/stock"): "store_staff",
-    ("PUT", "/staff/stores/{store_id}/stock/{product_id}"): "store_staff",
-    ("DELETE", "/staff/stores/{store_id}/stock/{product_id}"): "store_staff",
-    ("GET", "/staff/stores/{store_id}/staff"): "store_manager",
-    ("POST", "/staff/stores/{store_id}/staff"): "store_manager",
-    ("DELETE", "/staff/stores/{store_id}/staff/{user_id}"): "store_manager",
+    ("GET", "/staff/stores/{store_id}/roles"): "store_member",
+    ("PATCH", "/staff/stores/{store_id}"): "store_permission",
+    ("GET", "/staff/stores/{store_id}/stock"): "store_permission",
+    ("PUT", "/staff/stores/{store_id}/stock/{product_id}"): "store_permission",
+    ("DELETE", "/staff/stores/{store_id}/stock/{product_id}"): "store_permission",
+    ("GET", "/staff/stores/{store_id}/staff"): "store_permission",
+    ("POST", "/staff/stores/{store_id}/staff"): "store_permission",
+    ("PATCH", "/staff/stores/{store_id}/staff/{user_id}"): "store_permission",
+    ("DELETE", "/staff/stores/{store_id}/staff/{user_id}"): "store_permission",
+    ("POST", "/staff/stores/{store_id}/roles"): "store_permission",
+    ("PATCH", "/staff/stores/{store_id}/roles/{role_id}"): "store_permission",
+    ("DELETE", "/staff/stores/{store_id}/roles/{role_id}"): "store_permission",
 }
 
-# Store staff for the store_staff and store_manager checks; requests go to store 2 (PATH_VALUES).
-WORKER_ID = UUID("c0000000-0000-4000-8000-000000000003")
-MANAGER_ID = UUID("c0000000-0000-4000-8000-000000000004")
-OTHER_STORE_WORKER_ID = UUID("c0000000-0000-4000-8000-000000000005")
-OTHER_STORE_MANAGER_ID = UUID("c0000000-0000-4000-8000-000000000006")
+# The store_permission endpoints, and the permissions that each allow (any one is enough).
+STORE_PERMISSIONS: dict[tuple[str, str], tuple[Permission, ...]] = {
+    ("PATCH", "/staff/stores/{store_id}"): ("edit_store_info",),
+    ("GET", "/staff/stores/{store_id}/stock"): ("edit_stock",),
+    ("PUT", "/staff/stores/{store_id}/stock/{product_id}"): ("edit_stock",),
+    ("DELETE", "/staff/stores/{store_id}/stock/{product_id}"): ("edit_stock",),
+    ("GET", "/staff/stores/{store_id}/staff"): ("view_staff", "manage_staff"),
+    ("POST", "/staff/stores/{store_id}/staff"): ("manage_staff",),
+    ("PATCH", "/staff/stores/{store_id}/staff/{user_id}"): ("manage_staff",),
+    ("DELETE", "/staff/stores/{store_id}/staff/{user_id}"): ("manage_staff",),
+    ("POST", "/staff/stores/{store_id}/roles"): ("manage_roles",),
+    ("PATCH", "/staff/stores/{store_id}/roles/{role_id}"): ("manage_roles",),
+    ("DELETE", "/staff/stores/{store_id}/roles/{role_id}"): ("manage_roles",),
+}
+
+ALL_PERMISSIONS: list[Permission] = list(get_args(Permission))
+NEEDED: list[tuple[Permission, ...]] = sorted(set(STORE_PERMISSIONS.values()))
+
+# Store staff for the store checks; requests go to store 2 (PATH_VALUES).
+EVERYTHING_ID = UUID("c0000000-0000-4000-8000-000000000003")  # a role with every permission
+NOTHING_ID = UUID("c0000000-0000-4000-8000-000000000004")  # a role with none
+OTHER_STORE_ID = UUID("c0000000-0000-4000-8000-000000000005")  # every permission, at store 9
+
+
+def only(permission: Permission) -> UUID:
+    """Staff at store 2 whose role has just this one permission."""
+    return UUID(f"d0000000-0000-4000-8000-{ALL_PERMISSIONS.index(permission):012d}")
+
+
+def all_but(permissions: tuple[Permission, ...]) -> UUID:
+    """Staff at store 2 whose role has every permission except these."""
+    return UUID(f"e0000000-0000-4000-8000-{NEEDED.index(permissions):012d}")
+
 
 # Public endpoints that aren't GET; each must save nothing.
 PUBLIC_NON_GET = {("POST", "/products/validate")}
@@ -100,6 +139,7 @@ PATH_VALUES = {
     "review_id": "3",
     "code": "036000291452",
     "store_id": "2",
+    "role_id": "4",
 }
 
 # A body that's valid for every endpoint that takes one, so a 422 can't hide an access check.
@@ -113,6 +153,8 @@ BODY = {
     "hidden": True,
     "in_stock": False,
     "email": "shopper@example.com",
+    "role_id": 1,
+    "permissions": ["edit_stock"],
 }
 
 
@@ -161,7 +203,12 @@ def test_store_staff_endpoints_are_exactly_the_ones_under_staff() -> None:
     # Kept out of /admin, so test_admin_access.py's "every /admin route is admins only" holds.
     under_staff = {endpoint for endpoint in ACCESS if endpoint[1].startswith("/staff/stores/")}
 
-    assert set(with_access("store_staff") + with_access("store_manager")) == under_staff
+    assert set(with_access("store_member") + with_access("store_permission")) == under_staff
+
+
+def test_every_store_permission_endpoint_lists_its_permissions() -> None:
+    assert set(STORE_PERMISSIONS) == set(with_access("store_permission"))
+    assert all(STORE_PERMISSIONS.values())
 
 
 def test_public_endpoints_never_change_data() -> None:
@@ -184,14 +231,17 @@ def users() -> FakeUsers:
     users.get_or_create(SHOPPER_ID, "shopper@example.com")
     users.get_or_create(ADMIN_ID, "admin@example.com")
     users.update(ADMIN_ID, role="admin")
-    for user_id, role, store_id in [
-        (WORKER_ID, "worker", 2),
-        (MANAGER_ID, "manager", 2),
-        (OTHER_STORE_WORKER_ID, "worker", 9),
-        (OTHER_STORE_MANAGER_ID, "manager", 9),
-    ]:
-        users.get_or_create(user_id, f"{user_id.hex[:6]}@example.com")
-        users.update(user_id, role=role, store_id=store_id)
+    staff: list[tuple[UUID, int, list[Permission]]] = [
+        (EVERYTHING_ID, 2, ALL_PERMISSIONS),
+        (NOTHING_ID, 2, []),
+        (OTHER_STORE_ID, 9, ALL_PERMISSIONS),
+    ]
+    staff += [(only(p), 2, [p]) for p in ALL_PERMISSIONS]
+    staff += [(all_but(n), 2, [p for p in ALL_PERMISSIONS if p not in n]) for n in NEEDED]
+    for role_id, (user_id, store_id, permissions) in enumerate(staff, start=1):
+        users.add_role(role_id, store_id, permissions)
+        users.get_or_create(user_id, f"{user_id.hex}@example.com")
+        users.update(user_id, role="staff", store_role_id=role_id)
     return users
 
 
@@ -209,6 +259,7 @@ def client(make_client, private_key, users) -> TestClient:
         (get_rating_repository, "ratings"),
         (get_review_repository, "reviews"),
         (get_store_repository, "stores"),
+        (get_store_role_repository, "store roles"),
         (get_audit_log_repository, "audit log"),
     ]:
         overrides[dependency] = lambda name=name: Tripwire(name)
@@ -269,7 +320,8 @@ def test_admin_endpoints_turn_away_regular_users_and_need_a_token(
     assert anonymous is not None and anonymous.status_code == 401
 
 
-STORE_LEVELS = with_access("store_staff") + with_access("store_manager")
+STORE_LEVELS = with_access("store_member") + with_access("store_permission")
+PERMISSION_LEVEL = with_access("store_permission")
 
 
 @pytest.mark.parametrize("endpoint", STORE_LEVELS, ids=ids(STORE_LEVELS))
@@ -278,37 +330,48 @@ def test_store_endpoints_turn_away_regular_users_other_stores_and_no_token(
 ) -> None:
     anonymous = call(client, *endpoint)
     as_user = call(client, *endpoint, auth=token(private_key, SHOPPER_ID))
-    other_worker = call(client, *endpoint, auth=token(private_key, OTHER_STORE_WORKER_ID))
-    other_manager = call(client, *endpoint, auth=token(private_key, OTHER_STORE_MANAGER_ID))
+    other_store = call(client, *endpoint, auth=token(private_key, OTHER_STORE_ID))
 
     assert anonymous is not None and anonymous.status_code == 401
     assert as_user is not None and as_user.status_code == 403
     assert as_user.json()["code"] == "forbidden"
-    for response in (other_worker, other_manager):
-        assert response is not None and response.status_code == 403
-        assert response.json()["code"] == "not_your_store"
+    assert other_store is not None and other_store.status_code == 403
+    assert other_store.json()["code"] == "not_your_store"
 
 
 @pytest.mark.parametrize("endpoint", STORE_LEVELS, ids=ids(STORE_LEVELS))
-def test_store_endpoints_work_for_the_stores_manager_and_admins(
+def test_store_endpoints_work_for_the_stores_staff_with_every_permission_and_admins(
     client, private_key, endpoint
 ) -> None:
-    assert passed_access_check(call(client, *endpoint, auth=token(private_key, MANAGER_ID)))
+    assert passed_access_check(call(client, *endpoint, auth=token(private_key, EVERYTHING_ID)))
     assert passed_access_check(call(client, *endpoint, auth=token(private_key, ADMIN_ID)))
 
 
 @pytest.mark.parametrize(
-    "endpoint", with_access("store_staff"), ids=ids(with_access("store_staff"))
+    "endpoint", with_access("store_member"), ids=ids(with_access("store_member"))
 )
-def test_stock_endpoints_work_for_the_stores_workers(client, private_key, endpoint) -> None:
-    assert passed_access_check(call(client, *endpoint, auth=token(private_key, WORKER_ID)))
+def test_store_member_endpoints_work_for_staff_with_no_permissions(
+    client, private_key, endpoint
+) -> None:
+    assert passed_access_check(call(client, *endpoint, auth=token(private_key, NOTHING_ID)))
 
 
-@pytest.mark.parametrize(
-    "endpoint", with_access("store_manager"), ids=ids(with_access("store_manager"))
-)
-def test_staff_endpoints_turn_away_the_stores_workers(client, private_key, endpoint) -> None:
-    response = call(client, *endpoint, auth=token(private_key, WORKER_ID))
+@pytest.mark.parametrize("endpoint", PERMISSION_LEVEL, ids=ids(PERMISSION_LEVEL))
+def test_store_permission_endpoints_work_with_any_one_of_their_permissions(
+    client, private_key, endpoint
+) -> None:
+    for permission in STORE_PERMISSIONS[endpoint]:
+        response = call(client, *endpoint, auth=token(private_key, only(permission)))
+        assert passed_access_check(response), permission
 
-    assert response is not None and response.status_code == 403
-    assert response.json()["code"] == "managers_only"
+
+@pytest.mark.parametrize("endpoint", PERMISSION_LEVEL, ids=ids(PERMISSION_LEVEL))
+def test_store_permission_endpoints_turn_away_staff_without_them(
+    client, private_key, endpoint
+) -> None:
+    # Staff with no permissions, and staff with every permission except the ones it allows.
+    for person in (NOTHING_ID, all_but(STORE_PERMISSIONS[endpoint])):
+        response = call(client, *endpoint, auth=token(private_key, person))
+
+        assert response is not None and response.status_code == 403
+        assert response.json()["code"] == "missing_permission"

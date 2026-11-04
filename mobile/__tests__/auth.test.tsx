@@ -1,8 +1,10 @@
 import { router } from 'expo-router';
+import { render } from '@testing-library/react-native';
 import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
+import { Text } from 'react-native';
 
 import { getMe } from '@/api/me';
-import { DEACTIVATED_MESSAGE } from '@/auth';
+import { AuthProvider, DEACTIVATED_MESSAGE, useAuth } from '@/auth';
 
 // T039 acceptance: users must create an account or sign in before using the app, and can sign
 // out again. Supabase is faked by __mocks__/@supabase/supabase-js.ts, and GET /me (which gives
@@ -303,5 +305,80 @@ describe('deactivated accounts', () => {
     });
     expect(await screen.findByText('Welcome back.')).toBeOnTheScreen();
     expect(screen.queryByText(DEACTIVATED_MESSAGE)).not.toBeOnTheScreen();
+  });
+});
+
+// can(permission) says what the signed-in user may do at their store: admins everything, staff what
+// their store role lists (manage_staff includes view_staff), everyone else nothing.
+describe('can()', () => {
+  const getMeMock = jest.mocked(getMe);
+  const PERMISSIONS = ['edit_stock', 'view_staff', 'manage_staff', 'manage_roles'] as const;
+
+  function Probe() {
+    const { can, isStaff, isAdmin } = useAuth();
+    return (
+      <Text>
+        {`staff:${isStaff} admin:${isAdmin} ` +
+          PERMISSIONS.map((key) => `${key}:${can(key)}`).join(' ')}
+      </Text>
+    );
+  }
+
+  /** What the Probe says once GET /me answers with this account. */
+  async function probeFor(account: Record<string, unknown>) {
+    mockAuth.reset(makeSession(EMAIL));
+    getMeMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      data: { id: 'user-1', email: EMAIL, ...account } as never,
+    });
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await act(async () => {});
+    return screen.getByText(/^staff:/).props.children as string;
+  }
+
+  const role = (permissions: string[]) => ({ id: 1, name: 'Role', permissions });
+
+  it('gives admins every permission', async () => {
+    const text = await probeFor({ role: 'admin' });
+
+    expect(text).toBe(
+      'staff:false admin:true edit_stock:true view_staff:true manage_staff:true manage_roles:true',
+    );
+  });
+
+  it('gives staff only what their store role lists', async () => {
+    const text = await probeFor({ role: 'staff', store_id: 4, store_role: role(['edit_stock']) });
+
+    expect(text).toBe(
+      'staff:true admin:false edit_stock:true view_staff:false manage_staff:false manage_roles:false',
+    );
+  });
+
+  it('counts manage_staff as view_staff, but not the other way round', async () => {
+    const manager = await probeFor({
+      role: 'staff',
+      store_id: 4,
+      store_role: role(['manage_staff']),
+    });
+    expect(manager).toContain('view_staff:true manage_staff:true');
+
+    const viewer = await probeFor({ role: 'staff', store_id: 4, store_role: role(['view_staff']) });
+    expect(viewer).toContain('view_staff:true manage_staff:false');
+  });
+
+  it('gives nothing to regular users, or to staff without a store', async () => {
+    const user = await probeFor({ role: 'user', store_role: role(['edit_stock']) });
+    expect(user).toBe(
+      'staff:false admin:false edit_stock:false view_staff:false manage_staff:false manage_roles:false',
+    );
+
+    const homeless = await probeFor({ role: 'staff', store_role: role(['edit_stock']) });
+    expect(homeless).toContain('staff:false');
+    expect(homeless).toContain('edit_stock:false');
   });
 });
