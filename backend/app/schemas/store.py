@@ -85,6 +85,22 @@ class StoreUpdate(BaseModel):
         return self
 
 
+class StaffStoreUpdate(BaseModel):
+    """Store staff changing their store's details (PATCH /staff/stores/{id}); only the fields sent
+    change, and null clears one. The name and slug stay with admins."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    address: str | None = Field(default=None, max_length=500)
+    hours: Hours = None
+
+    @model_validator(mode="after")
+    def _has_a_change(self) -> Self:
+        if not self.model_fields_set:
+            raise ValueError("send address, hours, or both")
+        return self
+
+
 class StockUpdate(BaseModel):
     """An admin setting a product's stock at one store, e.g. {"in_stock": false}."""
 

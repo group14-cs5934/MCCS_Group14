@@ -22,7 +22,7 @@ const devLinks: { label: string; href: Href }[] = [
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, isAdmin, isStaff, isManager, signOut } = useAuth();
+  const { user, isAdmin, isStaff, storeRole, signOut } = useAuth();
   const { store, loading: storeLoading } = usePreferredStore();
 
   // Admins start in the admin area: once their role loads, it opens on top of Home, so Back
@@ -90,7 +90,7 @@ export default function HomeScreen() {
         </Card>
       )}
 
-      {/* Store staff look after their store's stock (and, managers, its workers). */}
+      {/* Store staff look after their store, as far as their store role allows. */}
       {isStaff ? (
         <Button
           title="My store"
@@ -120,7 +120,7 @@ export default function HomeScreen() {
       <View style={styles.account}>
         <Text style={[textStyles.caption, { color: colors.textMuted }]}>
           Signed in as {user?.email}
-          {isAdmin ? ' · Admin' : isManager ? ' · Store manager' : isStaff ? ' · Store worker' : ''}
+          {isAdmin ? ' · Admin' : isStaff ? ` · ${storeRole?.name ?? 'Store staff'}` : ''}
         </Text>
         <Button title="Sign out" variant="text" onPress={signOut} />
       </View>

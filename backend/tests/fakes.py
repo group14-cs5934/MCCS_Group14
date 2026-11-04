@@ -10,6 +10,7 @@ from uuid import UUID
 
 from app.schemas import (
     CategoryRead,
+    Permission,
     PriceRead,
     ProductRead,
     RatingRead,
@@ -17,6 +18,8 @@ from app.schemas import (
     ReviewPage,
     ReviewRead,
     Role,
+    StoreRoleRead,
+    StoreRoleSummary,
     UserAccount,
 )
 
@@ -201,12 +204,23 @@ class FakeReviews:
 class FakeUsers:
     """Stands in for UserRepository: accounts are kept in a dict, in the order they were added.
 
-    `searches` records each list_users call as (email, limit, offset).
+    Store roles are added with add_role before anyone is given one. `searches` records each
+    list_users call as (email, limit, offset).
     """
 
     def __init__(self) -> None:
         self.accounts: dict[UUID, UserAccount] = {}
         self.searches: list[tuple[str, int, int]] = []
+        # Each role's store and the role itself, by ID.
+        self.roles: dict[int, tuple[int, StoreRoleSummary]] = {}
+
+    def add_role(
+        self, role_id: int, store_id: int, permissions: list[Permission], name: str = "Role"
+    ) -> None:
+        self.roles[role_id] = (
+            store_id,
+            StoreRoleSummary(id=role_id, name=name, permissions=permissions),
+        )
 
     def lock(self, user_id: UUID) -> bool:
         return user_id in self.accounts
@@ -232,18 +246,19 @@ class FakeUsers:
         user_id: UUID,
         role: Role | None = None,
         active: bool | None = None,
-        store_id: int | None = None,
+        store_role_id: int | None = None,
     ) -> UserAccount | None:
         account = self.accounts.get(user_id)
         if account is None:
             return None
         changes = {"role": role, "active": active}
         account = account.model_copy(update={k: v for k, v in changes.items() if v is not None})
-        # Like the real query: only workers and managers keep (or get) a store.
-        staff = account.role in ("worker", "manager")
-        account = account.model_copy(
-            update={"store_id": (store_id or account.store_id) if staff else None}
-        )
+        # Like the real query: only staff keep (or get) a store role, and its store.
+        if account.role == "staff":
+            store_id, store_role = self.roles[store_role_id or account.store_role.id]
+        else:
+            store_id, store_role = None, None
+        account = account.model_copy(update={"store_id": store_id, "store_role": store_role})
         self.accounts[user_id] = account
         return account
 
@@ -253,7 +268,10 @@ class FakeUsers:
 
     def list_staff(self, store_id: int) -> list[UserAccount]:
         staff = [a for a in self.accounts.values() if a.store_id == store_id]
-        return sorted(staff, key=lambda a: (a.role != "manager", (a.email or "").lower()))
+        return sorted(
+            staff,
+            key=lambda a: (-len(a.store_role.permissions), a.store_role.name, a.email or ""),
+        )
 
     def remove_store_staff(self, store_id: int) -> int:
         staff = self.list_staff(store_id)
@@ -271,3 +289,13 @@ class FakeAuditLog:
 
     def record(self, **entry) -> None:
         self.entries.append(entry)
+
+
+class FakeStoreRoles:
+    """Stands in for StoreRoleRepository where only roles are looked up (get)."""
+
+    def __init__(self, *roles: StoreRoleRead) -> None:
+        self.roles = {role.id: role for role in roles}
+
+    def get(self, role_id: int, *, lock: bool = False) -> StoreRoleRead | None:
+        return self.roles.get(role_id)

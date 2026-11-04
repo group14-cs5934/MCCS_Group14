@@ -9,7 +9,7 @@ import Loader from '@/components/Loader';
 import { sharedStyles } from '@/theme';
 
 /**
- * Shows its children only to store staff (workers and managers) and admins: "Checking access…"
+ * Shows its children only to store staff and admins: "Checking access…"
  * while the role loads, and "Store staff only" for everyone else. The API checks too, so this
  * isn't the only guard.
  */
@@ -32,7 +32,7 @@ export function StaffOnly() {
   return (
     <ErrorState
       title="Store staff only"
-      message="You need to work at a store to manage its stock."
+      message="You need to work at a store to manage it."
       icon="lock-closed-outline"
       style={sharedStyles.centered}
     >

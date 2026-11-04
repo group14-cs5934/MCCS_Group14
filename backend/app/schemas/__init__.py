@@ -14,7 +14,23 @@ from app.schemas.review import (
     ReviewPage,
     ReviewRead,
 )
-from app.schemas.user import STAFF_ROLES, Role, StaffAdd, UserAccount, UserRead, UserUpdate
+from app.schemas.store_role import (
+    PERMISSIONS,
+    Permission,
+    PermissionInfo,
+    StoreRoleCreate,
+    StoreRoleRead,
+    StoreRoleSummary,
+    StoreRoleUpdate,
+)
+from app.schemas.user import (
+    Role,
+    StaffAdd,
+    StaffRoleChange,
+    UserAccount,
+    UserRead,
+    UserUpdate,
+)
 
 __all__ = [
     "AuditLogEntry",
@@ -25,6 +41,9 @@ __all__ = [
     "CategoryRead",
     "ErrorAction",
     "ErrorResponse",
+    "PERMISSIONS",
+    "Permission",
+    "PermissionInfo",
     "PriceCreate",
     "PriceRead",
     "ProductCreate",
@@ -37,8 +56,12 @@ __all__ = [
     "ReviewPage",
     "ReviewRead",
     "Role",
-    "STAFF_ROLES",
     "StaffAdd",
+    "StaffRoleChange",
+    "StoreRoleCreate",
+    "StoreRoleRead",
+    "StoreRoleSummary",
+    "StoreRoleUpdate",
     "UserAccount",
     "UserRead",
     "UserUpdate",

@@ -16,18 +16,33 @@ ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email
 WHERE users.email IS DISTINCT FROM EXCLUDED.email
 """
 
-_COLUMNS = "id, email, role, store_id, created_at, deactivated_at IS NULL AS active"
+# Each user with their store role (staff only), as UserAccount expects it.
+_SELECT = """
+SELECT u.id, u.email, u.role, u.store_id, u.created_at, u.deactivated_at IS NULL AS active,
+    CASE WHEN r.id IS NOT NULL
+        THEN json_build_object('id', r.id, 'name', r.name, 'permissions', r.permissions)
+    END AS store_role
+FROM users AS u
+LEFT JOIN store_roles AS r ON r.id = u.store_role_id
+"""
 
-# Changes only what's given: a NULL role, store_id, or active keeps the current value. Only
-# workers and managers have a store (migration 016), so any other role clears it. Deactivating an
-# already deactivated user keeps the original time.
-_UPDATE = f"""
+# Changes only what's given: a NULL role, store_role_id, or active keeps the current value. Staff
+# have a store role and that role's store (migration 019), so any other role clears both. A role
+# ID that doesn't exist leaves staff without a store, which the database refuses; callers check
+# it first. Deactivating an already deactivated user keeps the original time.
+_UPDATE = """
 UPDATE users SET
     role = COALESCE(%(role)s::text, role),
+    store_role_id = CASE
+        WHEN COALESCE(%(role)s::text, role) = 'staff'
+            THEN COALESCE(%(store_role_id)s::integer, store_role_id)
+    END,
     store_id = CASE
-        WHEN COALESCE(%(role)s::text, role) IN ('worker', 'manager')
-            THEN COALESCE(%(store_id)s::integer, store_id)
-        ELSE NULL
+        WHEN COALESCE(%(role)s::text, role) = 'staff'
+            THEN (
+                SELECT r.store_id FROM store_roles AS r
+                WHERE r.id = COALESCE(%(store_role_id)s::integer, users.store_role_id)
+            )
     END,
     deactivated_at = CASE
         WHEN %(active)s::boolean IS NULL THEN deactivated_at
@@ -35,7 +50,6 @@ UPDATE users SET
         ELSE COALESCE(deactivated_at, NOW())
     END
 WHERE id = %(id)s
-RETURNING {_COLUMNS}
 """
 
 
@@ -50,7 +64,7 @@ class UserRepository:
         every request, so role changes and deactivation take effect on the user's next request."""
         with self._connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(_UPSERT, (user_id, email))
-            cursor.execute(f"SELECT {_COLUMNS} FROM users WHERE id = %s", (user_id,))
+            cursor.execute(f"{_SELECT} WHERE u.id = %s", (user_id,))
             row = cursor.fetchone()
         return UserAccount.model_validate(row)
 
@@ -65,7 +79,7 @@ class UserRepository:
     def get(self, user_id: UUID) -> UserAccount | None:
         """The user with this ID, or None if there isn't one."""
         with self._connection.cursor(row_factory=dict_row) as cursor:
-            cursor.execute(f"SELECT {_COLUMNS} FROM users WHERE id = %s", (user_id,))
+            cursor.execute(f"{_SELECT} WHERE u.id = %s", (user_id,))
             row = cursor.fetchone()
         return UserAccount.model_validate(row) if row is not None else None
 
@@ -77,9 +91,9 @@ class UserRepository:
             return []
         with self._connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
-                f"SELECT {_COLUMNS} FROM users "
-                "WHERE %(email)s = '' OR position(%(email)s IN lower(email)) > 0 "
-                "ORDER BY created_at, id LIMIT %(limit)s OFFSET %(offset)s",
+                f"{_SELECT} "
+                "WHERE %(email)s = '' OR position(%(email)s IN lower(u.email)) > 0 "
+                "ORDER BY u.created_at, u.id LIMIT %(limit)s OFFSET %(offset)s",
                 {"email": email, "limit": limit, "offset": offset},
             )
             return [UserAccount.model_validate(row) for row in cursor.fetchall()]
@@ -89,17 +103,16 @@ class UserRepository:
         user_id: UUID,
         role: Role | None = None,
         active: bool | None = None,
-        store_id: int | None = None,
+        store_role_id: int | None = None,
     ) -> UserAccount | None:
-        """Change the user's role and/or store, and/or deactivate (active=False) or reactivate
-        them. A worker or manager needs a store (given here, or the one they have); any other
-        role clears it. None if there's no user with this ID."""
-        with self._connection.cursor(row_factory=dict_row) as cursor:
-            cursor.execute(
-                _UPDATE, {"id": user_id, "role": role, "active": active, "store_id": store_id}
-            )
-            row = cursor.fetchone()
-        return UserAccount.model_validate(row) if row is not None else None
+        """Change the user's role and/or store role, and/or deactivate (active=False) or
+        reactivate them. Staff need a store role (given here, or the one they have), and their
+        store is that role's; any other role clears both. None if there's no user with this ID."""
+        cursor = self._connection.execute(
+            _UPDATE,
+            {"id": user_id, "role": role, "active": active, "store_role_id": store_role_id},
+        )
+        return self.get(user_id) if cursor.rowcount else None
 
     def find_by_email(self, email: str) -> UserAccount | None:
         """The user with exactly this email (any case), or None."""
@@ -108,27 +121,30 @@ class UserRepository:
             return None
         with self._connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
-                f"SELECT {_COLUMNS} FROM users WHERE lower(email) = %s ORDER BY created_at LIMIT 1",
+                f"{_SELECT} WHERE lower(u.email) = %s ORDER BY u.created_at LIMIT 1",
                 (email,),
             )
             row = cursor.fetchone()
         return UserAccount.model_validate(row) if row is not None else None
 
     def list_staff(self, store_id: int) -> list[UserAccount]:
-        """The store's managers, then its workers, each by email."""
+        """The store's staff: those whose role can do the most first, then by role name and
+        email."""
         with self._connection.cursor(row_factory=dict_row) as cursor:
             cursor.execute(
-                f"SELECT {_COLUMNS} FROM users WHERE store_id = %s "
-                "ORDER BY role = 'manager' DESC, lower(email), id",
+                f"{_SELECT} WHERE u.store_id = %s "
+                "ORDER BY cardinality(r.permissions) DESC, lower(r.name), lower(u.email), u.id",
                 (store_id,),
             )
             return [UserAccount.model_validate(row) for row in cursor.fetchall()]
 
     def remove_store_staff(self, store_id: int) -> int:
-        """Make every worker and manager at this store a regular user again (before the store is
-        deleted); returns how many there were."""
+        """Make all of this store's staff regular users again (before the store is deleted);
+        returns how many there were."""
         cursor = self._connection.execute(
-            "UPDATE users SET role = 'user', store_id = NULL WHERE store_id = %s", (store_id,)
+            "UPDATE users SET role = 'user', store_id = NULL, store_role_id = NULL "
+            "WHERE store_id = %s",
+            (store_id,),
         )
         return cursor.rowcount
 

@@ -1,19 +1,21 @@
 import { useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { updateUser, type ApiError } from '@/api';
 import Badge from '@/components/Badge';
 import Button from '@/components/Button';
 import Card from '@/components/Card';
+import Choices from '@/components/Choices';
 import ErrorBanner from '@/components/ErrorBanner';
-import { colors, radius, spacing, textStyles } from '@/theme';
+import Loader from '@/components/Loader';
+import { useApiGet } from '@/hooks/useApiGet';
+import { colors, spacing, textStyles } from '@/theme';
 import type { Store } from '@/types/store';
-import { STAFF_ROLES, type AdminUserAccount, type Role, type UserUpdateBody } from '@/types/user';
+import type { AdminUserAccount, Role, StoreRole, UserUpdateBody } from '@/types/user';
 
 const ROLE_LABELS: Record<Role, string> = {
   user: 'User',
-  worker: 'Worker',
-  manager: 'Manager',
+  staff: 'Staff',
   admin: 'Admin',
 };
 
@@ -37,18 +39,24 @@ function changesFor(user: AdminUserAccount, email: string): Change[] {
   ];
 }
 
-/** The role an admin is choosing for someone, and (for workers and managers) their store. */
-type RoleDraft = { role: Role; storeId: number | null };
+/**
+ * The account type an admin is choosing for someone and, for staff, their store and the role they
+ * will have there.
+ */
+type RoleDraft = {
+  role: Role;
+  storeId: number | null;
+  storeRoleId: number | null;
+  storeRoleName: string | null;
+};
 
-/** What saving the draft will do, e.g. "Make a@b.com a worker at Quantico MCX?". */
+/** What saving the draft will do, e.g. "Make a@b.com Manager at Quantico MCX?". */
 function roleQuestion(draft: RoleDraft, email: string, storeName: string): string {
   switch (draft.role) {
     case 'admin':
       return `Make ${email} an admin? They'll be able to manage products, users and reviews.`;
-    case 'manager':
-      return `Make ${email} a manager at ${storeName}? They'll edit its stock and add or remove its workers.`;
-    case 'worker':
-      return `Make ${email} a worker at ${storeName}? They'll edit its stock.`;
+    case 'staff':
+      return `Make ${email} ${draft.storeRoleName} at ${storeName}? They'll get that role's permissions.`;
     default:
       return `Make ${email} a regular user? They'll lose any admin or store access.`;
   }
@@ -101,9 +109,10 @@ export default function AdminUserRow({ user, stores, isSelf, onUpdated, onDenied
   const storeName = (storeId: number | null | undefined) =>
     stores.find((store) => store.id === storeId)?.name ??
     (storeId ? `store #${storeId}` : 'an unknown store');
-  const isStaff = STAFF_ROLES.includes(user.role);
+  const isStaff = user.role === 'staff';
+  const staffRoleName = user.store_role?.name ?? ROLE_LABELS.staff;
   const roleText = isStaff
-    ? `${ROLE_LABELS[user.role]} at ${storeName(user.store_id)}`
+    ? `${staffRoleName} at ${storeName(user.store_id)}`
     : ROLE_LABELS[user.role];
   const status = [isSelf ? 'You' : null, roleText, user.active ? null : 'Deactivated']
     .filter(Boolean)
@@ -116,12 +125,17 @@ export default function AdminUserRow({ user, stores, isSelf, onUpdated, onDenied
 
   function editRole() {
     setError(null);
-    setDraft({ role: user.role, storeId: user.store_id ?? null });
+    setDraft({
+      role: user.role,
+      storeId: user.store_id ?? null,
+      storeRoleId: user.store_role?.id ?? null,
+      storeRoleName: user.store_role?.name ?? null,
+    });
   }
 
   function saveRole(next: RoleDraft) {
     const body: UserUpdateBody = { role: next.role };
-    if (STAFF_ROLES.includes(next.role) && next.storeId !== null) body.store_id = next.storeId;
+    if (next.role === 'staff' && next.storeRoleId !== null) body.store_role_id = next.storeRoleId;
     apply({ label: 'Save role', body, question: '' });
   }
 
@@ -158,7 +172,9 @@ export default function AdminUserRow({ user, stores, isSelf, onUpdated, onDenied
         </View>
         <View style={styles.badges}>
           {isSelf ? <Badge label="You" tone="accent" /> : null}
-          {user.role === 'user' ? null : <Badge label={ROLE_LABELS[user.role]} tone="accent" />}
+          {user.role === 'user' ? null : (
+            <Badge label={isStaff ? staffRoleName : ROLE_LABELS[user.role]} tone="accent" />
+          )}
           {user.active ? null : <Badge label="Deactivated" tone="danger" />}
         </View>
       </View>
@@ -170,7 +186,10 @@ export default function AdminUserRow({ user, stores, isSelf, onUpdated, onDenied
           stores={stores}
           storeName={storeName(draft.storeId)}
           saving={saving}
-          unchanged={draft.role === user.role && draft.storeId === (user.store_id ?? null)}
+          unchanged={
+            draft.role === user.role &&
+            (draft.role !== 'staff' || draft.storeRoleId === (user.store_role?.id ?? null))
+          }
           onChange={setDraft}
           onCancel={() => setDraft(null)}
           onSave={() => saveRole(draft)}
@@ -245,12 +264,12 @@ function RoleEditor({
   onCancel: () => void;
   onSave: () => void;
 }) {
-  const needsStore = STAFF_ROLES.includes(draft.role);
-  const ready = !unchanged && (!needsStore || draft.storeId !== null);
+  const needsRole = draft.role === 'staff';
+  const ready = !unchanged && (!needsRole || draft.storeRoleId !== null);
   return (
     <View style={styles.confirm}>
       <Choices
-        label={`Role for ${email}`}
+        label={`Account type for ${email}`}
         options={(Object.keys(ROLE_LABELS) as Role[]).map((role) => ({
           key: role,
           label: ROLE_LABELS[role],
@@ -258,18 +277,34 @@ function RoleEditor({
         selected={draft.role}
         onSelect={(role) => onChange({ ...draft, role })}
       />
-      {needsStore ? (
+      {needsRole ? (
         <Choices
           label={`Store for ${email}`}
           options={stores.map((store) => ({ key: store.id, label: store.name }))}
           selected={draft.storeId}
-          onSelect={(storeId) => onChange({ ...draft, storeId })}
+          // Roles belong to a store, so choosing another store clears the role.
+          onSelect={(storeId) =>
+            onChange({ ...draft, storeId, storeRoleId: null, storeRoleName: null })
+          }
+        />
+      ) : null}
+      {needsRole && draft.storeId !== null ? (
+        <StoreRoleChoices
+          key={draft.storeId}
+          email={email}
+          storeId={draft.storeId}
+          selected={draft.storeRoleId}
+          onSelect={(role) =>
+            onChange({ ...draft, storeRoleId: role.id, storeRoleName: role.name })
+          }
         />
       ) : null}
       {ready ? (
         <Text style={styles.question}>{roleQuestion(draft, email, storeName)}</Text>
-      ) : needsStore && draft.storeId === null ? (
+      ) : needsRole && draft.storeId === null ? (
         <Text style={styles.caption}>Choose their store.</Text>
+      ) : needsRole && draft.storeRoleId === null ? (
+        <Text style={styles.caption}>Choose their role at the store.</Text>
       ) : null}
       <View style={styles.actions}>
         <Button
@@ -293,41 +328,30 @@ function RoleEditor({
   );
 }
 
-/** A labelled row of options with one chosen, e.g. the roles. */
-function Choices<T extends string | number>({
-  label,
-  options,
+/** The roles of the chosen store (GET /staff/stores/{id}/roles, which admins may call). */
+function StoreRoleChoices({
+  email,
+  storeId,
   selected,
   onSelect,
 }: {
-  label: string;
-  options: { key: T; label: string }[];
-  selected: T | null;
-  onSelect: (key: T) => void;
+  email: string;
+  storeId: number;
+  selected: number | null;
+  onSelect: (role: StoreRole) => void;
 }) {
+  const { loading, data, error, reload } = useApiGet<StoreRole[]>(`/staff/stores/${storeId}/roles`);
+  if (loading) return <Loader message="Loading roles…" size="small" />;
+  if (error) return <ErrorBanner message={error.message} onRetry={reload} />;
+  const roles = data ?? [];
+  if (roles.length === 0) return <Text style={styles.caption}>This store has no roles yet.</Text>;
   return (
-    <View style={styles.choiceGroup}>
-      <Text style={styles.caption}>{label}</Text>
-      <View style={styles.choices} accessibilityRole="radiogroup" accessibilityLabel={label}>
-        {options.map((option) => {
-          const isSelected = option.key === selected;
-          return (
-            <Pressable
-              key={option.key}
-              onPress={() => onSelect(option.key)}
-              accessibilityRole="radio"
-              accessibilityLabel={option.label}
-              accessibilityState={{ checked: isSelected }}
-              style={[styles.choice, isSelected && styles.choiceSelected]}
-            >
-              <Text style={[styles.choiceText, isSelected && styles.choiceTextSelected]}>
-                {option.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-    </View>
+    <Choices
+      label={`Role for ${email}`}
+      options={roles.map((role) => ({ key: role.id, label: role.name }))}
+      selected={selected}
+      onSelect={(id) => onSelect(roles.find((role) => role.id === id)!)}
+    />
   );
 }
 
@@ -370,32 +394,5 @@ const styles = StyleSheet.create({
   },
   action: {
     alignSelf: 'auto',
-  },
-  choiceGroup: {
-    gap: spacing.xs,
-  },
-  choices: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  choice: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  choiceSelected: {
-    borderColor: colors.accent,
-    backgroundColor: colors.accentSoft,
-  },
-  choiceText: {
-    ...textStyles.label,
-    color: colors.textSecondary,
-  },
-  choiceTextSelected: {
-    color: colors.accent,
   },
 });

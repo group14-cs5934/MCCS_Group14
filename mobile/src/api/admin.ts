@@ -35,8 +35,9 @@ export function clearStock(productId: number, storeId: number, options?: CallOpt
 }
 
 /**
- * PATCH /admin/users/{id}: changes a user's role and/or deactivates or reactivates them (404
- * user_not_found; 409 cannot_change_own_account for an admin's own role or account).
+ * PATCH /admin/users/{id}: changes a user's account type (and, for staff, their store role) and/or
+ * deactivates or reactivates them (404 user_not_found or store_role_not_found; 409
+ * cannot_change_own_account for an admin's own role or account; 422 store_role_required).
  */
 export function updateUser(userId: string, body: UserUpdateBody, options?: CallOptions) {
   return api.patch<AdminUserAccount>(`/admin/users/${userId}`, body, options);

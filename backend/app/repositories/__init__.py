@@ -4,6 +4,7 @@ from app.repositories.audit_log import AuditLog, AuditLogRepository
 from app.repositories.products import ProductRepository, Products
 from app.repositories.ratings import RatingRepository, Ratings
 from app.repositories.reviews import ReviewRepository, Reviews
+from app.repositories.store_roles import StoreRoleRepository, StoreRoles
 from app.repositories.stores import StoreRepository, Stores
 from app.repositories.users import UserRepository, Users
 
@@ -17,6 +18,8 @@ __all__ = [
     "ReviewRepository",
     "Reviews",
     "StoreRepository",
+    "StoreRoleRepository",
+    "StoreRoles",
     "Stores",
     "UserRepository",
     "Users",

@@ -29,4 +29,15 @@ export {
 export { getMe } from './me';
 export { getMyRating, rateProduct, removeMyRating } from './ratings';
 export { getMyReview, getReviews, postReview } from './reviews';
-export { addWorker, clearStoreStock, removeStaff, setStoreStock } from './staff';
+export {
+  addStaff,
+  changeStaffRole,
+  clearStoreStock,
+  createStoreRole,
+  deleteStoreRole,
+  removeStaff,
+  setStoreStock,
+  updateStoreInfo,
+  updateStoreRole,
+} from './staff';
+export type { StoreRoleBody } from './staff';
