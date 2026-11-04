@@ -134,3 +134,59 @@ def test_command_reports_the_mix(db_url, connection, catalog, caplog) -> None:
 
     assert "Added 8 demo stores" in caplog.text
     assert f"Wrote {len(catalog) * 8} stock rows" in caplog.text
+
+
+# --- Simulated history, for restock alerts (migration 020) ---
+
+
+def test_history_is_repeatable_and_hits_sell_out_more_often() -> None:
+    first = generate_store_stock.simulated_history(7, 3)
+
+    assert generate_store_stock.simulated_history(7, 3) == first
+    assert first.events[0][0] == 90  # starts 90 days ago
+    assert all(quantity >= 0 for _, _, _, quantity in first.events)
+    stockouts = [
+        sum(
+            not in_stock
+            for _, _, in_stock, _ in generate_store_stock.simulated_history(p, 1).events
+        )
+        for p in range(1, 301)
+    ]
+    # Some products run out again and again, most rarely.
+    assert max(stockouts) >= 5
+    assert sorted(stockouts)[len(stockouts) // 2] <= 2
+
+
+def test_history_is_written_and_todays_stock_is_where_it_ends(connection, catalog) -> None:
+    generate(connection)
+    # One product's stock at one store was set by hand, so it's left alone.
+    (admin_set,) = connection.execute(
+        "UPDATE product_stock SET admin_set_at = NOW() WHERE product_id = %s AND store_id = "
+        "(SELECT min(id) FROM store_locations) RETURNING store_id",
+        (catalog[0],),
+    ).fetchone()
+
+    counts = generate_store_stock.simulate_history(connection, days=30)
+    again = generate_store_stock.simulate_history(connection, days=30)  # replaces, not adds
+    connection.commit()
+
+    assert counts == again
+    assert counts["pairs"] == len(catalog) * len(DEMO_STORES) - 1
+    (events,) = connection.execute(
+        "SELECT count(*) FROM stock_events WHERE changed_at < NOW() - INTERVAL '1 hour'"
+    ).fetchone()
+    assert events == counts["events"]
+    assert connection.execute("SELECT count(*) FROM product_activity").fetchone() == (
+        counts["activity_days"],
+    )
+    product_id, store_id = catalog[1], admin_set
+    last = connection.execute(
+        "SELECT in_stock, quantity FROM stock_events WHERE product_id = %s AND store_id = %s "
+        "ORDER BY changed_at DESC, id DESC LIMIT 1",
+        (product_id, store_id),
+    ).fetchone()
+    now = connection.execute(
+        "SELECT in_stock, quantity FROM product_stock WHERE product_id = %s AND store_id = %s",
+        (product_id, store_id),
+    ).fetchone()
+    assert now == last

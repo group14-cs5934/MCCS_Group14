@@ -34,6 +34,8 @@ client, signed_in = store_staff.client, store_staff.signed_in
 stores, team = store_staff.stores, store_staff.team
 
 EVERY_PERMISSION = [p.key for p in PERMISSIONS]
+# Every permission there was when migration 019 ran (020 added more).
+PERMISSIONS_IN_019 = ["edit_stock", "view_staff", "manage_staff", "manage_roles", "edit_store_info"]
 
 
 def roles_url(store_id: int) -> str:
@@ -276,4 +278,4 @@ def test_existing_managers_and_workers_keep_their_access(schema_before_019) -> N
     roles = connection.execute(
         "SELECT name, permissions FROM store_roles WHERE store_id = %s ORDER BY name", (store_id,)
     ).fetchall()
-    assert roles == [("Manager", EVERY_PERMISSION), ("Worker", ["edit_stock"])]
+    assert roles == [("Manager", PERMISSIONS_IN_019), ("Worker", ["edit_stock"])]

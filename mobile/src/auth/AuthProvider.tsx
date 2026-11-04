@@ -171,7 +171,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (permission: string) =>
       role === 'admin' ||
       permissions.includes(permission) ||
-      (permission === PERMISSIONS.viewStaff && permissions.includes(PERMISSIONS.manageStaff)),
+      (permission === PERMISSIONS.viewStaff && permissions.includes(PERMISSIONS.manageStaff)) ||
+      (permission === PERMISSIONS.viewRestock && permissions.includes(PERMISSIONS.requestRestock)),
     [role, permissions],
   );
 

@@ -136,7 +136,9 @@ async function press(name: string) {
 }
 
 const postCalls = () =>
-  fetchMock.mock.calls.filter(([, init]) => (init as RequestInit).method === 'POST');
+  fetchMock.mock.calls.filter(
+    ([url, init]) => (init as RequestInit).method === 'POST' && !url.endsWith('/activity'),
+  );
 
 it('posts a valid review, which then appears in the list', async () => {
   await openReviews();

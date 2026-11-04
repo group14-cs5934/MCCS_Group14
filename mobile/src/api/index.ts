@@ -30,6 +30,16 @@ export { getMe } from './me';
 export { getMyRating, rateProduct, removeMyRating } from './ratings';
 export { getMyReview, getReviews, postReview } from './reviews';
 export {
+  cancelRestockRequest,
+  getRestockItems,
+  getRestockRequests,
+  getRestockSummary,
+  recordActivity,
+  requestRestock,
+  setDefaultReorderPoint,
+  setReorderPoint,
+} from './restock';
+export {
   addStaff,
   changeStaffRole,
   clearStoreStock,
