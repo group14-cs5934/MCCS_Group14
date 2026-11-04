@@ -20,6 +20,7 @@ from app.api import (
     ratings,
     restock,
     reviews,
+    shopping,
     staff,
     store_roles,
     stores,
@@ -87,6 +88,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(store_roles.permissions_router)
     app.include_router(store_roles.router)
     app.include_router(restock.router)
+    app.include_router(shopping.router)
 
     @app.get("/")
     def root() -> dict[str, str]:

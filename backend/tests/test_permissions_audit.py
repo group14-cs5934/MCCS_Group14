@@ -36,6 +36,7 @@ from app.repositories.products import get_product_repository
 from app.repositories.ratings import get_rating_repository
 from app.repositories.restock import get_restock_repository
 from app.repositories.reviews import get_review_repository
+from app.repositories.shopping import get_shopping_repository
 from app.repositories.store_roles import get_store_role_repository
 from app.repositories.stores import get_store_repository
 from app.repositories.users import get_user_repository
@@ -61,6 +62,20 @@ ACCESS: dict[tuple[str, str], Access] = {
     ("GET", "/products/{product_id}/reviews"): "public",
     ("POST", "/products/{product_id}/activity"): "public",  # anonymous view and scan counts
     ("GET", "/me"): "signed_in",
+    ("DELETE", "/me/cart"): "signed_in",
+    ("DELETE", "/me/cart/{product_id}"): "signed_in",
+    ("DELETE", "/me/saved/{product_id}"): "signed_in",
+    ("GET", "/me/cart"): "signed_in",
+    ("GET", "/me/cart/check"): "signed_in",
+    ("GET", "/me/orders"): "signed_in",
+    ("GET", "/me/orders/{order_id}"): "signed_in",
+    ("GET", "/me/saved"): "signed_in",
+    ("GET", "/me/saved/{product_id}"): "signed_in",
+    ("POST", "/me/cart/{product_id}"): "signed_in",
+    ("POST", "/me/cart/{product_id}/save-for-later"): "signed_in",
+    ("POST", "/me/orders"): "signed_in",
+    ("PUT", "/me/cart/{product_id}"): "signed_in",
+    ("PUT", "/me/saved/{product_id}"): "signed_in",
     ("GET", "/staff/permissions"): "signed_in",
     ("POST", "/products/{product_id}/ratings"): "signed_in",
     ("GET", "/products/{product_id}/ratings/me"): "signed_in",
@@ -157,6 +172,7 @@ PATH_VALUES = {
     "code": "036000291452",
     "store_id": "2",
     "role_id": "4",
+    "order_id": "5",
 }
 
 # A body that's valid for every endpoint that takes one, so a 422 can't hide an access check.
@@ -278,6 +294,7 @@ def client(make_client, private_key, users) -> TestClient:
         (get_store_repository, "stores"),
         (get_store_role_repository, "store roles"),
         (get_restock_repository, "restock"),
+        (get_shopping_repository, "shopping"),
         (get_audit_log_repository, "audit log"),
     ]:
         overrides[dependency] = lambda name=name: Tripwire(name)
