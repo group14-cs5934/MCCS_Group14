@@ -3,6 +3,7 @@ import { Tabs } from 'expo-router';
 import type { ComponentProps } from 'react';
 import type { ColorValue } from 'react-native';
 
+import { useCartCount } from '@/hooks/useCartCount';
 import { colors, fonts } from '@/theme';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
@@ -22,8 +23,10 @@ function tabIcon(name: IconName, focusedName: IconName) {
   };
 }
 
-/** Bottom tab bar: Home, Scan, Saved (matches the mockups). */
+/** Bottom tab bar: Home, Scan, Saved, Cart (the first three match the mockups). */
 export default function TabLayout() {
+  const { count } = useCartCount();
+
   return (
     <Tabs
       screenOptions={{
@@ -55,8 +58,16 @@ export default function TabLayout() {
         name="saved"
         options={{
           title: 'Saved',
-          headerTitle: 'Saved Products',
           tabBarIcon: tabIcon('bookmark-outline', 'bookmark'),
+        }}
+      />
+      <Tabs.Screen
+        name="cart"
+        options={{
+          title: 'Cart',
+          tabBarIcon: tabIcon('cart-outline', 'cart'),
+          tabBarBadge: count > 0 ? count : undefined,
+          tabBarBadgeStyle: { fontFamily: fonts.bold },
         }}
       />
     </Tabs>

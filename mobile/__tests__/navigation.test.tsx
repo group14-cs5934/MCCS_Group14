@@ -22,6 +22,42 @@ jest.mock('@/hooks/useProductSearch', () => ({
   }),
 }));
 
+// The Saved tab lists one saved product, Sample Chips (ID 1), and the cart is empty.
+const SAVED = [
+  {
+    product: {
+      id: 1,
+      barcode: '036000291452',
+      name: 'Sample Chips',
+      size: '12 oz',
+      image_url: null,
+      price: '3.49',
+    },
+    saved_at: '2026-11-01T12:00:00Z',
+    in_cart: false,
+  },
+];
+const EMPTY_CART = { items: [], item_count: 0, subtotal: null, unpriced_items: 0 };
+const fetchMock = jest.fn(async (url: string) => {
+  const { pathname } = new URL(url);
+  const body = pathname === '/me/saved' ? SAVED : pathname === '/me/cart' ? EMPTY_CART : undefined;
+  return {
+    ok: body !== undefined,
+    status: body !== undefined ? 200 : 404,
+    headers: { get: () => null },
+    text: async () => JSON.stringify(body ?? { code: 'not_found', message: 'Not Found' }),
+  } as unknown as Response;
+});
+const originalFetch = globalThis.fetch;
+
+beforeAll(() => {
+  globalThis.fetch = fetchMock as unknown as typeof fetch;
+});
+
+afterAll(() => {
+  globalThis.fetch = originalFetch;
+});
+
 /** Tab bar buttons are announced as e.g. "Scan, tab, 2 of 3". */
 const tab = (name: string) => screen.getByRole('button', { name: new RegExp(`^${name}, tab`) });
 
@@ -39,7 +75,12 @@ describe('navigation shell', () => {
     fireEvent.press(tab('Saved'));
     expect(screen).toHavePathname('/saved');
     expect(tab('Saved')).toBeSelected();
-    expect(screen.getByText('Saved Products')).toBeOnTheScreen();
+    expect(await screen.findByText('Sample Chips')).toBeOnTheScreen();
+
+    fireEvent.press(tab('Cart'));
+    expect(screen).toHavePathname('/cart');
+    expect(tab('Cart')).toBeSelected();
+    expect(await screen.findByText('Your cart is empty')).toBeOnTheScreen();
 
     fireEvent.press(tab('Home'));
     expect(screen).toHavePathname('/');
@@ -62,8 +103,8 @@ describe('navigation shell', () => {
 
     await screen.findByText('Scan & compare.');
     fireEvent.press(tab('Saved'));
-    fireEvent.press(screen.getByText('Open a saved product'));
-    expect(screen).toHavePathname('/product/sample-oatly');
+    fireEvent.press(await screen.findByRole('button', { name: 'Open Sample Chips' }));
+    expect(screen).toHavePathname('/product/1');
 
     act(() => router.back());
     expect(screen).toHavePathname('/saved');

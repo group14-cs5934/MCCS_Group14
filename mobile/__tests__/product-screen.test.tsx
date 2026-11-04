@@ -57,13 +57,14 @@ const RATINGS_PATH = /\/products\/\d+\/ratings$/;
 const MY_RATING_PATH = /\/products\/\d+\/ratings\/me$/;
 const AVAILABILITY_PATH = /\/products\/\d+\/availability$/;
 const ACTIVITY_PATH = /\/products\/\d+\/activity$/;
+const SAVED_PATH = /\/me\/saved\/\d+$/;
 
 /** What GET /products/{id}/ratings answers; each test starts with no ratings. */
 let ratings: RatingSummary | Error = { product_id: 1, average: null, count: 0 };
 
 /**
  * The product requests made (the page also asks for the product's ratings and which stores have
- * it once it loads, and counts the view).
+ * it once it loads, counts the view, and asks whether it's saved).
  */
 const productRequests = () =>
   fetchMock.mock.calls.filter(
@@ -71,7 +72,8 @@ const productRequests = () =>
       !RATINGS_PATH.test(url) &&
       !MY_RATING_PATH.test(url) &&
       !AVAILABILITY_PATH.test(url) &&
-      !ACTIVITY_PATH.test(url),
+      !ACTIVITY_PATH.test(url) &&
+      !SAVED_PATH.test(url),
   );
 
 /** The URLs requested, in order. */
@@ -85,6 +87,9 @@ beforeEach(() => {
   fetchMock.mockImplementation(async (url) => {
     if (MY_RATING_PATH.test(url)) {
       return jsonResponse(404, { code: 'rating_not_found', message: 'Not rated' });
+    }
+    if (SAVED_PATH.test(url)) {
+      return jsonResponse(404, { code: 'not_saved', message: 'Not saved' }); // see cart.test.tsx
     }
     if (AVAILABILITY_PATH.test(url)) {
       return jsonResponse(200, { product_id: 1, stores: [] }); // see store-availability.test.tsx

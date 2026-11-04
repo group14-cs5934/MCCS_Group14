@@ -13,3 +13,14 @@ jest.mock('@/api/me', () => ({
     data: { id: 'user-1', email: 'shopper@example.com', role: 'user' },
   })),
 }));
+
+// CartCountProvider calls GET /me/cart whenever someone is signed in, for the Cart tab's badge.
+// Stub it for the same reason: the cart is empty unless a test says otherwise (cart.test.tsx).
+jest.mock('@/api/cart', () => ({
+  ...jest.requireActual('@/api/cart'),
+  getCart: jest.fn(async () => ({
+    ok: true,
+    status: 200,
+    data: { items: [], item_count: 0, subtotal: null, unpriced_items: 0 },
+  })),
+}));

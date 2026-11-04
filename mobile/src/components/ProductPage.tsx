@@ -15,6 +15,7 @@ import type { ErrorAction } from '@/api';
 import AsyncContent from '@/components/AsyncContent';
 import Button from '@/components/Button';
 import ErrorState from '@/components/ErrorState';
+import ProductActions from '@/components/ProductActions';
 import RateProduct from '@/components/RateProduct';
 import ReviewForm from '@/components/ReviewForm';
 import ReviewList from '@/components/ReviewList';
@@ -208,6 +209,11 @@ function ProductDetails({ product }: { product: Product }) {
           ) : (
             <Text style={styles.unavailable}>No price yet</Text>
           )}
+        </View>
+
+        <View style={styles.actions}>
+          {/* Keyed so another product starts with fresh Save / Added state. */}
+          <ProductActions key={product.id} productId={product.id} />
         </View>
 
         {/* Saving a rating reloads the average above, so it includes the new one. */}
@@ -425,6 +431,9 @@ const styles = StyleSheet.create({
   productName: {
     ...textStyles.title,
     color: colors.textPrimary,
+  },
+  actions: {
+    marginBottom: spacing.xl,
   },
   ratingRow: {
     minHeight: 24,

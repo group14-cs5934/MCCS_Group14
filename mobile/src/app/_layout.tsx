@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 
 import { AuthProvider, useAuth } from '@/auth';
+import { CartCountProvider } from '@/hooks/useCartCount';
 import { PreferredStoreProvider } from '@/hooks/usePreferredStore';
 import { colors, fontAssets, fonts } from '@/theme';
 
@@ -15,7 +16,9 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <PreferredStoreProvider>
-        <RootNavigator />
+        <CartCountProvider>
+          <RootNavigator />
+        </CartCountProvider>
       </PreferredStoreProvider>
     </AuthProvider>
   );
@@ -66,6 +69,13 @@ function RootNavigator() {
           <Stack.Screen name="admin" options={{ title: 'Admin' }} />
           <Stack.Screen name="my-store" options={{ title: 'My store' }} />
           <Stack.Screen name="admin-product/[id]" options={{ title: 'Product' }} />
+          <Stack.Screen name="checkout" options={{ title: 'Checkout' }} />
+          <Stack.Screen
+            name="order-confirmation/[id]"
+            options={{ title: 'Order placed', headerBackVisible: false }}
+          />
+          <Stack.Screen name="orders" options={{ title: 'Your orders' }} />
+          <Stack.Screen name="order/[id]" options={{ title: 'Order' }} />
           <Stack.Screen name="theme-preview" options={{ title: 'Theme preview' }} />
         </Stack.Protected>
         <Stack.Protected guard={!signedIn}>
