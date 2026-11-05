@@ -31,13 +31,17 @@ ORDER BY COALESCE(ps.in_stock, FALSE) DESC, s.name, s.id
 """
 
 
-# The same, with when an admin set each row (T094).
+# The same, with when an admin set each row (T094) and whether it's running low (at or below
+# the store's reorder point, as in the restock list).
 _ADMIN_AVAILABILITY = f"""
 SELECT {_STORE_COLUMNS},
        COALESCE(ps.in_stock, FALSE) AS in_stock, ps.quantity, ps.aisle, ps.updated_at,
-       ps.admin_set_at
+       ps.admin_set_at,
+       COALESCE(ps.in_stock AND ps.quantity <= COALESCE(rp.reorder_point, s.default_reorder_point),
+           FALSE) AS low
 FROM store_locations AS s
 LEFT JOIN product_stock AS ps ON ps.store_id = s.id AND ps.product_id = %s
+LEFT JOIN reorder_points AS rp ON rp.product_id = ps.product_id AND rp.store_id = s.id
 ORDER BY COALESCE(ps.in_stock, FALSE) DESC, s.name, s.id
 """
 

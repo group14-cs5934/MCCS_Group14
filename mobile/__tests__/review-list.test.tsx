@@ -117,12 +117,13 @@ async function scrollToBottom() {
 
 const shownReviews = () => screen.queryAllByText(/^Review \d+$/).map((node) => node.props.children);
 
-it("doesn't ask for reviews until the Reviews tab is opened", async () => {
+it('opens on the Reviews tab and asks for the first page right away', async () => {
   renderRouter('src/app', { initialUrl: '/product/1' });
   await screen.findByText(PRODUCT.name);
 
-  expect(api.requests).toEqual([]);
-  expect(screen.getByText('UPC')).toBeOnTheScreen();
+  expect(screen.getByRole('tab', { name: 'Reviews' })).toBeSelected();
+  expect(await screen.findByText('25 reviews')).toBeOnTheScreen();
+  expect(api.requests).toEqual([{ offset: 0, limit: 10 }]);
 });
 
 it('shows the first 10 reviews, newest first', async () => {
@@ -132,7 +133,6 @@ it('shows the first 10 reviews, newest first', async () => {
   expect(shownReviews()).toEqual(Array.from({ length: 10 }, (_, i) => `Review ${25 - i}`));
   expect(api.requests).toEqual([{ offset: 0, limit: 10 }]);
   expect(screen.getByRole('tab', { name: 'Reviews' })).toBeSelected();
-  expect(screen.queryByText('UPC')).toBeNull();
 });
 
 it('shows the title, author, date, and stars of a review', async () => {
@@ -198,10 +198,10 @@ it('loads the next page with Show more reviews too', async () => {
   expect(await screen.findByText('Review 6')).toBeOnTheScreen();
 });
 
-it("doesn't load more while the Overview tab is showing", async () => {
+it("doesn't load more while the Stores tab is showing", async () => {
   await openReviews();
   await screen.findByText('Review 16');
-  await act(async () => fireEvent.press(screen.getByRole('tab', { name: 'Overview' })));
+  await act(async () => fireEvent.press(screen.getByRole('tab', { name: 'Stores' })));
 
   await scrollToBottom();
 

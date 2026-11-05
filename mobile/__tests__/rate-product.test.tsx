@@ -204,7 +204,9 @@ describe('when not signed in', () => {
     await openProduct();
     await screen.findByText('Sign in to rate this product.');
 
-    await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Sign In' })));
+    // The review form below (the Reviews tab is open) offers Sign In too.
+    const [signIn] = screen.getAllByRole('button', { name: 'Sign In' });
+    await act(async () => fireEvent.press(signIn));
 
     expect(await screen.findByText('Welcome back.')).toBeOnTheScreen();
     expect(screen).toHavePathname('/sign-in');

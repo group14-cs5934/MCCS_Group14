@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
   getRestockItems,
@@ -10,7 +10,6 @@ import {
 } from '@/api';
 import Button from '@/components/Button';
 import Card from '@/components/Card';
-import Choices from '@/components/Choices';
 import ErrorBanner from '@/components/ErrorBanner';
 import Loader from '@/components/Loader';
 import RestockItemCard, { formatDate } from '@/components/RestockItemCard';
@@ -18,18 +17,13 @@ import { ProductPhoto } from '@/components/SearchResultsList';
 import TextField from '@/components/TextField';
 import { changeError, isAccessLost, type OnDenied } from '@/components/storeAccess';
 import { useApiGet } from '@/hooks/useApiGet';
-import { colors, spacing, textStyles } from '@/theme';
+import { colors, radius, sharedStyles, sizes, spacing, textStyles } from '@/theme';
 import type { RestockFilter, RestockItem, RestockRequest, RestockSummary } from '@/types/restock';
 
 /** Most rows loaded at once (the API's limit); "Show more" loads the next page. */
 export const RESTOCK_PAGE_SIZE = 50;
 
 type Pane = 'items' | 'requests';
-
-const VIEWS: { key: Pane; label: string }[] = [
-  { key: 'items', label: 'Low and out' },
-  { key: 'requests', label: 'Requests' },
-];
 
 const FILTERS: { key: RestockFilter; label: string }[] = [
   { key: 'all', label: 'All' },
@@ -42,6 +36,8 @@ type Props = {
   /** Whether they may request reorders and change reorder points (request_restock). */
   canRequest: boolean;
   onDenied: OnDenied;
+  /** The store's restock summary, loaded by My store so its header tiles share this copy. */
+  summary: ReturnType<typeof useApiGet<RestockSummary>>;
 };
 
 /**
@@ -49,8 +45,12 @@ type Props = {
  * people with view_restock. With request_restock they can also request and cancel reorders and
  * change reorder points.
  */
-export default function StoreRestockSection({ storeId, canRequest, onDenied }: Props) {
+export default function StoreRestockSection({ storeId, canRequest, onDenied, summary }: Props) {
   const [view, setView] = useState<Pane>('items');
+  const refused = summary.error?.status === 403 ? summary.error.code : null;
+  useEffect(() => {
+    if (refused !== null) onDenied(refused);
+  }, [refused, onDenied]);
   const [filter, setFilter] = useState<RestockFilter>('all');
   const [allRequests, setAllRequests] = useState(false);
   // Changing the store's default reorder point changes which products are low: load the list again.
@@ -73,15 +73,27 @@ export default function StoreRestockSection({ storeId, canRequest, onDenied }: P
   return (
     <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.section}>
       <DefaultPoint
+        summary={summary}
         storeId={storeId}
         canRequest={canRequest}
         onDenied={onDenied}
-        onChanged={() => setVersion((count) => count + 1)}
+        onChanged={() => {
+          setVersion((count) => count + 1);
+          summary.reload();
+        }}
       />
-      <Choices label="Show" options={VIEWS} selected={view} onSelect={setView} />
+      <FilterChips
+        counts={summary.data}
+        view={view}
+        filter={filter}
+        onFilter={(next) => {
+          setView('items');
+          setFilter(next);
+        }}
+        onRequests={() => setView('requests')}
+      />
       {view === 'items' ? (
         <>
-          <Choices label="Filter" options={FILTERS} selected={filter} onSelect={setFilter} />
           <PagedList<RestockItem>
             key={`items:${filter}:${version}`}
             load={loadItems}
@@ -95,6 +107,7 @@ export default function StoreRestockSection({ storeId, canRequest, onDenied }: P
                 item={item}
                 canRequest={canRequest}
                 onDenied={onDenied}
+                onChanged={summary.reload}
               />
             )}
           />
@@ -124,17 +137,18 @@ export default function StoreRestockSection({ storeId, canRequest, onDenied }: P
 
 /** The store's default reorder point, which people with request_restock can change. */
 function DefaultPoint({
+  summary,
   storeId,
   canRequest,
   onDenied,
   onChanged,
 }: {
+  summary: ReturnType<typeof useApiGet<RestockSummary>>;
   storeId: number;
   canRequest: boolean;
   onDenied: OnDenied;
   onChanged: () => void;
 }) {
-  const summary = useApiGet<RestockSummary>(`/staff/stores/${storeId}/restock/summary`);
   // The value just saved, until the summary loads again.
   const [saved, setSaved] = useState<number | null>(null);
   const [editing, setEditing] = useState(false);
@@ -142,12 +156,8 @@ function DefaultPoint({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const busy = useRef(false);
-  const refused = summary.error?.status === 403 ? summary.error.code : null;
-  useEffect(() => {
-    if (refused !== null) onDenied(refused);
-  }, [refused, onDenied]);
 
-  if (refused !== null) return null;
+  if (summary.error?.status === 403) return null;
   const current = saved ?? summary.data?.default_reorder_point;
   if (current === undefined) {
     return summary.error ? (
@@ -184,11 +194,6 @@ function DefaultPoint({
 
   return (
     <Card style={styles.card}>
-      <Text style={styles.body}>
-        {summary.data
-          ? `${summary.data.out} out · ${summary.data.low} low · ${summary.data.open_requests} requested`
-          : ''}
-      </Text>
       {editing ? (
         <>
           <TextField
@@ -230,6 +235,57 @@ function DefaultPoint({
         </View>
       )}
     </Card>
+  );
+}
+
+/** All, Out and Low (with how many), and a Requests link that switches to the request list. */
+function FilterChips({
+  counts,
+  view,
+  filter,
+  onFilter,
+  onRequests,
+}: {
+  counts: RestockSummary | null;
+  view: Pane;
+  filter: RestockFilter;
+  onFilter: (filter: RestockFilter) => void;
+  onRequests: () => void;
+}) {
+  const count = (key: RestockFilter) =>
+    counts ? (key === 'all' ? counts.out + counts.low : counts[key]) : null;
+  return (
+    <View style={styles.chips} accessibilityRole="radiogroup" accessibilityLabel="Filter">
+      {FILTERS.map((option) => {
+        const selected = view === 'items' && filter === option.key;
+        const number = count(option.key);
+        return (
+          <Pressable
+            key={option.key}
+            onPress={() => onFilter(option.key)}
+            accessibilityRole="radio"
+            accessibilityLabel={number === null ? option.label : `${option.label} ${number}`}
+            accessibilityState={{ checked: selected }}
+            style={[styles.chip, selected && styles.chipSelected]}
+          >
+            <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+              {number === null ? option.label : `${option.label} ${number}`}
+            </Text>
+          </Pressable>
+        );
+      })}
+      <Pressable
+        onPress={onRequests}
+        accessibilityRole="radio"
+        accessibilityLabel="Requests"
+        accessibilityState={{ checked: view === 'requests' }}
+        style={styles.requests}
+      >
+        <Text style={[sharedStyles.link, view === 'requests' && styles.requestsSelected]}>
+          Requests
+        </Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -367,6 +423,39 @@ const styles = StyleSheet.create({
   },
   left: {
     alignSelf: 'flex-start',
+  },
+  chips: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  chip: {
+    minHeight: sizes.touch,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  chipSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary,
+  },
+  chipText: {
+    ...textStyles.label,
+    color: colors.textPrimary,
+  },
+  chipTextSelected: {
+    color: colors.textOnPrimary,
+  },
+  requests: {
+    marginLeft: 'auto',
+    minHeight: sizes.touch,
+    justifyContent: 'center',
+  },
+  requestsSelected: {
+    textDecorationLine: 'underline',
   },
   actions: {
     flexDirection: 'row',

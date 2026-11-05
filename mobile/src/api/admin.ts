@@ -1,4 +1,10 @@
-import type { AdminProduct, AdminProductBody, AdminProductStock, StockBody } from '@/types/admin';
+import type {
+  AdminProduct,
+  AdminProductBody,
+  AdminProductStock,
+  AdminStoreStock,
+  StockBody,
+} from '@/types/admin';
 import type { AdminReview } from '@/types/review';
 import type { AdminUserAccount, UserUpdateBody } from '@/types/user';
 
@@ -14,6 +20,11 @@ export function updateProduct(productId: number, body: AdminProductBody, options
   return api.patch<AdminProduct>(`/admin/products/${productId}`, body, options);
 }
 
+/** DELETE /admin/products/{id}: removes a product for good (404 product_not_found). */
+export function deleteProduct(productId: number, options?: CallOptions) {
+  return api.delete(`/admin/products/${productId}`, options);
+}
+
 /** GET /admin/products/{id}/stock: the product at every store, with which ones an admin set. */
 export function getProductStock(productId: number, options?: CallOptions) {
   return api.get<AdminProductStock>(`/admin/products/${productId}/stock`, options);
@@ -26,7 +37,7 @@ export function setStock(
   body: StockBody,
   options?: CallOptions,
 ) {
-  return api.put(`/admin/products/${productId}/stock/${storeId}`, body, options);
+  return api.put<AdminStoreStock>(`/admin/products/${productId}/stock/${storeId}`, body, options);
 }
 
 /** DELETE /admin/products/{id}/stock/{store_id}: hands a store's stock back to automatic updates. */

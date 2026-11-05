@@ -26,9 +26,32 @@ export const sharedStyles = StyleSheet.create({
   },
   card: {
     backgroundColor: colors.surface,
-    borderRadius: radius.lg,
+    borderRadius: radius.xl,
     padding: spacing.lg,
     ...shadows.card,
+  },
+  /** Navy band at the top of Home, store tools and admin, rounded at the bottom. */
+  headerBand: {
+    backgroundColor: colors.header,
+    borderBottomLeftRadius: radius.xxl,
+    borderBottomRightRadius: radius.xxl,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl,
+    gap: spacing.lg,
+  },
+  /** "Recently scanned", "Recent activity": section titles above a list. */
+  sectionTitle: {
+    ...textStyles.subheading,
+    color: colors.textPrimary,
+  },
+  /** Small rounded status label, e.g. "In stock". Pair with a status color and its soft fill. */
+  pill: {
+    ...textStyles.pill,
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xxs,
+    borderRadius: radius.pill,
+    overflow: 'hidden',
   },
   divider: {
     height: StyleSheet.hairlineWidth,
@@ -52,7 +75,7 @@ export const sharedStyles = StyleSheet.create({
   },
   price: {
     ...textStyles.price,
-    color: colors.accent,
+    color: colors.textPrimary,
   },
   link: {
     ...textStyles.bodyStrong,

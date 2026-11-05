@@ -49,7 +49,7 @@ export default function CameraPermissionGate({ children }: Props) {
       title="Search manually"
       variant="secondary"
       icon="search-outline"
-      onPress={() => router.push('/search')}
+      onPress={() => router.navigate('/search')}
     />
   );
 

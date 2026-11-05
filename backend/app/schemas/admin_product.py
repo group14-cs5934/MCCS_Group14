@@ -68,11 +68,25 @@ class AdminProductUpdate(BaseModel):
         return changes
 
 
+class StockSummary(BaseModel):
+    """How a product stands across every store, for the admin product list."""
+
+    stores: int = Field(ge=0, description="Every store")
+    in_stock: int = Field(ge=0, description="Stores where it's in stock")
+    low: int = Field(ge=0, description="Of those, at or below the store's reorder point")
+    out: int = Field(ge=0, description="Stores where it's marked out of stock")
+    unknown: int = Field(ge=0, description="Stores with no stock record for it")
+
+
 class AdminProductRead(ProductRead):
-    """A product as admins see it: also which fields an admin set, so the sync leaves them."""
+    """A product as admins see it: also which fields an admin set, so the sync leaves them, and
+    its stock across the stores."""
 
     admin_fields: list[str] = Field(
         default=[],
         description="Fields an admin set; the product sync doesn't change them (T089)",
         examples=[["name", "price"]],
+    )
+    stock: StockSummary | None = Field(
+        default=None, description="Its stock across every store (null when not loaded)"
     )

@@ -110,6 +110,10 @@ async function fakeApi(url: string, init: RequestInit): Promise<Response> {
     return found ? jsonResponse(200, found) : jsonResponse(404, { code: 'product_not_found' });
   }
   match = path.match(/^\/admin\/products\/(\d+)$/);
+  if (match && method === 'DELETE') {
+    products.delete(Number(match[1]));
+    return jsonResponse(204, null);
+  }
   if (match && method === 'PATCH') {
     const id = Number(match[1]);
     const updated = { ...products.get(id)!, ...body, updated_at: new Date().toISOString() };
@@ -130,7 +134,7 @@ async function fakeApi(url: string, init: RequestInit): Promise<Response> {
         store: STORES.find((store) => store.id === storeId)!,
         in_stock: body.in_stock,
         quantity: body.quantity ?? null,
-        aisle: null,
+        aisle: body.aisle ?? null,
         updated_at: AT,
         admin_set_at: AT,
       });
@@ -193,10 +197,23 @@ async function openNewForm() {
   await screen.findByLabelText('Barcode (required)');
 }
 
-async function openEditForm(id = 7) {
+const openTab = (name: string) => fireEvent.press(screen.getByRole('tab', { name }));
+
+/** Opens the product's page, on its Stock tab. */
+async function openProduct(id = 7) {
   renderRouter('src/app', { initialUrl: `/admin-product/${id}` });
-  await screen.findByDisplayValue('Sample Chips');
+  await screen.findByText('Sample Chips');
 }
+
+/** Opens the product's page and switches to its Details tab. */
+async function openEditForm(id = 7) {
+  await openProduct(id);
+  openTab('Details');
+}
+
+/** Opens one store's row on the Stock tab for editing. */
+const openStore = (store: string) =>
+  fireEvent.press(screen.getByRole('button', { name: new RegExp(`^${store}`) }));
 
 describe('adding a product', () => {
   it('won’t submit when required fields are missing', async () => {
@@ -251,8 +268,11 @@ describe('adding a product', () => {
     // It opens the new product for editing, showing what was saved.
     expect(await screen.findByText('Product added.')).toBeOnTheScreen();
     expect(screen).toHavePathname('/admin-product/101');
-    expect(screen.getByDisplayValue('Coca-Cola Classic')).toBeOnTheScreen();
-    expect(screen.getByRole('radio', { name: 'Camp Lejeune MCX: Out of stock' })).toBeChecked();
+    expect(screen.getByText('Coca-Cola Classic')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: /^Camp Lejeune MCX, Out/ })).toBeOnTheScreen();
+    expect(
+      screen.getByRole('button', { name: /^Quantico MCX, In stock, 5 on hand/ }),
+    ).toBeOnTheScreen();
   });
 
   it('shows a taken barcode on the barcode field', async () => {
@@ -282,29 +302,6 @@ describe('editing a product', () => {
     expect(screen.getByDisplayValue('Classic Chips')).toBeOnTheScreen();
   });
 
-  it('saves stock changes, and hands a store back to automatic updates', async () => {
-    stock.set('7:1', {
-      store: STORES[0],
-      in_stock: false,
-      quantity: null,
-      aisle: null,
-      updated_at: AT,
-      admin_set_at: AT, // an admin marked it out of stock earlier
-    });
-    await openEditForm();
-    expect(screen.getByRole('radio', { name: 'Camp Lejeune MCX: Out of stock' })).toBeChecked();
-
-    chooseStock('Camp Lejeune MCX', 'Automatic');
-    chooseStock('Quantico MCX', 'Out of stock');
-    await press('Save changes');
-
-    expect(sent).toEqual([
-      { method: 'DELETE', path: '/admin/products/7/stock/1', body: undefined },
-      { method: 'PUT', path: '/admin/products/7/stock/2', body: { in_stock: false } },
-    ]);
-    expect(await screen.findByText('Saved.')).toBeOnTheScreen();
-  });
-
   it('won’t submit if a required field is emptied', async () => {
     await openEditForm();
     fill('Name (required)', '  ');
@@ -315,12 +312,201 @@ describe('editing a product', () => {
     expect(sent).toEqual([]);
   });
 
+  it('deletes the product after a confirmation, and goes back', async () => {
+    await openEditForm();
+
+    await press('Delete product');
+    expect(sent).toEqual([]);
+    await press('Confirm delete');
+
+    expect(sent).toEqual([{ method: 'DELETE', path: '/admin/products/7', body: undefined }]);
+    expect(products.has(7)).toBe(false);
+  });
+
+  it('doesn’t delete when the confirmation is cancelled', async () => {
+    await openEditForm();
+
+    await press('Delete product');
+    await press('Cancel');
+
+    expect(screen.getByRole('button', { name: 'Delete product' })).toBeOnTheScreen();
+    expect(sent).toEqual([]);
+  });
+
   it('links to the product in the app', async () => {
     await openEditForm();
 
     await press('View in app');
 
     expect(screen).toHavePathname('/product/7');
+  });
+});
+
+describe('a product’s stock', () => {
+  beforeEach(() => {
+    stock.set('7:1', {
+      store: STORES[0],
+      in_stock: true,
+      quantity: 12,
+      aisle: 'Aisle 4',
+      updated_at: AT,
+      admin_set_at: AT, // an admin set it earlier
+    });
+  });
+
+  it('opens on the Stock tab, listing every store with its status, quantity and aisle', async () => {
+    await openProduct();
+
+    expect(screen.getByRole('tab', { name: 'Stock' })).toBeSelected();
+    expect(
+      screen.getByRole('button', {
+        name: 'Camp Lejeune MCX, In stock, 12 on hand · Aisle 4, Admin set',
+      }),
+    ).toBeOnTheScreen();
+    expect(screen.getByText('Admin set: automatic updates leave it alone')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Quantico MCX, No record' })).toBeOnTheScreen();
+    expect(sent).toEqual([]);
+  });
+
+  it('shows Low where the store is at its reorder point', async () => {
+    stock.set('7:2', {
+      store: STORES[1],
+      in_stock: true,
+      quantity: 2,
+      aisle: null,
+      updated_at: AT,
+      admin_set_at: null,
+      low: true,
+    });
+    await openProduct();
+
+    expect(screen.getByRole('button', { name: 'Quantico MCX, Low, 2 on hand' })).toBeOnTheScreen();
+  });
+
+  it('changes one store’s quantity and updates its row', async () => {
+    await openProduct();
+
+    openStore('Camp Lejeune MCX');
+    fill('Quantity at Camp Lejeune MCX', '20');
+    fill('Aisle at Camp Lejeune MCX', 'Aisle 9');
+    await press('Save stock at Camp Lejeune MCX');
+
+    expect(sent).toEqual([
+      {
+        method: 'PUT',
+        path: '/admin/products/7/stock/1',
+        body: { in_stock: true, quantity: 20, aisle: 'Aisle 9' },
+      },
+    ]);
+    expect(
+      await screen.findByRole('button', {
+        name: 'Camp Lejeune MCX, In stock, 20 on hand · Aisle 9, Admin set',
+      }),
+    ).toBeOnTheScreen();
+    // The row closes once saved.
+    expect(screen.queryByLabelText('Quantity at Camp Lejeune MCX')).not.toBeOnTheScreen();
+  });
+
+  it('clears the aisle when its box is emptied (leaving it out would keep the old one)', async () => {
+    await openProduct();
+
+    openStore('Camp Lejeune MCX');
+    fill('Aisle at Camp Lejeune MCX', '');
+    await press('Save stock at Camp Lejeune MCX');
+
+    expect(sent).toEqual([
+      expect.objectContaining({
+        method: 'PUT',
+        path: '/admin/products/7/stock/1',
+        body: expect.objectContaining({ in_stock: true, aisle: null }),
+      }),
+    ]);
+  });
+
+  it('steps the quantity up and down', async () => {
+    await openProduct();
+
+    openStore('Camp Lejeune MCX');
+    fireEvent.press(screen.getByRole('button', { name: 'Increase quantity at Camp Lejeune MCX' }));
+    expect(screen.getByDisplayValue('13')).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole('button', { name: 'Decrease quantity at Camp Lejeune MCX' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Decrease quantity at Camp Lejeune MCX' }));
+    expect(screen.getByDisplayValue('11')).toBeOnTheScreen();
+  });
+
+  it('marks a store out of stock, hiding the quantity', async () => {
+    await openProduct();
+
+    openStore('Camp Lejeune MCX');
+    fireEvent.press(screen.getByRole('radio', { name: 'Camp Lejeune MCX: Out of stock' }));
+    expect(screen.queryByLabelText('Quantity at Camp Lejeune MCX')).not.toBeOnTheScreen();
+    await press('Save stock at Camp Lejeune MCX');
+
+    expect(sent).toEqual([
+      {
+        method: 'PUT',
+        path: '/admin/products/7/stock/1',
+        body: { in_stock: false, aisle: 'Aisle 4' },
+      },
+    ]);
+    expect(await screen.findByRole('button', { name: /^Camp Lejeune MCX, Out/ })).toBeOnTheScreen();
+  });
+
+  it('won’t send a quantity that isn’t a whole number above 0', async () => {
+    await openProduct();
+
+    openStore('Camp Lejeune MCX');
+    fill('Quantity at Camp Lejeune MCX', '0');
+    await press('Save stock at Camp Lejeune MCX');
+
+    expect(screen.getByText('Enter a whole number above 0, or leave it empty.')).toBeOnTheScreen();
+    expect(sent).toEqual([]);
+  });
+
+  it('removes an admin-set record, handing the store back to automatic updates', async () => {
+    await openProduct();
+
+    openStore('Camp Lejeune MCX');
+    await press('Remove record at Camp Lejeune MCX');
+
+    expect(sent).toEqual([
+      { method: 'DELETE', path: '/admin/products/7/stock/1', body: undefined },
+    ]);
+    expect(
+      await screen.findByRole('button', { name: /^Camp Lejeune MCX, In stock/ }),
+    ).toBeOnTheScreen();
+    expect(screen.queryByText('Admin set: automatic updates leave it alone')).not.toBeOnTheScreen();
+  });
+
+  it('offers no Remove record for a store without one', async () => {
+    await openProduct();
+
+    openStore('Quantico MCX');
+
+    expect(
+      screen.queryByRole('button', { name: 'Remove record at Quantico MCX' }),
+    ).not.toBeOnTheScreen();
+  });
+
+  it('keeps one store open at a time', async () => {
+    await openProduct();
+
+    openStore('Camp Lejeune MCX');
+    openStore('Quantico MCX');
+
+    expect(screen.queryByLabelText('Quantity at Camp Lejeune MCX')).not.toBeOnTheScreen();
+    expect(screen.getByLabelText('Quantity at Quantico MCX')).toBeOnTheScreen();
+  });
+
+  it('says when a store’s stock couldn’t be saved, and leaves the row open', async () => {
+    failStockAt = 1;
+    await openProduct();
+
+    openStore('Camp Lejeune MCX');
+    await press('Save stock at Camp Lejeune MCX');
+
+    expect(await screen.findByText(/^Couldn't save stock at Camp Lejeune MCX/)).toBeOnTheScreen();
+    expect(screen.getByLabelText('Quantity at Camp Lejeune MCX')).toBeOnTheScreen();
   });
 });
 
@@ -352,32 +538,15 @@ describe('when saving only partly works', () => {
       ),
     ).toBeOnTheScreen();
     expect(screen).toHavePathname('/admin-product/101');
-    // Saving again edits the product it created; it doesn't try to add it a second time.
+    // It can be set again from the Stock tab; the product isn't added a second time.
     sent = [];
     failStockAt = null;
-    chooseStock('Quantico MCX', 'Out of stock');
-    await press('Save changes');
+    openStore('Quantico MCX');
+    fireEvent.press(screen.getByRole('radio', { name: 'Quantico MCX: Out of stock' }));
+    await press('Save stock at Quantico MCX');
     expect(sent).toEqual([
       { method: 'PUT', path: '/admin/products/101/stock/2', body: { in_stock: false } },
     ]);
-  });
-
-  it('reloads after an edit whose stock partly failed, so a retry only sends what’s left', async () => {
-    failStockAt = 2;
-    await openEditForm();
-    fill('Name (required)', 'Classic Chips');
-    chooseStock('Quantico MCX', 'Out of stock');
-
-    await press('Save changes');
-
-    expect(await screen.findByText(/^Saved, except the stock at Quantico MCX/)).toBeOnTheScreen();
-    sent = [];
-    failStockAt = null;
-    chooseStock('Quantico MCX', 'Out of stock');
-    await press('Save changes');
-    expect(sent).toEqual([
-      { method: 'PUT', path: '/admin/products/7/stock/2', body: { in_stock: false } },
-    ]); // the name was already saved, so it isn't sent again
   });
 });
 

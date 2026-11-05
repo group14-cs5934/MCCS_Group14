@@ -19,6 +19,7 @@ export { checkHealth } from './health';
 export {
   clearStock,
   createProduct,
+  deleteProduct,
   deleteReview,
   getProductStock,
   setReviewHidden,
@@ -26,6 +27,8 @@ export {
   updateProduct,
   updateUser,
 } from './admin';
+export { createStore, deleteStore, updateStore } from './adminStores';
+export type { StoreBody } from './adminStores';
 export { getMe } from './me';
 export { getMyRating, rateProduct, removeMyRating } from './ratings';
 export { getMyReview, getReviews, postReview } from './reviews';

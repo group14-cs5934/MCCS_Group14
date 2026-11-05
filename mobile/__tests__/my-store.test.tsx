@@ -333,13 +333,14 @@ describe('staff with only edit_stock', () => {
 
   it('open their store from Home, and see Stock but nothing else', async () => {
     renderRouter('src/app');
+    fireEvent.press(await screen.findByRole('button', { name: 'Account' }));
     const button = await screen.findByRole('button', { name: 'My store' });
-    expect(screen.getByText(/· Worker$/)).toBeOnTheScreen();
+    expect(screen.getByText('Worker')).toBeOnTheScreen();
 
     await act(async () => fireEvent.press(button));
 
     expect(screen).toHavePathname('/my-store');
-    expect(await screen.findByText('Your role here: Worker')).toBeOnTheScreen();
+    expect(await screen.findByText('Store tools · Worker')).toBeOnTheScreen();
     expect(await screen.findByText('Sample Chips')).toBeOnTheScreen();
     expect(screen.queryByRole('tab')).not.toBeOnTheScreen();
   });
@@ -732,7 +733,7 @@ describe('admins', () => {
     const quantico = await screen.findByRole('button', { name: 'Manage Quantico MCX' });
     await act(async () => fireEvent.press(quantico));
 
-    expect(await screen.findByText('Managing as an admin')).toBeOnTheScreen();
+    expect(await screen.findByText('Store tools · Admin')).toBeOnTheScreen();
     expect(await screen.findByText('Sample Chips')).toBeOnTheScreen();
     for (const tab of ['Stock', 'Staff', 'Roles', 'Store info']) {
       expect(screen.getByRole('tab', { name: tab })).toBeOnTheScreen();

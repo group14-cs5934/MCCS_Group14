@@ -1,9 +1,9 @@
+import { Stack } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '@/auth';
 import AsyncContent from '@/components/AsyncContent';
-import Button from '@/components/Button';
 import Card from '@/components/Card';
 import StaffGate, { StaffOnly } from '@/components/StaffGate';
 import RestockBadge from '@/components/RestockBadge';
@@ -18,7 +18,8 @@ import type { OnDenied } from '@/components/storeAccess';
 import { useApiGet } from '@/hooks/useApiGet';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { SEARCH_DEBOUNCE_MS, SEARCH_MAX_LENGTH } from '@/hooks/useProductSearch';
-import { colors, sharedStyles, spacing, textStyles } from '@/theme';
+import { colors, radius, sharedStyles, sizes, spacing, textStyles } from '@/theme';
+import type { RestockSummary } from '@/types/restock';
 import type { StaffStockRow, Store } from '@/types/store';
 import { PERMISSIONS } from '@/types/user';
 
@@ -87,6 +88,12 @@ function MyStore() {
   const [saved, setSaved] = useState<Record<number, Store>>({});
   // Staff always act on their own store; admins choose one.
   const storeId = isAdmin ? pickedStoreId : ownStoreId;
+  // One copy of the restock summary for the header tiles and the Restock section, so a reorder
+  // request, a cancel or a new default point reloads both.
+  const showRestock = can(PERMISSIONS.viewRestock) && !lost.includes('restock');
+  const restockSummary = useApiGet<RestockSummary>(
+    storeId !== null && showRestock ? `/staff/stores/${storeId}/restock/summary` : null,
+  );
 
   if (denied) return <StaffOnly />;
   if (storeId === null) {
@@ -100,22 +107,32 @@ function MyStore() {
 
   return (
     <>
-      <View style={styles.header}>
-        <Text style={sharedStyles.title}>{storeName}</Text>
-        <Text style={styles.caption}>
-          {isAdmin
-            ? 'Managing as an admin'
-            : storeRole
-              ? `Your role here: ${storeRole.name}`
-              : 'You work at this store'}
-        </Text>
+      {/* Navy and untitled, so the bar runs into the navy band below (only in this normal state). */}
+      <Stack.Screen
+        options={{
+          title: '',
+          headerBackTitle: 'Back',
+          headerStyle: { backgroundColor: colors.header },
+          headerTintColor: colors.textOnHeader,
+        }}
+      />
+      <View style={[sharedStyles.headerBand, styles.band]}>
+        <View style={styles.headerText}>
+          <Text style={styles.storeName}>{storeName}</Text>
+          <Text style={styles.headerCaption}>
+            {`Store tools · ${isAdmin ? 'Admin' : (storeRole?.name ?? 'Staff')}`}
+          </Text>
+        </View>
+        {showRestock ? <RestockStats summary={restockSummary.data} /> : null}
         {isAdmin ? (
-          <Button
-            title="Choose another store"
-            variant="text"
+          <Pressable
             onPress={() => setPickedStoreId(null)}
-            style={styles.left}
-          />
+            accessibilityRole="button"
+            accessibilityLabel="Choose another store"
+            style={styles.switchStore}
+          >
+            <Text style={styles.switchStoreText}>Choose another store</Text>
+          </Pressable>
         ) : null}
       </View>
 
@@ -137,6 +154,7 @@ function MyStore() {
           storeId={storeId}
           canRequest={can(PERMISSIONS.requestRestock)}
           onDenied={handlers.restock}
+          summary={restockSummary}
         />
       ) : current?.key === 'staff' ? (
         <StoreStaffSection storeId={storeId} storeName={storeName} onDenied={handlers.staff} />
@@ -154,6 +172,26 @@ function MyStore() {
         </Text>
       )}
     </>
+  );
+}
+
+/** Out of stock, running low and open reorders at the store, in the header. */
+function RestockStats({ summary: data }: { summary: RestockSummary | null }) {
+  if (!data) return null;
+  const tiles = [
+    { label: 'Out of stock', value: data.out },
+    { label: 'Running low', value: data.low },
+    { label: 'Reorders open', value: data.open_requests },
+  ];
+  return (
+    <View style={styles.tiles}>
+      {tiles.map((tile) => (
+        <View key={tile.label} style={styles.tile}>
+          <Text style={styles.tileValue}>{tile.value}</Text>
+          <Text style={styles.tileLabel}>{tile.label}</Text>
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -259,17 +297,51 @@ function stockCountText(count: number, query: string): string {
 }
 
 const styles = StyleSheet.create({
-  header: {
+  band: {
+    paddingTop: spacing.md,
+  },
+  headerText: {
     gap: spacing.xxs,
-    marginHorizontal: spacing.xl,
-    marginTop: spacing.lg,
+  },
+  storeName: {
+    ...textStyles.heading,
+    color: colors.textOnHeader,
+  },
+  headerCaption: {
+    ...textStyles.caption,
+    color: colors.textOnHeaderMuted,
+  },
+  tiles: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  tile: {
+    flex: 1,
+    gap: spacing.xxs,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.headerChip,
+  },
+  tileValue: {
+    ...textStyles.heading,
+    color: colors.textOnHeader,
+  },
+  tileLabel: {
+    ...textStyles.caption,
+    color: colors.textOnHeaderMuted,
+  },
+  switchStore: {
+    alignSelf: 'flex-start',
+    minHeight: sizes.touch,
+    justifyContent: 'center',
+  },
+  switchStoreText: {
+    ...textStyles.label,
+    color: colors.textOnHeader,
   },
   caption: {
     ...textStyles.caption,
     color: colors.textSecondary,
-  },
-  left: {
-    alignSelf: 'flex-start',
   },
   search: {
     marginHorizontal: spacing.xl,

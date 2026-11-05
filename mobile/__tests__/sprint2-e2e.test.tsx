@@ -90,6 +90,13 @@ async function fakeApi(url: string): Promise<Response> {
   if (pathname.endsWith('/ratings')) {
     return jsonResponse(200, { product_id: id, average: 4.5, count: 2 });
   }
+  // The product page opens on its Reviews tab: nobody has reviewed anything.
+  if (pathname.endsWith('/reviews')) {
+    return jsonResponse(200, { items: [], total: 0, limit: 10, offset: 0 });
+  }
+  if (pathname.endsWith('/reviews/me')) {
+    return jsonResponse(404, { code: 'review_not_found', message: 'No review' });
+  }
   if (pathname.endsWith('/ratings/me')) {
     return jsonResponse(404, { code: 'rating_not_found', message: 'Not rated' });
   }
@@ -132,6 +139,8 @@ async function scanBarcode(data: string, type = 'upc_a') {
 }
 
 async function typeSearch(text: string) {
+  await screen.findByLabelText('Search products');
+  await act(async () => jest.advanceTimersByTime(100)); // lets Recently viewed finish loading
   fireEvent.changeText(await screen.findByLabelText('Search products'), text);
   await act(async () => jest.advanceTimersByTime(SEARCH_DEBOUNCE_MS));
 }
@@ -145,7 +154,7 @@ async function expectProductPage(shown: Product, price: string) {
 
 it('scan: Home -> Scan tab -> scan a product -> its page -> back to the scanner', async () => {
   renderRouter('src/app', { initialUrl: '/' });
-  fireEvent.press(await screen.findByRole('button', { name: 'Scan Product' }));
+  fireEvent.press(await screen.findByRole('button', { name: 'Scan a barcode' }));
   expect(screen).toHavePathname('/scan');
 
   await scanBarcode(DIET_PEPSI.barcode);
@@ -156,10 +165,11 @@ it('scan: Home -> Scan tab -> scan a product -> its page -> back to the scanner'
   expect(screen.getByTestId('scanner-camera')).toBeOnTheScreen();
 });
 
-it('search: Home -> Search manually -> type -> open a result -> back to the results', async () => {
+it('search: Home -> search field -> type -> open a result -> back to the results', async () => {
   renderRouter('src/app', { initialUrl: '/' });
-  fireEvent.press(await screen.findByRole('button', { name: 'Search manually' }));
+  fireEvent.press(await screen.findByRole('button', { name: 'Search products or brands' }));
   expect(screen).toHavePathname('/search');
+  await act(async () => jest.advanceTimersByTime(100)); // lets Recently viewed finish loading
 
   await typeSearch('pepsi');
   fireEvent.press(await screen.findByLabelText(/^Diet Pepsi Cola Soda/));

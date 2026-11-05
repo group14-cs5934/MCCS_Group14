@@ -13,6 +13,12 @@ type Props = {
   productId: number;
   /** Called after the review is saved, e.g. to reload the list so it shows up there. */
   onPosted?: () => void;
+  /** False hides the form but keeps it mounted, so the user's earlier review is still loaded. */
+  open?: boolean;
+  /** Shows a Cancel button that calls this, e.g. to collapse the form again. */
+  onCancel?: () => void;
+  /** Reports whether the user already has a review of this product: null until that is known. */
+  onHasReview?: (hasReview: boolean | null) => void;
 };
 
 type Status =
@@ -27,10 +33,18 @@ type Status =
  * nothing is posted. If the user already reviewed the product, the form starts with their review,
  * and posting replaces it.
  */
-export default function ReviewForm({ productId, onPosted }: Props) {
+export default function ReviewForm({
+  productId,
+  onPosted,
+  open = true,
+  onCancel,
+  onHasReview,
+}: Props) {
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
-  const [hasReview, setHasReview] = useState(false);
+  const [hasReview, setHasReview] = useState<boolean | null>(null);
+  // The last saved title and body, which Cancel goes back to.
+  const saved = useRef({ title: '', body: '' });
   const [status, setStatus] = useState<Status>('loading');
   const [fieldErrors, setFieldErrors] = useState<ReviewErrors>({});
   const [error, setError] = useState<string | null>(null);
@@ -42,14 +56,17 @@ export default function ReviewForm({ productId, onPosted }: Props) {
     getMyReview(productId, { signal: controller.signal }).then((result) => {
       if (controller.signal.aborted) return;
       if (result.ok) {
-        setTitle(result.data.title ?? '');
-        setBody(result.data.body);
+        saved.current = { title: result.data.title ?? '', body: result.data.body };
+        setTitle(saved.current.title);
+        setBody(saved.current.body);
         setHasReview(true);
         setStatus('ready');
       } else if (result.error.status === 401) {
+        setHasReview(false);
         setStatus('signed-out');
       } else {
         // 404 means they haven't reviewed it. Any other problem: they can still write one now.
+        setHasReview(false);
         setStatus('ready');
       }
     });
@@ -58,6 +75,25 @@ export default function ReviewForm({ productId, onPosted }: Props) {
       pending.current?.abort();
     };
   }, [productId]);
+
+  useEffect(() => {
+    onHasReview?.(hasReview);
+  }, [hasReview, onHasReview]);
+
+  // Reopening after a post starts fresh, without the old "posted" message.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open && status === 'posted') setStatus('ready');
+  }
+
+  function cancel() {
+    setTitle(saved.current.title);
+    setBody(saved.current.body);
+    setFieldErrors({});
+    setError(null);
+    onCancel?.();
+  }
 
   function submit() {
     const errors = validateReview(title, body);
@@ -73,8 +109,9 @@ export default function ReviewForm({ productId, onPosted }: Props) {
     postReview(productId, review, { signal: controller.signal }).then((result) => {
       if (controller.signal.aborted) return;
       if (result.ok) {
-        setTitle(result.data.title ?? '');
-        setBody(result.data.body);
+        saved.current = { title: result.data.title ?? '', body: result.data.body };
+        setTitle(saved.current.title);
+        setBody(saved.current.body);
         setHasReview(true);
         setStatus('posted');
         onPosted?.();
@@ -93,6 +130,8 @@ export default function ReviewForm({ productId, onPosted }: Props) {
     });
   }
 
+  if (!open) return null;
+
   if (status === 'signed-out') {
     return (
       <View style={styles.section}>
@@ -100,6 +139,7 @@ export default function ReviewForm({ productId, onPosted }: Props) {
         <Text style={styles.hint}>Sign in to review this product.</Text>
         {/* Signing out clears the expired session, and the app switches to the sign-in screen. */}
         <Button title="Sign In" variant="secondary" icon="log-in-outline" onPress={signOut} />
+        {onCancel ? <Button title="Cancel" variant="text" onPress={cancel} /> : null}
       </View>
     );
   }
@@ -147,6 +187,7 @@ export default function ReviewForm({ productId, onPosted }: Props) {
         loading={status === 'posting'}
         disabled={status === 'loading'}
       />
+      {onCancel ? <Button title="Cancel" variant="text" onPress={cancel} /> : null}
     </View>
   );
 }
@@ -155,6 +196,7 @@ const styles = StyleSheet.create({
   section: {
     gap: spacing.md,
     paddingBottom: spacing.xl,
+    marginBottom: spacing.xl,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },

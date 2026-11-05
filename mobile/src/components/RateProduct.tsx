@@ -74,9 +74,6 @@ export default function RateProduct({ productId, onSaved }: Props) {
 const styles = StyleSheet.create({
   section: {
     gap: spacing.sm,
-    paddingVertical: spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
   },
   title: {
     ...textStyles.subheading,

@@ -129,6 +129,9 @@ class AdminStoreStock(StoreAvailability):
         default=None,
         description="When an admin set this; automatic updates leave it alone until it's removed",
     )
+    low: bool = Field(
+        default=False, description="In stock at or below the store's reorder point for it"
+    )
 
 
 class StockProduct(BaseModel):

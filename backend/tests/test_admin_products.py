@@ -21,6 +21,9 @@ from tests.factories import add_product, add_user
 ADMIN = TokenUser(id=UUID("a0000000-0000-4000-8000-000000000001"), email="admin@example.com")
 SHOPPER = TokenUser(id=UUID("b0000000-0000-4000-8000-000000000002"), email="shopper@example.com")
 
+# Fields only the admin product views have.
+ADMIN_ONLY = {"admin_fields", "stock"}
+
 NEW_PRODUCT = {
     "barcode": "049000418347",
     "name": "Coca-Cola Classic 16.9 oz",
@@ -118,9 +121,9 @@ def test_created_product_is_saved_and_shown_in_the_app(client, connection, categ
     assert created["price"]["amount"] == "1.95"
     assert created["category"]["name"] == "Beverages"
     # The app finds it every way it looks products up.
-    # The public product page shows the same product, without the admin-only field.
+    # The public product page shows the same product, without the admin-only fields.
     shown = client.get(f"/products/{created['id']}").json()
-    assert shown == {key: value for key, value in created.items() if key != "admin_fields"}
+    assert shown == {key: value for key, value in created.items() if key not in ADMIN_ONLY}
     assert client.get("/products/barcode/049000418347").json()["id"] == created["id"]
     found = client.get("/products/search", params={"q": "coca cola"}).json()
     assert [product["id"] for product in found] == [created["id"]]
@@ -172,7 +175,7 @@ def test_edited_product_is_saved_and_shown_in_the_app(client, connection, produc
 
     assert response.status_code == 200
     shown = client.get(f"/products/{product_id}").json()
-    assert shown == {k: v for k, v in response.json().items() if k != "admin_fields"}
+    assert shown == {k: v for k, v in response.json().items() if k not in ADMIN_ONLY}
     assert (shown["name"], shown["price"]["amount"]) == ("Classic Chips", "2.49")
     assert shown["size"] == "184g"  # not sent, so unchanged
     assert shown["updated_at"] > shown["created_at"]

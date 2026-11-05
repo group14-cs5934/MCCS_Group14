@@ -60,7 +60,7 @@ it('shows exactly the results the API returned, in the same order', async () => 
   await search(query);
   await screen.findByText(results[0].name);
 
-  const rows = screen.getAllByRole('button', { name: /,/ });
+  const rows = screen.getAllByRole('button', { name: /^(?!.*, tab,).*,/ });
   expect(rows.map((row) => row.props.accessibilityLabel)).toEqual(
     results.map((product) =>
       [

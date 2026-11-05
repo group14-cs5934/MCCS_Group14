@@ -66,13 +66,7 @@ function ActivityRow({
   const lines = changeLines(entry);
   const shown = lines.slice(0, MAX_FIELDS_SHOWN);
   const hidden = lines.length - shown.length;
-  const when = new Date(entry.created_at).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  const when = formatWhen(entry.created_at);
   // A deleted product has no page to open.
   const opensProduct = entry.target_type === 'product' && entry.action !== 'product.delete';
   const label = [summary, ...lines, when].join(', ');
@@ -101,8 +95,19 @@ function ActivityRow({
   );
 }
 
+/** e.g. "Oct 26, 2026, 3:04 PM", in the phone's time zone. */
+export function formatWhen(iso: string): string {
+  return new Date(iso).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
 /** e.g. "admin@example.com edited product #7". */
-function summarize(entry: AuditLogEntry): string {
+export function summarize(entry: AuditLogEntry): string {
   const who = entry.admin_email ?? 'A deleted admin';
   const verb = verbs[entry.action] ?? entry.action;
   const what =
@@ -141,7 +146,7 @@ function capitalize(field: string): string {
 const styles = StyleSheet.create({
   list: {
     gap: spacing.md,
-    paddingHorizontal: spacing.xl,
+    paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xl,
   },
   row: {

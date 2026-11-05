@@ -158,7 +158,9 @@ it('can make the store the shopper’s own', async () => {
 
 it('opens from a store in "Available at" on a product page', async () => {
   renderRouter('src/app', { initialUrl: '/product/1' });
-  // The list starts closed (no store is the shopper's yet), so open it first.
+  // The list is on the Stores tab, and starts closed (no store is the shopper's yet).
+  const storesTab = await screen.findByRole('tab', { name: 'Stores' });
+  await act(async () => fireEvent.press(storesTab));
   const showAll = await screen.findByRole('button', { name: 'Show all 2 stores' });
   await act(async () => fireEvent.press(showAll));
   const row = screen.getByRole('button', { name: /^Camp Lejeune MCX, In stock/ });

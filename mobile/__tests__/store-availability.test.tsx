@@ -106,6 +106,8 @@ async function preferStore(id: number, name: string) {
 async function openProduct() {
   renderRouter('src/app', { initialUrl: '/product/1' });
   await screen.findByText(PRODUCT.name);
+  // The full list is on the Stores tab.
+  await act(async () => fireEvent.press(screen.getByRole('tab', { name: 'Stores' })));
 }
 
 /** Each store row's screen-reader label, top to bottom. */
@@ -238,7 +240,7 @@ it("offers to try again when the stores can't be checked", async () => {
 
   expect(await screen.findByText("Couldn't check stores")).toBeOnTheScreen();
   // The rest of the page still shows.
-  expect(screen.getByText('20 fl oz')).toBeOnTheScreen();
+  expect(screen.getByText(PRODUCT.name)).toBeOnTheScreen();
 
   api.fail = false;
   await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Try Again' })));

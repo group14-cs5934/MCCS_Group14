@@ -170,8 +170,7 @@ afterAll(() => {
 
 async function openAdminReviews() {
   renderRouter('src/app', { initialUrl: '/admin' });
-  await screen.findByText('No products yet.');
-  fireEvent.press(screen.getByRole('tab', { name: 'Reviews' }));
+  fireEvent.press(await screen.findByRole('button', { name: /^Reviews\./ }));
   await screen.findByText(SPAM);
 }
 
@@ -189,10 +188,10 @@ it('lists every review newest first, with its author, stars, and product', async
   await openAdminReviews();
 
   expect(screen.getByText('2 reviews')).toBeOnTheScreen();
-  expect(screen.getByText('spammer@example.com')).toBeOnTheScreen();
+  expect(screen.getByText('spammer@example.com · Oct 22, 2026')).toBeOnTheScreen();
   expect(screen.getByText(LOVE_IT)).toBeOnTheScreen();
   expect(screen.getByLabelText('5 out of 5 stars')).toBeOnTheScreen();
-  expect(screen.getByText('Product #1 · Oct 22, 2026')).toBeOnTheScreen();
+  expect(screen.getAllByText('Product #1')).toHaveLength(2);
   const bodies = screen.queryAllByText(/^(Love it|Buy cheap)/).map((node) => node.props.children);
   expect(bodies).toEqual([SPAM, LOVE_IT]);
 });

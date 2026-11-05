@@ -266,6 +266,40 @@ class ProductRepository:
         ).fetchall()
         return {product_id: sorted(fields) for product_id, fields in rows}
 
+    def stock_summaries(self, product_ids: list[int]) -> dict[int, dict[str, int]]:
+        """Each product's stock across every store: how many stores have it in stock (and how
+        many of those are at or below their reorder point), out of stock, or have no record."""
+        rows = self._connection.execute(
+            """
+            SELECT p.id,
+                (SELECT count(*) FROM store_locations) AS stores,
+                count(ps.store_id) FILTER (WHERE ps.in_stock) AS in_stock,
+                count(ps.store_id) FILTER (
+                    WHERE ps.in_stock
+                    AND ps.quantity <= COALESCE(rp.reorder_point, s.default_reorder_point)
+                ) AS low,
+                count(ps.store_id) FILTER (WHERE NOT ps.in_stock) AS out
+            FROM products AS p
+            LEFT JOIN product_stock AS ps ON ps.product_id = p.id
+            LEFT JOIN store_locations AS s ON s.id = ps.store_id
+            LEFT JOIN reorder_points AS rp
+                ON rp.product_id = ps.product_id AND rp.store_id = ps.store_id
+            WHERE p.id = ANY(%s)
+            GROUP BY p.id
+            """,
+            (product_ids,),
+        ).fetchall()
+        return {
+            product_id: {
+                "stores": stores,
+                "in_stock": in_stock,
+                "low": low,
+                "out": out,
+                "unknown": stores - in_stock - out,
+            }
+            for product_id, stores, in_stock, low, out in rows
+        }
+
     def change_admin_fields(
         self, product_id: int, protect: set[str], release: set[str] | None = None
     ) -> None:

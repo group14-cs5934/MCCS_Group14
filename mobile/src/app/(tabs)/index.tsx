@@ -1,31 +1,57 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRouter, type Href } from 'expo-router';
-import { useEffect, useRef } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
+import {
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type StyleProp,
+  type ImageStyle,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/auth';
+import Badge from '@/components/Badge';
 import Button from '@/components/Button';
-import Card from '@/components/Card';
-import IconBadge from '@/components/IconBadge';
-import RestockBadge from '@/components/RestockBadge';
-import { usePreferredStore } from '@/hooks/usePreferredStore';
-import { colors, sharedStyles, spacing, textStyles } from '@/theme';
-import { PERMISSIONS } from '@/types/user';
+import { useApiGet } from '@/hooks/useApiGet';
+import { usePreferredStore, type PreferredStore } from '@/hooks/usePreferredStore';
+import { useRecentProducts } from '@/hooks/useRecentProducts';
+import { colors, radius, shadows, sharedStyles, sizes, spacing, textStyles } from '@/theme';
+import type { PopularProduct } from '@/types/insights';
 
-/** Shortcuts for developers, shown only in development builds. */
-const devLinks: { label: string; href: Href }[] = [
-  // ID 1 is the dev seed script's product in a fresh database (see README: full stack).
-  { label: 'Open a sample product', href: '/product/1' },
-  { label: 'Theme preview', href: '/theme-preview' },
-];
+/** Up to two initials from an email like "dan.mccabe@x.com" (DM), or its first letters. */
+function initialsOf(email: string | undefined): string {
+  const name = (email ?? '').split('@')[0];
+  const parts = name.split(/[._-]+/).filter(Boolean);
+  const letters = parts.length > 1 ? parts[0][0] + parts[1][0] : name.slice(0, 2);
+  return letters.toUpperCase() || '?';
+}
+
+/** A product photo, or a muted square with an icon if there is none or it fails to load. */
+function Thumb({ uri, style }: { uri: string | null; style: StyleProp<ImageStyle> }) {
+  const [failed, setFailed] = useState(false);
+  if (!uri || failed) {
+    return (
+      <View style={[style, styles.thumbPlaceholder]} testID="product-photo-placeholder">
+        <Ionicons name="image-outline" size={sizes.iconLarge} color={colors.textMuted} />
+      </View>
+    );
+  }
+  return (
+    <Image source={{ uri }} onError={() => setFailed(true)} resizeMode="contain" style={style} />
+  );
+}
 
 /** Home tab: the app's starting point, with the two ways to find a product, scan or search. */
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, isAdmin, isStaff, storeId, storeRole, can, signOut } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { store, loading: storeLoading } = usePreferredStore();
+  const { products: recent } = useRecentProducts();
 
   // Admins start in the admin area: once their role loads, it opens on top of Home, so Back
   // still reaches the shopper side. Only once per sign-in (Home stays mounted until sign-out).
@@ -38,162 +64,302 @@ export default function HomeScreen() {
   }, [isAdmin, router]);
 
   return (
-    <ScrollView
-      style={sharedStyles.screen}
-      contentContainerStyle={[sharedStyles.screenContent, { paddingTop: insets.top + spacing.xl }]}
-    >
-      <View style={styles.intro}>
-        <Text style={sharedStyles.title}>Scan & compare.</Text>
-        <Text style={sharedStyles.secondaryText}>
-          Scan a barcode or search by name to see a product&apos;s price, ratings, and reviews.
-        </Text>
+    <ScrollView style={sharedStyles.screen} contentContainerStyle={styles.content}>
+      <View style={[sharedStyles.headerBand, { paddingTop: insets.top + spacing.md }]}>
+        <View style={[sharedStyles.row, styles.topRow]}>
+          <Text style={styles.wordmark}>Recon</Text>
+          {/* Waits for the saved store, so "Choose store" never flashes before it. */}
+          {storeLoading ? null : (
+            <Pressable
+              onPress={() => router.push('/stores')}
+              accessibilityRole="button"
+              accessibilityLabel={store ? 'Change your store' : 'Choose your store'}
+              style={({ pressed }) => [styles.storeChip, pressed && styles.pressed]}
+            >
+              <Ionicons name="storefront-outline" size={sizes.icon} color={colors.textOnHeader} />
+              <Text style={styles.storeChipText} numberOfLines={1}>
+                {store ? store.name : 'Choose store'}
+              </Text>
+              <Ionicons name="chevron-down" size={sizes.icon} color={colors.textOnHeader} />
+            </Pressable>
+          )}
+          <Pressable
+            onPress={() => router.navigate('/account')}
+            accessibilityRole="button"
+            accessibilityLabel="Account"
+            style={({ pressed }) => [styles.avatar, pressed && styles.pressed]}
+          >
+            <Text style={styles.avatarText}>{initialsOf(user?.email)}</Text>
+          </Pressable>
+        </View>
+
+        <Text style={styles.hero}>What are you shopping for?</Text>
+
+        {/* /search takes no query, so this is a shortcut to the search screen's own field. */}
+        <Pressable
+          onPress={() => router.navigate('/search')}
+          accessibilityRole="button"
+          accessibilityLabel="Search products or brands"
+          style={({ pressed }) => [styles.search, pressed && styles.pressed]}
+        >
+          <Ionicons name="search" size={sizes.icon} color={colors.textSecondary} />
+          <Text style={styles.searchText}>Search products or brands</Text>
+        </Pressable>
+
+        <View style={styles.scanBlock}>
+          <Button
+            title="Scan a barcode"
+            variant="action"
+            icon="scan-outline"
+            onPress={() => router.navigate('/scan')}
+            style={styles.scanButton}
+          />
+          <Text style={styles.scanCaption}>Price, ratings and stock at your store</Text>
+        </View>
       </View>
 
-      <Card style={styles.scanCard}>
-        <IconBadge icon="barcode-outline" />
-        <View style={styles.scanText}>
-          <Text style={[textStyles.subheading, styles.center, { color: colors.textPrimary }]}>
-            Scan a product
-          </Text>
-          <Text style={[sharedStyles.secondaryText, styles.center]}>
-            Point your camera at a product&apos;s barcode.
-          </Text>
-        </View>
-        <Button
-          title="Scan Product"
-          icon="scan-outline"
-          onPress={() => router.navigate('/scan')}
-          style={styles.stretch}
-        />
-        <Button title="Search manually" variant="text" onPress={() => router.push('/search')} />
-      </Card>
-
-      {/* Waits for the saved store, so "Not chosen yet" never flashes before it. */}
-      {storeLoading ? null : (
-        <Card style={styles.storeCard}>
-          <Ionicons
-            name="storefront-outline"
-            size={textStyles.subheading.lineHeight}
-            color={colors.accent}
-          />
-          <View style={styles.storeText}>
-            <Text style={[textStyles.caption, { color: colors.textSecondary }]}>Your store</Text>
-            <Text style={[textStyles.bodyStrong, { color: colors.textPrimary }]}>
-              {store ? store.name : 'Not chosen yet'}
-            </Text>
-          </View>
-          <Button
-            title={store ? 'Change' : 'Choose'}
-            variant="text"
-            onPress={() => router.push('/stores')}
-            accessibilityLabel={store ? 'Change your store' : 'Choose your store'}
-            style={styles.storeButton}
-          />
-        </Card>
-      )}
-
-      {/* Store staff look after their store, as far as their store role allows. */}
-      {isStaff ? (
-        <View style={styles.myStore}>
-          <Button
-            title="My store"
-            variant="secondary"
-            icon="storefront-outline"
-            onPress={() => router.push('/my-store')}
-            style={styles.myStoreButton}
-          />
-          {/* How many products need restocking, for staff whose role allows seeing that. */}
-          {storeId !== null && can(PERMISSIONS.viewRestock) ? (
-            <RestockBadge storeId={storeId} />
-          ) : null}
+      {recent.length > 0 ? (
+        <View style={styles.section}>
+          <Text style={[sharedStyles.sectionTitle, styles.sectionPadding]}>Recently viewed</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={[styles.recentRow, styles.sectionPadding]}
+          >
+            {recent.map((item) => (
+              <Pressable
+                key={item.id}
+                onPress={() => router.push(`/product/${item.id}`)}
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${item.name}`}
+                style={({ pressed }) => [styles.recentCard, pressed && styles.pressed]}
+              >
+                <Thumb uri={item.image_url} style={styles.recentImage} />
+                <Text style={styles.recentName} numberOfLines={2}>
+                  {item.name}
+                </Text>
+                <View style={[sharedStyles.row, styles.recentMeta]}>
+                  <Text style={styles.recentPrice}>
+                    {item.price ? `$${item.price}` : 'No price'}
+                  </Text>
+                  {item.rating !== null ? (
+                    <>
+                      <Ionicons
+                        name="star"
+                        size={textStyles.caption.fontSize}
+                        color={colors.rating}
+                      />
+                      <Text style={styles.recentRating}>{item.rating.toFixed(1)}</Text>
+                    </>
+                  ) : null}
+                </View>
+              </Pressable>
+            ))}
+          </ScrollView>
         </View>
       ) : null}
 
-      {isAdmin ? (
-        <>
-          <Button
-            title="Admin"
-            variant="secondary"
-            icon="shield-checkmark-outline"
-            onPress={() => router.push('/admin')}
-          />
-          <Button
-            title="Store tools"
-            variant="secondary"
-            icon="storefront-outline"
-            onPress={() => router.push('/my-store')}
-          />
-        </>
-      ) : null}
-
-      <View style={styles.account}>
-        <Text style={[textStyles.caption, { color: colors.textMuted }]}>
-          Signed in as {user?.email}
-          {isAdmin ? ' · Admin' : isStaff ? ` · ${storeRole?.name ?? 'Store staff'}` : ''}
-        </Text>
-        <Button title="Sign out" variant="text" onPress={signOut} />
-      </View>
-
-      {__DEV__ && (
-        <View style={styles.devLinks}>
-          <Text style={[textStyles.caption, { color: colors.textMuted }]}>Developer</Text>
-          {devLinks.map((link) => (
-            <Button
-              key={link.label}
-              title={link.label}
-              variant="text"
-              onPress={() => router.push(link.href)}
-            />
-          ))}
-        </View>
-      )}
+      {store ? <PopularSection store={store} /> : null}
     </ScrollView>
   );
 }
 
+/** What shoppers at the store look at most, as rows in one card. Shows nothing if it can't load. */
+function PopularSection({ store }: { store: PreferredStore }) {
+  const router = useRouter();
+  const { data } = useApiGet<PopularProduct[]>(`/locations/${store.id}/popular?limit=5`);
+  if (!data || data.length === 0) return null;
+
+  return (
+    <View style={[styles.section, styles.sectionPadding]}>
+      <Text style={sharedStyles.sectionTitle}>Popular at {store.name}</Text>
+      <View style={styles.popularCard}>
+        {data.map(({ product, in_stock, low, aisle }, index) => (
+          <Pressable
+            key={product.id}
+            onPress={() => router.push(`/product/${product.id}`)}
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${product.name}`}
+            style={({ pressed }) => [
+              sharedStyles.row,
+              styles.popularRow,
+              index > 0 && styles.popularDivider,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Thumb uri={product.image_url} style={styles.popularImage} />
+            <View style={styles.popularText}>
+              <Text style={styles.popularName} numberOfLines={1}>
+                {product.name}
+              </Text>
+              <View style={[sharedStyles.row, styles.popularMeta]}>
+                {in_stock === null ? null : !in_stock ? (
+                  <Badge label="Out of stock" tone="danger" />
+                ) : low ? (
+                  <Badge label="Low stock" tone="warning" />
+                ) : (
+                  <Badge label="In stock" tone="success" />
+                )}
+                {aisle ? <Text style={styles.aisle}>{aisle}</Text> : null}
+              </View>
+            </View>
+            {product.price ? <Text style={styles.popularPrice}>${product.price}</Text> : null}
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  intro: {
+  content: {
+    paddingBottom: spacing.xl,
+    gap: spacing.xl,
+  },
+  pressed: {
+    opacity: 0.7,
+  },
+  topRow: {
     gap: spacing.sm,
   },
-  scanCard: {
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.xl,
+  wordmark: {
+    ...textStyles.heading,
+    flex: 1,
+    color: colors.textOnHeader,
   },
-  scanText: {
+  storeChip: {
+    ...sharedStyles.row,
+    flexShrink: 1,
+    height: sizes.avatar,
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.pill,
+    backgroundColor: colors.headerChip,
+  },
+  storeChipText: {
+    ...textStyles.caption,
+    flexShrink: 1,
+    color: colors.textOnHeader,
+  },
+  avatar: {
+    width: sizes.avatar,
+    height: sizes.avatar,
+    borderRadius: radius.pill,
+    backgroundColor: colors.avatar,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    ...textStyles.caption,
+    color: colors.textPrimary,
+  },
+  hero: {
+    ...textStyles.hero,
+    color: colors.textOnHeader,
+  },
+  search: {
+    ...sharedStyles.row,
+    height: sizes.button,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+  },
+  searchText: {
+    ...textStyles.body,
+    color: colors.textMuted,
+  },
+  scanBlock: {
+    gap: spacing.sm,
+  },
+  scanButton: {
+    height: sizes.actionButton,
+  },
+  scanCaption: {
+    ...textStyles.caption,
+    textAlign: 'center',
+    color: colors.textOnHeaderMuted,
+  },
+  section: {
+    gap: spacing.md,
+  },
+  sectionPadding: {
+    paddingHorizontal: spacing.xl,
+  },
+  recentRow: {
+    gap: spacing.md,
+  },
+  recentCard: {
+    width: 132,
+    gap: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    ...shadows.card,
+  },
+  recentImage: {
+    width: '100%',
+    aspectRatio: 1.5,
+    borderRadius: radius.md,
+  },
+  recentName: {
+    ...textStyles.caption,
+    color: colors.textPrimary,
+    minHeight: textStyles.caption.lineHeight * 2,
+  },
+  recentMeta: {
     gap: spacing.xs,
   },
-  center: {
-    textAlign: 'center',
-  },
-  stretch: {
-    alignSelf: 'stretch',
-    marginTop: spacing.sm,
-  },
-  storeCard: {
-    ...sharedStyles.row,
-    gap: spacing.md,
-  },
-  storeText: {
+  recentPrice: {
+    ...textStyles.priceSmall,
     flex: 1,
-    gap: spacing.xxs,
+    color: colors.textPrimary,
   },
-  storeButton: {
-    alignSelf: 'auto',
+  recentRating: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
   },
-  myStore: {
-    ...sharedStyles.row,
+  thumbPlaceholder: {
+    backgroundColor: colors.surfaceMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  popularCard: {
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    ...shadows.card,
+  },
+  popularRow: {
+    gap: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  popularDivider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  popularImage: {
+    width: sizes.thumbSmall,
+    height: sizes.thumbSmall,
+    borderRadius: radius.md,
+  },
+  popularText: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  popularName: {
+    ...textStyles.bodyStrong,
+    color: colors.textPrimary,
+  },
+  popularMeta: {
     gap: spacing.sm,
   },
-  myStoreButton: {
-    flex: 1,
+  aisle: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
   },
-  account: {
-    alignItems: 'center',
-    marginTop: spacing.xl,
-  },
-  devLinks: {
-    alignItems: 'center',
-    marginTop: spacing.xl,
+  popularPrice: {
+    ...textStyles.priceSmall,
+    color: colors.textPrimary,
   },
 });

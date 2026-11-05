@@ -1,20 +1,19 @@
 import { useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { updateUser, type ApiError } from '@/api';
 import Badge from '@/components/Badge';
 import Button from '@/components/Button';
 import Card from '@/components/Card';
-import Choices from '@/components/Choices';
 import ErrorBanner from '@/components/ErrorBanner';
 import Loader from '@/components/Loader';
 import { useApiGet } from '@/hooks/useApiGet';
-import { colors, spacing, textStyles } from '@/theme';
+import { colors, radius, sharedStyles, sizes, spacing, textStyles } from '@/theme';
 import type { Store } from '@/types/store';
 import type { AdminUserAccount, Role, StoreRole, UserUpdateBody } from '@/types/user';
 
 const ROLE_LABELS: Record<Role, string> = {
-  user: 'User',
+  user: 'Shopper',
   staff: 'Staff',
   admin: 'Admin',
 };
@@ -49,6 +48,17 @@ type RoleDraft = {
   storeRoleId: number | null;
   storeRoleName: string | null;
 };
+
+/** Up to two capital letters for the avatar, e.g. "j.rivera@x.com" gives "JR". */
+function initialsOf(email: string | null): string {
+  if (!email) return '?';
+  const parts = email
+    .split('@')[0]
+    .split(/[._\-+]+/)
+    .filter(Boolean);
+  const letters = parts.length > 1 ? parts[0][0] + parts[1][0] : (parts[0] ?? '?').slice(0, 2);
+  return letters.toUpperCase();
+}
 
 /** What saving the draft will do, e.g. "Make a@b.com Manager at Quantico MCX?". */
 function roleQuestion(draft: RoleDraft, email: string, storeName: string): string {
@@ -157,25 +167,37 @@ export default function AdminUserRow({ user, stores, isSelf, onUpdated, onDenied
   }
 
   return (
-    <Card style={styles.card}>
+    <Card style={[styles.card, draft && styles.editing, !user.active && styles.inactive]}>
       <View
         accessible
         accessibilityLabel={`${email}, ${status}, joined ${joined}`}
         style={styles.summary}
       >
+        <View style={[styles.avatar, avatarStyles[user.active ? user.role : 'inactive']]}>
+          <Text style={[styles.avatarText, avatarTextStyles[user.active ? user.role : 'inactive']]}>
+            {initialsOf(user.email)}
+          </Text>
+        </View>
         <View style={styles.userText}>
           <Text style={styles.email} numberOfLines={1}>
             {email}
           </Text>
-          <Text style={styles.caption}>Joined {joined}</Text>
-          {isStaff ? <Text style={styles.caption}>At {storeName(user.store_id)}</Text> : null}
-        </View>
-        <View style={styles.badges}>
-          {isSelf ? <Badge label="You" tone="accent" /> : null}
-          {user.role === 'user' ? null : (
-            <Badge label={isStaff ? staffRoleName : ROLE_LABELS[user.role]} tone="accent" />
-          )}
-          {user.active ? null : <Badge label="Deactivated" tone="danger" />}
+          <View style={styles.tags}>
+            {isSelf ? <Badge label="You" tone="accent" /> : null}
+            {user.active ? (
+              user.role === 'user' ? (
+                <Text style={[sharedStyles.pill, styles.shopperTag]}>{ROLE_LABELS.user}</Text>
+              ) : (
+                <Badge
+                  label={isStaff ? `${staffRoleName} · ${storeName(user.store_id)}` : 'Admin'}
+                  tone="accent"
+                />
+              )
+            ) : (
+              <Badge label="Deactivated" tone="danger" />
+            )}
+            <Text style={styles.caption}>Joined {joined}</Text>
+          </View>
         </View>
       </View>
 
@@ -200,14 +222,14 @@ export default function AdminUserRow({ user, stores, isSelf, onUpdated, onDenied
           <View style={styles.actions}>
             <Button
               title="Cancel"
-              variant="text"
+              variant="secondary"
               onPress={() => setConfirming(null)}
               disabled={saving}
               style={styles.action}
             />
             <Button
               title={confirming.label}
-              variant="secondary"
+              variant="primary"
               onPress={() => apply(confirming)}
               loading={saving}
               accessibilityLabel={`${confirming.label} ${name}`}
@@ -216,7 +238,7 @@ export default function AdminUserRow({ user, stores, isSelf, onUpdated, onDenied
           </View>
         </View>
       ) : (
-        <View style={styles.actions}>
+        <View style={[styles.actions, styles.rowActions]}>
           <Button
             title="Change role"
             variant="text"
@@ -266,10 +288,17 @@ function RoleEditor({
 }) {
   const needsRole = draft.role === 'staff';
   const ready = !unchanged && (!needsRole || draft.storeRoleId !== null);
+  const saveTitle = !ready
+    ? 'Save role'
+    : needsRole
+      ? `Make ${draft.storeRoleName} at ${storeName}`
+      : `Make ${ROLE_LABELS[draft.role]}`;
   return (
-    <View style={styles.confirm}>
-      <Choices
-        label={`Account type for ${email}`}
+    <View style={styles.editor}>
+      <ChoiceGroup
+        label="Account type"
+        accessibilityLabel={`Account type for ${email}`}
+        segmented
         options={(Object.keys(ROLE_LABELS) as Role[]).map((role) => ({
           key: role,
           label: ROLE_LABELS[role],
@@ -278,8 +307,9 @@ function RoleEditor({
         onSelect={(role) => onChange({ ...draft, role })}
       />
       {needsRole ? (
-        <Choices
-          label={`Store for ${email}`}
+        <ChoiceGroup
+          label="Store"
+          accessibilityLabel={`Store for ${email}`}
           options={stores.map((store) => ({ key: store.id, label: store.name }))}
           selected={draft.storeId}
           // Roles belong to a store, so choosing another store clears the role.
@@ -309,20 +339,72 @@ function RoleEditor({
       <View style={styles.actions}>
         <Button
           title="Cancel"
-          variant="text"
+          variant="secondary"
           onPress={onCancel}
           disabled={saving}
           style={styles.action}
         />
         <Button
-          title="Save role"
-          variant="secondary"
+          title={saveTitle}
+          variant="primary"
           onPress={onSave}
           loading={saving}
           disabled={!ready}
-          accessibilityLabel={`Save role of ${email}`}
-          style={styles.action}
+          accessibilityLabel={`${saveTitle} for ${email}`}
+          style={[styles.action, styles.primaryAction]}
         />
+      </View>
+    </View>
+  );
+}
+
+/**
+ * A labelled group of options with one chosen: a segmented control for a few short options (the
+ * account type), or wrapping chips for a longer list (stores, roles).
+ */
+function ChoiceGroup<T extends string | number>({
+  label,
+  accessibilityLabel,
+  options,
+  selected,
+  segmented = false,
+  onSelect,
+}: {
+  label: string;
+  accessibilityLabel: string;
+  options: { key: T; label: string }[];
+  selected: T | null;
+  segmented?: boolean;
+  onSelect: (key: T) => void;
+}) {
+  return (
+    <View style={styles.group}>
+      <Text style={styles.caption}>{label}</Text>
+      <View
+        style={segmented ? styles.segmented : styles.chips}
+        accessibilityRole="radiogroup"
+        accessibilityLabel={accessibilityLabel}
+      >
+        {options.map((option) => {
+          const isSelected = option.key === selected;
+          return (
+            <Pressable
+              key={option.key}
+              onPress={() => onSelect(option.key)}
+              accessibilityRole="radio"
+              accessibilityLabel={option.label}
+              accessibilityState={{ checked: isSelected }}
+              style={[
+                segmented ? styles.segment : styles.chip,
+                isSelected && (segmented ? styles.segmentSelected : styles.chipSelected),
+              ]}
+            >
+              <Text style={[styles.choiceText, isSelected && styles.choiceTextSelected]}>
+                {option.label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
     </View>
   );
@@ -346,8 +428,9 @@ function StoreRoleChoices({
   const roles = data ?? [];
   if (roles.length === 0) return <Text style={styles.caption}>This store has no roles yet.</Text>;
   return (
-    <Choices
-      label={`Role for ${email}`}
+    <ChoiceGroup
+      label="Role there"
+      accessibilityLabel={`Role for ${email}`}
       options={roles.map((role) => ({ key: role.id, label: role.name }))}
       selected={selected}
       onSelect={(id) => onSelect(roles.find((role) => role.id === id)!)}
@@ -355,18 +438,51 @@ function StoreRoleChoices({
   );
 }
 
+const avatarStyles = StyleSheet.create({
+  admin: { backgroundColor: colors.primary },
+  staff: { backgroundColor: colors.accentSoft },
+  user: { backgroundColor: colors.actionSoft },
+  inactive: { backgroundColor: colors.surfaceMuted },
+});
+
+const avatarTextStyles = StyleSheet.create({
+  admin: { color: colors.textOnPrimary },
+  staff: { color: colors.accent },
+  user: { color: colors.actionPressed },
+  inactive: { color: colors.textSecondary },
+});
+
 const styles = StyleSheet.create({
   card: {
-    gap: spacing.sm,
+    gap: spacing.md,
+    padding: spacing.md,
+  },
+  // The row being edited stands out, like the mockup's expanded panel.
+  editing: {
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  inactive: {
+    opacity: 0.75,
   },
   summary: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
   },
+  avatar: {
+    width: sizes.touch,
+    height: sizes.touch,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    ...textStyles.label,
+  },
   userText: {
     flex: 1,
-    gap: spacing.xxs,
+    gap: spacing.xs,
   },
   email: {
     ...textStyles.bodyStrong,
@@ -376,12 +492,65 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.textSecondary,
   },
-  badges: {
-    alignItems: 'flex-end',
+  tags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
     gap: spacing.xs,
   },
-  confirm: {
+  shopperTag: {
+    color: colors.textSecondary,
+    backgroundColor: colors.surfaceMuted,
+  },
+  editor: {
+    gap: spacing.md,
+  },
+  group: {
     gap: spacing.xs,
+  },
+  segmented: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    padding: spacing.xs,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceMuted,
+  },
+  segment: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderRadius: radius.sm,
+  },
+  segmentSelected: {
+    backgroundColor: colors.surface,
+  },
+  chips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  chip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  chipSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.surfaceMuted,
+  },
+  choiceText: {
+    ...textStyles.caption,
+    fontFamily: textStyles.label.fontFamily,
+    color: colors.textSecondary,
+  },
+  choiceTextSelected: {
+    color: colors.textPrimary,
+  },
+  confirm: {
+    gap: spacing.sm,
   },
   question: {
     ...textStyles.body,
@@ -392,7 +561,15 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     gap: spacing.sm,
   },
+  rowActions: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    paddingTop: spacing.xs,
+  },
   action: {
     alignSelf: 'auto',
+  },
+  primaryAction: {
+    flex: 1.4,
   },
 });

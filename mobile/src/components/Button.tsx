@@ -9,16 +9,19 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import { colors, radius, spacing, textStyles } from '@/theme';
+import { colors, radius, sizes, spacing, textStyles } from '@/theme';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 
-type Variant = 'primary' | 'secondary' | 'text';
+type Variant = 'primary' | 'action' | 'secondary' | 'text';
 
 type Props = {
   title: string;
   onPress: () => void;
-  /** primary: dark fill (main action). secondary: outlined. text: accent-colored, no box. */
+  /**
+   * primary: navy fill. action: orange fill, for the one big action on a screen (Scan, Checkout,
+   * Place order). secondary: outlined. text: accent-colored, no box.
+   */
   variant?: Variant;
   /** Ionicons name shown before the title, e.g. "scan-outline". */
   icon?: IconName;
@@ -32,6 +35,7 @@ type Props = {
 
 const contentColors: Record<Variant, string> = {
   primary: colors.textOnPrimary,
+  action: colors.textOnPrimary,
   secondary: colors.textPrimary,
   text: colors.accent,
 };
@@ -82,10 +86,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    minHeight: 48, // comfortable touch target
+    minHeight: sizes.button, // comfortable touch target
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
   },
   disabled: {
     opacity: 0.5,
@@ -95,6 +99,9 @@ const styles = StyleSheet.create({
 const variantStyles = StyleSheet.create({
   primary: {
     backgroundColor: colors.primary,
+  },
+  action: {
+    backgroundColor: colors.action,
   },
   secondary: {
     backgroundColor: colors.surface,
@@ -109,6 +116,9 @@ const variantStyles = StyleSheet.create({
 const pressedStyles = StyleSheet.create({
   primary: {
     backgroundColor: colors.primaryPressed,
+  },
+  action: {
+    backgroundColor: colors.actionPressed,
   },
   secondary: {
     backgroundColor: colors.surfaceMuted,

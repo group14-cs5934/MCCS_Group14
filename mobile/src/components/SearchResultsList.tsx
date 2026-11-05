@@ -1,9 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useState } from 'react';
-import { FlatList, Image, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import Card from '@/components/Card';
-import { colors, radius, sharedStyles, spacing, textStyles } from '@/theme';
+import { colors, radius, shadows, sharedStyles, sizes, spacing, textStyles } from '@/theme';
 import type { Product } from '@/types/product';
 import { formatPrice } from '@/utils/formatPrice';
 
@@ -14,32 +13,49 @@ type Props = {
   onOpen: (product: Product) => void;
 };
 
-/** Scrolling list of products, one tappable card each with photo, name, and price. */
+/** Scrolling list of products as rows in one white card: photo, name, size or brand, and price. */
 export default function SearchResultsList({ results, onOpen }: Props) {
   return (
-    <FlatList
-      data={results}
-      keyExtractor={(product) => String(product.id)}
+    <ScrollView
       // Tapping a result while the keyboard is up opens it instead of only closing the keyboard.
       keyboardShouldPersistTaps="handled"
       contentContainerStyle={styles.list}
-      renderItem={({ item }) => <SearchResult product={item} onPress={() => onOpen(item)} />}
-    />
+    >
+      <View style={styles.card}>
+        {results.map((product, index) => (
+          <SearchResult
+            key={product.id}
+            product={product}
+            first={index === 0}
+            onPress={() => onOpen(product)}
+          />
+        ))}
+      </View>
+    </ScrollView>
   );
 }
 
-function SearchResult({ product, onPress }: { product: Product; onPress: () => void }) {
+function SearchResult({
+  product,
+  first,
+  onPress,
+}: {
+  product: Product;
+  first: boolean;
+  onPress: () => void;
+}) {
   const price = product.price ? formatPrice(product.price) : 'No price yet';
-  // Size, or category if there's no size, e.g. "184g" or "Snacks".
-  const detail = product.size ?? product.category?.name;
+  // Size, or brand or category if there's no size, e.g. "184g" or "Snacks".
+  const detail = product.size ?? product.brand?.name ?? product.category?.name;
 
   return (
-    <Card
+    <Pressable
       onPress={onPress}
+      accessibilityRole="button"
       accessibilityLabel={[product.name, detail, price].filter(Boolean).join(', ')}
-      style={styles.row}
+      style={({ pressed }) => [styles.row, !first && styles.divider, pressed && styles.pressed]}
     >
-      <ProductPhoto uri={product.image_url} name={product.name} />
+      <ProductPhoto uri={product.image_url} name={product.name} size={sizes.thumb} />
       <View style={styles.text}>
         <Text style={styles.name} numberOfLines={2}>
           {product.name}
@@ -49,19 +65,31 @@ function SearchResult({ product, onPress }: { product: Product; onPress: () => v
             {detail}
           </Text>
         ) : null}
-        <Text style={product.price ? styles.price : styles.noPrice}>{price}</Text>
       </View>
-    </Card>
+      <Text style={product.price ? styles.price : styles.noPrice}>{price}</Text>
+    </Pressable>
   );
 }
 
 /** The product's photo, or a placeholder icon if it has none or the photo fails to load. */
-export function ProductPhoto({ uri, name }: { uri: string | null; name: string }) {
+export function ProductPhoto({
+  uri,
+  name,
+  size = PHOTO_SIZE,
+}: {
+  uri: string | null;
+  name: string;
+  /** Width and height; 72 by default. */
+  size?: number;
+}) {
   const [failed, setFailed] = useState(false);
 
   if (!uri || failed) {
     return (
-      <View style={[styles.photo, styles.placeholder]} testID="product-photo-placeholder">
+      <View
+        style={[styles.photo, { width: size, height: size }, styles.placeholder]}
+        testID="product-photo-placeholder"
+      >
         <Ionicons name="image-outline" size={24} color={colors.textMuted} />
       </View>
     );
@@ -73,7 +101,7 @@ export function ProductPhoto({ uri, name }: { uri: string | null; name: string }
       onError={() => setFailed(true)}
       accessibilityLabel={`Photo of ${name}`}
       resizeMode="contain"
-      style={styles.photo}
+      style={[styles.photo, { width: size, height: size }]}
     />
   );
 }
@@ -84,12 +112,23 @@ const styles = StyleSheet.create({
   list: {
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.xl,
-    gap: spacing.md,
+  },
+  card: {
+    borderRadius: radius.xl,
+    backgroundColor: colors.surface,
+    ...shadows.card,
   },
   row: {
     ...sharedStyles.row,
     gap: spacing.md,
     padding: spacing.md,
+  },
+  divider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  pressed: {
+    opacity: 0.7,
   },
   photo: {
     width: PHOTO_SIZE,
@@ -114,8 +153,8 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   price: {
-    ...textStyles.bodyStrong,
-    color: colors.accent,
+    ...textStyles.priceSmall,
+    color: colors.textPrimary,
   },
   noPrice: {
     ...textStyles.caption,

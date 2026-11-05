@@ -2,6 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { ApiResult } from '@/api';
 import { removeFromCart, saveForLater, setCartQuantity } from '@/api/cart';
@@ -12,7 +13,8 @@ import ErrorBanner from '@/components/ErrorBanner';
 import ProductLine from '@/components/ProductLine';
 import { useCartCount } from '@/hooks/useCartCount';
 import { useFocusGet } from '@/hooks/useFocusGet';
-import { colors, radius, sharedStyles, spacing, textStyles } from '@/theme';
+import { usePreferredStore } from '@/hooks/usePreferredStore';
+import { colors, fonts, radius, sharedStyles, sizes, spacing, textStyles } from '@/theme';
 import type { Cart, CartItem } from '@/types/cart';
 
 const MAX_QUANTITY = 99;
@@ -20,7 +22,9 @@ const MAX_QUANTITY = 99;
 /** Cart tab: the lines to buy with their quantities, the subtotal, and Checkout. */
 export default function CartScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { setCount } = useCartCount();
+  const { store } = usePreferredStore();
   const { loading, data: cart, error, setData, retry } = useFocusGet<Cart>('/me/cart');
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -51,16 +55,24 @@ export default function CartScreen() {
         <FlatList
           data={cart?.items ?? []}
           keyExtractor={(item) => String(item.product.id)}
-          contentContainerStyle={sharedStyles.screenContent}
+          contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.xl }]}
           ListHeaderComponent={
             <View style={styles.header}>
-              <Button
-                title="Your orders"
-                variant="text"
-                icon="receipt-outline"
-                onPress={() => router.push('/orders')}
-                style={styles.orders}
-              />
+              <View style={styles.titleRow}>
+                <Text style={sharedStyles.title}>Cart</Text>
+                {cart && cart.item_count > 0 ? (
+                  <Text style={styles.count}>
+                    {cart.item_count} {cart.item_count === 1 ? 'item' : 'items'}
+                  </Text>
+                ) : null}
+                <Button
+                  title="Your orders"
+                  variant="text"
+                  icon="receipt-outline"
+                  onPress={() => router.push('/orders')}
+                  style={styles.orders}
+                />
+              </View>
               {actionError ? <ErrorBanner message={actionError} /> : null}
             </View>
           }
@@ -87,30 +99,38 @@ export default function CartScreen() {
               onSaveForLater={() => change(saveForLater(item.product.id))}
             />
           )}
-          ListFooterComponent={
-            cart && cart.items.length > 0 ? (
-              <Card style={styles.summary}>
-                <View style={styles.subtotalRow}>
-                  <Text style={sharedStyles.heading}>Subtotal</Text>
-                  <Text style={sharedStyles.price}>${cart.subtotal ?? '0.00'}</Text>
-                </View>
-                {cart.unpriced_items > 0 ? (
-                  <Text style={sharedStyles.secondaryText}>
-                    {cart.unpriced_items === 1
-                      ? '1 item has no price yet and is not included.'
-                      : `${cart.unpriced_items} items have no price yet and are not included.`}
-                  </Text>
-                ) : null}
-                <Button
-                  title="Checkout"
-                  icon="card-outline"
-                  disabled={busy}
-                  onPress={() => router.push('/checkout')}
-                />
-              </Card>
-            ) : null
-          }
         />
+        {cart && cart.items.length > 0 ? (
+          <View style={styles.panel}>
+            <View style={styles.storeRow}>
+              <Ionicons name="storefront-outline" size={sizes.icon} color={colors.textSecondary} />
+              <Text style={styles.storeText}>
+                Pickup or delivery
+                {store ? ' from ' : ''}
+                {store ? <Text style={styles.storeName}>{store.name}</Text> : null}
+              </Text>
+            </View>
+            <View style={styles.subtotalRow}>
+              <Text style={styles.subtotalLabel}>Subtotal</Text>
+              <Text style={sharedStyles.price}>${cart.subtotal ?? '0.00'}</Text>
+            </View>
+            {cart.unpriced_items > 0 ? (
+              <Text style={sharedStyles.secondaryText}>
+                {cart.unpriced_items === 1
+                  ? '1 item has no price yet and is not included.'
+                  : `${cart.unpriced_items} items have no price yet and are not included.`}
+              </Text>
+            ) : null}
+            <Button
+              title="Checkout"
+              variant="action"
+              icon="arrow-forward"
+              disabled={busy}
+              onPress={() => router.push('/checkout')}
+              style={styles.checkout}
+            />
+          </View>
+        ) : null}
       </AsyncContent>
     </View>
   );
@@ -131,10 +151,21 @@ function CartLine({
   onRemove: () => void;
   onSaveForLater: () => void;
 }) {
-  const { name } = item.product;
+  const { name, price } = item.product;
   return (
     <Card style={styles.card}>
-      <ProductLine product={item.product} onOpen={onOpen} />
+      <ProductLine
+        product={item.product}
+        onOpen={onOpen}
+        caption={
+          price ? (
+            <Text style={styles.each}>${price} each</Text>
+          ) : (
+            <Text style={styles.each}>No price yet</Text>
+          )
+        }
+        trailing={item.line_total ? <Text style={styles.lineTotal}>${item.line_total}</Text> : null}
+      />
       <View style={styles.controls}>
         <View style={styles.stepper}>
           <StepButton
@@ -153,23 +184,24 @@ function CartLine({
             onPress={() => onQuantity(item.quantity + 1)}
           />
         </View>
-        {item.line_total ? <Text style={sharedStyles.link}>${item.line_total}</Text> : null}
-      </View>
-      <View style={styles.controls}>
         <Button
           title="Save for later"
           variant="text"
           disabled={disabled}
           onPress={onSaveForLater}
           accessibilityLabel={`Save ${name} for later`}
+          style={styles.saveLater}
         />
-        <Button
-          title="Remove"
-          variant="text"
-          disabled={disabled}
+        <Pressable
           onPress={onRemove}
+          disabled={disabled}
+          accessibilityRole="button"
           accessibilityLabel={`Remove ${name} from cart`}
-        />
+          accessibilityState={{ disabled }}
+          style={[styles.trash, disabled && styles.disabled]}
+        >
+          <Ionicons name="trash-outline" size={sizes.icon} color={colors.textSecondary} />
+        </Pressable>
       </View>
     </Card>
   );
@@ -193,55 +225,120 @@ function StepButton({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled }}
-      hitSlop={spacing.xs}
-      style={[styles.step, disabled && styles.stepDisabled]}
+      style={[styles.step, disabled && styles.disabled]}
     >
-      <Ionicons name={icon} size={textStyles.subheading.lineHeight} color={colors.textPrimary} />
+      <Ionicons name={icon} size={sizes.icon} color={colors.textPrimary} />
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
+  content: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg,
+    gap: spacing.md,
+  },
   header: {
     gap: spacing.sm,
+    paddingBottom: spacing.xs,
+  },
+  titleRow: {
+    ...sharedStyles.row,
+    alignItems: 'baseline',
+    gap: spacing.md,
+  },
+  count: {
+    ...textStyles.bodyStrong,
+    color: colors.textSecondary,
+    flex: 1,
   },
   orders: {
-    alignSelf: 'flex-end',
+    marginLeft: 'auto',
+    minHeight: sizes.touch,
   },
   card: {
     gap: spacing.md,
+    padding: spacing.md,
+  },
+  each: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+  },
+  lineTotal: {
+    ...textStyles.priceSmall,
+    color: colors.textPrimary,
   },
   controls: {
     ...sharedStyles.row,
-    justifyContent: 'space-between',
+    gap: spacing.sm,
   },
   stepper: {
     ...sharedStyles.row,
-    gap: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
   },
   step: {
-    width: 44, // touch target, as on the product page
-    height: 44,
+    width: sizes.touch,
+    height: sizes.touch,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
   },
-  stepDisabled: {
+  disabled: {
     opacity: 0.4,
   },
   quantity: {
-    ...textStyles.subheading,
+    ...textStyles.label,
     color: colors.textPrimary,
     minWidth: spacing.xl,
     textAlign: 'center',
   },
-  summary: {
+  saveLater: {
+    marginLeft: 'auto',
+    minHeight: sizes.touch,
+  },
+  trash: {
+    width: sizes.touch,
+    height: sizes.touch,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceMuted,
+  },
+  panel: {
     gap: spacing.md,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xl,
+    borderTopLeftRadius: radius.xxl,
+    borderTopRightRadius: radius.xxl,
+    borderTopWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  storeRow: {
+    ...sharedStyles.row,
+    gap: spacing.sm,
+  },
+  storeText: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    flex: 1,
+  },
+  storeName: {
+    fontFamily: fonts.bold,
+    color: colors.textPrimary,
   },
   subtotalRow: {
     ...sharedStyles.row,
     justifyContent: 'space-between',
+  },
+  subtotalLabel: {
+    ...textStyles.bodyStrong,
+    color: colors.textPrimary,
+  },
+  checkout: {
+    minHeight: sizes.actionButton,
   },
   empty: {
     alignItems: 'center',

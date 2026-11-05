@@ -18,7 +18,9 @@ from app.core.auth import AdminUser
 from app.core.errors import ApiError, error_response
 from app.repositories import AuditLog, StoreRoles, Stores, Users
 from app.repositories.audit_log import changed_fields
+from app.repositories.insights import Insights
 from app.schemas import UserAccount, UserUpdate
+from app.schemas.insights import AdminOverview
 
 MAX_USERS_PER_PAGE = 100
 
@@ -31,6 +33,13 @@ router = APIRouter(
         422: error_response("Invalid request; details lists each problem"),
     },
 )
+
+
+@router.get("/overview")
+def get_overview(admin: AdminUser, insights: Insights) -> AdminOverview:
+    """Counts across every store for the admin overview: products, active users (and how many
+    are staff or admins), stores, reviews written today, and stock that needs attention."""
+    return insights.admin_overview()
 
 
 @router.get("/users")
