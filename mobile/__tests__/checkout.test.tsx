@@ -61,6 +61,8 @@ const fake = {
   stockAfterFailure: null as Stock | null,
   /** Checking against this store fails with a server error. */
   failCheckFor: null as number | null,
+  /** Looking up a single order fails with a server error. */
+  failOrderLookup: false,
 };
 
 const product = (id: number) => CATALOG.find((p) => p.id === id)!;
@@ -178,6 +180,9 @@ const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
   }
   if (pathname === '/me/orders') return jsonResponse(200, fake.orders);
   if ((match = pathname.match(/^\/me\/orders\/(\d+)$/))) {
+    if (fake.failOrderLookup) {
+      return jsonResponse(500, { code: 'internal_error', message: 'Something went wrong' });
+    }
     const order = fake.orders.find((row) => row.id === Number(match![1]));
     return order ? jsonResponse(200, order) : jsonResponse(404, { code: 'order_not_found' });
   }
@@ -204,6 +209,7 @@ beforeEach(async () => {
   fake.failOrderOnce = null;
   fake.stockAfterFailure = null;
   fake.failCheckFor = null;
+  fake.failOrderLookup = false;
   fetchMock.mockClear();
   globalThis.fetch = fetchMock as unknown as typeof fetch;
 });
@@ -240,13 +246,15 @@ async function openCheckout(preferred: [number, string] = [1, 'Camp Lejeune MCX'
   await screen.findByText('Demo checkout: no payment is taken.');
 }
 
-const placeOrderButton = () => screen.getByRole('button', { name: 'Place order' });
+// Reads "Fix the items above to order" while something in the cart needs fixing.
+const placeOrderButton = () =>
+  screen.getByRole('button', { name: /^(Place order|Fix the items above to order)$/ });
 
 describe('checking the items', () => {
   it('shows each item as available, limited, or not at the store, and blocks Place order', async () => {
     await openCheckout();
 
-    expect(await screen.findByText('Only 1 left')).toBeOnTheScreen();
+    expect(await screen.findByText('Only 1 left here')).toBeOnTheScreen();
     expect(screen.getByText('Available')).toBeOnTheScreen();
     expect(screen.getByText('Not at this store')).toBeOnTheScreen();
     expect(screen.getByText('Camp Lejeune MCX')).toBeOnTheScreen();
@@ -254,9 +262,39 @@ describe('checking the items', () => {
     expect(placeOrderButton()).toBeDisabled();
   });
 
+  it('totals only what the store can fill, and says so', async () => {
+    await openCheckout();
+    await screen.findByText('Only 1 left here');
+
+    // 1 chips ($3.50) and the 1 cola left ($1.25); no rice.
+    expect(screen.getByText("Total for what's here")).toBeOnTheScreen();
+    expect(screen.getByText('$4.75')).toBeOnTheScreen();
+  });
+
+  it('labels the total plainly when everything is available', async () => {
+    await openCheckout([2, 'Quantico MCX']);
+    await screen.findAllByText('Available');
+
+    expect(screen.getByText('Total')).toBeOnTheScreen();
+    expect(screen.queryByText("Total for what's here")).not.toBeOnTheScreen();
+  });
+
+  it('notes an item with no price that the total leaves out', async () => {
+    const price = COLA.price;
+    COLA.price = null;
+    try {
+      await openCheckout([2, 'Quantico MCX']);
+      await screen.findAllByText('Available');
+
+      expect(screen.getByText('1 item has no price yet and is not included.')).toBeOnTheScreen();
+    } finally {
+      COLA.price = price;
+    }
+  });
+
   it('"Use N" sets the quantity to what the store has, then checks again', async () => {
     await openCheckout();
-    await screen.findByText('Only 1 left');
+    await screen.findByText('Only 1 left here');
 
     await press('Use 1 of Diet Cola');
 
@@ -272,7 +310,7 @@ describe('checking the items', () => {
 
     await press('Remove Plain Rice from cart');
 
-    await screen.findByText('Only 1 left');
+    await screen.findByText('Only 1 left here');
     expect(screen.queryByText('Plain Rice')).not.toBeOnTheScreen();
     expect(writes()).toEqual(['DELETE /me/cart/3']);
   });
@@ -283,7 +321,7 @@ describe('checking the items', () => {
 
     await press('Save Plain Rice for later');
 
-    await screen.findByText('Only 1 left');
+    await screen.findByText('Only 1 left here');
     expect(screen.queryByText('Plain Rice')).not.toBeOnTheScreen();
     expect(writes()).toEqual(['POST /me/cart/3/save-for-later']);
   });
@@ -300,9 +338,36 @@ describe('checking the items', () => {
     expect(placeOrderButton()).toBeEnabled();
   });
 
+  it('warns about the problem items and offers a Switch to the best other store', async () => {
+    await openCheckout();
+
+    expect(
+      await screen.findByText('2 items need a fix here. Quantico MCX has everything.'),
+    ).toBeOnTheScreen();
+    expect(placeOrderButton()).toHaveAccessibleName('Fix the items above to order');
+
+    await press('Switch');
+
+    expect(await screen.findAllByText('Available')).toHaveLength(3);
+    expect(screen.getByText('Quantico MCX')).toBeOnTheScreen();
+    expect(screen.queryByText(/need a fix here/)).not.toBeOnTheScreen();
+    expect(checkedStores()).toEqual([1, 2]);
+    expect(placeOrderButton()).toBeEnabled();
+  });
+
+  it('has no Switch when no other store has everything', async () => {
+    fake.stock = { 1: { 1: 5, 2: 1 }, 2: { 1: 5, 2: 9 }, 3: { 1: 2, 3: 4 } };
+    await openCheckout();
+
+    expect(
+      await screen.findByText('2 items need a fix here. No other store has everything.'),
+    ).toBeOnTheScreen();
+    expect(screen.queryByRole('button', { name: 'Switch' })).not.toBeOnTheScreen();
+  });
+
   it('lists the stores with how much of the cart each has, and checks again when one is picked', async () => {
     await openCheckout();
-    await screen.findByText('Only 1 left');
+    await screen.findByText('Only 1 left here');
 
     await press('Change store');
     expect(screen.getByRole('button', { name: 'Quantico MCX, All 3 items' })).toBeOnTheScreen();
@@ -317,7 +382,7 @@ describe('checking the items', () => {
 
     expect(await screen.findByText('Not at this store')).toBeOnTheScreen();
     expect(screen.getByText('Camp Pendleton MCX')).toBeOnTheScreen();
-    expect(screen.queryByText('Only 1 left')).not.toBeOnTheScreen();
+    expect(screen.queryByText('Only 1 left here')).not.toBeOnTheScreen();
     expect(checkedStores()).toEqual([1, 3]);
     expect(screen.queryByRole('button', { name: /3 items$/ })).not.toBeOnTheScreen();
   });
@@ -340,7 +405,7 @@ describe('checking the items', () => {
     renderRouter('src/app', { initialUrl: '/checkout' });
     await screen.findByText('Demo checkout: no payment is taken.');
 
-    expect(await screen.findByText('Only 1 left')).toBeOnTheScreen();
+    expect(await screen.findByText('Only 1 left here')).toBeOnTheScreen();
     expect(checkedStores()).toEqual([1]);
   });
 });
@@ -354,9 +419,14 @@ describe('placing an order', () => {
 
     expect(await screen.findByText('Order placed')).toBeOnTheScreen();
     expect(screen.getByText('Order R-1000')).toBeOnTheScreen();
-    expect(screen.getByText('Pickup at')).toBeOnTheScreen();
+    expect(screen.getByText("We'll have it ready for pickup at")).toBeOnTheScreen();
     expect(screen.getByText('Quantico MCX')).toBeOnTheScreen();
-    expect(screen.getByText('3 x Diet Cola')).toBeOnTheScreen();
+    expect(screen.getByText('3 × Diet Cola')).toBeOnTheScreen();
+    expect(
+      screen.getByText(
+        'This is a demo order: no payment was taken and nothing will be held at the store.',
+      ),
+    ).toBeOnTheScreen();
     expect(screen.getByText('$9.25')).toBeOnTheScreen();
     expect(writes()).toEqual(['POST /me/orders']);
     expect(
@@ -370,13 +440,22 @@ describe('placing an order', () => {
     expect(screen).toHavePathname('/');
   });
 
-  it('"View orders" opens the list', async () => {
+  it('still offers Done when the order fails to load', async () => {
+    fake.failOrderLookup = true;
+    renderRouter('src/app', { initialUrl: '/order-confirmation/40' });
+
+    expect(await screen.findByRole('alert')).toBeOnTheScreen();
+    await press('Done');
+    expect(screen).toHavePathname('/');
+  });
+
+  it('"View your orders" opens the list', async () => {
     await openCheckout([2, 'Quantico MCX']);
     await screen.findAllByText('Available');
     await press('Place order');
     await screen.findByText('Order placed');
 
-    await press('View orders');
+    await press('View your orders');
 
     expect(screen).toHavePathname('/orders');
     expect(await screen.findByText('R-1000')).toBeOnTheScreen();
@@ -401,7 +480,7 @@ describe('placing an order', () => {
     await press('Place order');
 
     expect(await screen.findByText('Order placed')).toBeOnTheScreen();
-    expect(screen.getByText('Delivery from')).toBeOnTheScreen();
+    expect(screen.getByText('Your order is on its way from')).toBeOnTheScreen();
     expect(screen.getByText('To: 12 Main St, Quantico VA')).toBeOnTheScreen();
     expect(
       JSON.parse(String(fetchMock.mock.calls.find(([, i]) => i?.method === 'POST')?.[1]?.body)),
@@ -426,7 +505,7 @@ describe('placing an order', () => {
         'Stock changed while you were checking out. We checked your items again below.',
       ),
     ).toBeOnTheScreen();
-    expect(await screen.findByText('Only 2 left')).toBeOnTheScreen();
+    expect(await screen.findByText('Only 2 left here')).toBeOnTheScreen();
     expect(checkedStores()).toEqual([2, 2]);
     expect(placeOrderButton()).toBeDisabled();
     expect(screen).toHavePathname('/checkout');
@@ -473,7 +552,8 @@ describe('Your orders', () => {
       .map((b) => b.props.accessibilityLabel);
     expect(labels).toEqual(['Order R-1042', 'Order R-1041']);
     expect(screen.getByText('Delivery')).toBeOnTheScreen();
-    expect(screen.getByText('Nov 3, 2026 · 2 items · $7.00')).toBeOnTheScreen();
+    expect(screen.getAllByText('Nov 3, 2026 · 2 items')).toHaveLength(2);
+    expect(screen.getAllByText('$7.00')).toHaveLength(1); // the delivery order has no total
   });
 
   it('opens an order to show its items and total', async () => {
@@ -483,8 +563,10 @@ describe('Your orders', () => {
     await press('Order R-1041');
 
     expect(await screen.findByText('Order R-1041')).toBeOnTheScreen();
-    expect(screen.getByText('2 x Sample Chips')).toBeOnTheScreen();
-    expect(screen.getByText('$7.00')).toBeOnTheScreen();
+    expect(screen.getByText('Items · 2')).toBeOnTheScreen();
+    expect(screen.getByText('Placed')).toBeOnTheScreen();
+    expect(screen.getByText('2 × Sample Chips')).toBeOnTheScreen();
+    expect(screen.getAllByText('$7.00')).toHaveLength(2); // the line and the total
     expect(screen).toHavePathname('/order/1');
   });
 

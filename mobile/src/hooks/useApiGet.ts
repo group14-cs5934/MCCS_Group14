@@ -15,15 +15,17 @@ export type ApiGetState<T> = {
 
 /**
  * Loads GET `path` from the API. The request is cancelled if the screen closes or the path changes
- * before it finishes, and an older request's result is never shown for a newer path.
+ * before it finishes, and an older request's result is never shown for a newer path. A null path
+ * loads nothing (and stays loading).
  */
-export function useApiGet<T>(path: string): ApiGetState<T> {
+export function useApiGet<T>(path: string | null): ApiGetState<T> {
   const [attempt, setAttempt] = useState(0);
   const [loaded, setLoaded] = useState<{ request: string; result: ApiResult<T> } | null>(null);
   // Names the request this render wants, so an older request's result is never shown as current.
   const request = `${path}#${attempt}`;
 
   useEffect(() => {
+    if (path === null) return;
     const controller = new AbortController();
     api.get<T>(path, { signal: controller.signal }).then((result) => {
       if (!controller.signal.aborted) {

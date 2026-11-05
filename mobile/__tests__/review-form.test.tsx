@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { act, fireEvent, renderRouter, screen, within } from 'expo-router/testing-library';
+import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
 
 import type { Product } from '@/types/product';
 import type { Review } from '@/types/review';
@@ -124,6 +124,12 @@ async function openReviews() {
   await screen.findByText('Too sweet for me.');
 }
 
+/** Opens the Reviews tab, then the form (collapsed until asked for). */
+async function openForm(button = 'Write a review') {
+  await openReviews();
+  await press(button);
+}
+
 async function write(fields: { title?: string; body: string }) {
   if (fields.title !== undefined) {
     fireEvent.changeText(screen.getByLabelText('Title (optional)'), fields.title);
@@ -141,12 +147,13 @@ const postCalls = () =>
   );
 
 it('posts a valid review, which then appears in the list', async () => {
-  await openReviews();
+  await openForm();
   await write({ title: 'Crisp and cold', body: 'Exactly what I wanted on a hot day.' });
 
   await press('Post review');
 
-  expect(await screen.findByText('Thanks! Your review was posted.')).toBeOnTheScreen();
+  // The form collapses once the review is posted.
+  await waitFor(() => expect(screen.queryByLabelText('Review')).not.toBeOnTheScreen());
   expect(api.posted).toEqual([
     { title: 'Crisp and cold', body: 'Exactly what I wanted on a hot day.' },
   ]);
@@ -157,7 +164,7 @@ it('posts a valid review, which then appears in the list', async () => {
 });
 
 it('shows an error for a review that is too long, and does not post it', async () => {
-  await openReviews();
+  await openForm();
   await write({ body: 'a'.repeat(2001) });
 
   expect(screen.getByText('2,001 / 2,000')).toBeOnTheScreen();
@@ -171,7 +178,7 @@ it('shows an error for a review that is too long, and does not post it', async (
 });
 
 it('shows an error for an empty review, and does not post it', async () => {
-  await openReviews();
+  await openForm();
   await write({ body: '   ' });
 
   await press('Post review');
@@ -181,7 +188,7 @@ it('shows an error for an empty review, and does not post it', async () => {
 });
 
 it('shows an error for a title that is too long', async () => {
-  await openReviews();
+  await openForm();
   await write({ title: 't'.repeat(101), body: 'Fine.' });
 
   await press('Post review');
@@ -193,7 +200,7 @@ it('shows an error for a title that is too long', async () => {
 });
 
 it('sends no title when it is left blank', async () => {
-  await openReviews();
+  await openForm();
   await write({ title: '  ', body: '  Good.  ' });
 
   await press('Post review');
@@ -213,6 +220,7 @@ it('starts with my earlier review, and updating replaces it', async () => {
     updated_at: AT,
   };
   await openReviews();
+  await press('Edit your review');
 
   expect(await screen.findByText('Your review')).toBeOnTheScreen();
   expect(screen.getByLabelText('Review').props.value).toBe('Pretty good.');
@@ -220,14 +228,14 @@ it('starts with my earlier review, and updating replaces it', async () => {
 
   await press('Update review');
 
-  expect(await screen.findByText('Thanks! Your review was posted.')).toBeOnTheScreen();
+  await waitFor(() => expect(screen.queryByLabelText('Review')).not.toBeOnTheScreen());
   expect(api.posted).toEqual([{ title: 'First take', body: 'Even better the second time.' }]);
   expect(await screen.findByText('2 reviews')).toBeOnTheScreen();
 });
 
 it('asks me to sign in when my session is rejected', async () => {
   api.failWith = { status: 401, code: 'not_authenticated' };
-  await openReviews();
+  await openForm();
   await write({ body: 'Fine.' });
 
   await press('Post review');
@@ -237,7 +245,7 @@ it('asks me to sign in when my session is rejected', async () => {
 
 it('keeps my text and shows the problem when posting fails', async () => {
   api.failWith = { status: 500, code: 'internal_error' };
-  await openReviews();
+  await openForm();
   await write({ body: 'Fine.' });
 
   await press('Post review');
@@ -246,4 +254,74 @@ it('keeps my text and shows the problem when posting fails', async () => {
   expect(within(alert).getByText(/Something went wrong/)).toBeOnTheScreen();
   expect(screen.getByLabelText('Review').props.value).toBe('Fine.');
   expect(screen.getByText('1 review')).toBeOnTheScreen();
+});
+
+it('keeps the review form hidden until Write a review is pressed, and Cancel hides it again', async () => {
+  await openReviews();
+
+  expect(screen.queryByLabelText('Review')).not.toBeOnTheScreen();
+  expect(screen.queryByLabelText('Title (optional)')).not.toBeOnTheScreen();
+
+  await press('Write a review');
+  expect(screen.getByLabelText('Review')).toBeOnTheScreen();
+  expect(screen.queryByRole('button', { name: 'Write a review' })).not.toBeOnTheScreen();
+
+  await press('Cancel');
+  expect(screen.queryByLabelText('Review')).not.toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'Write a review' })).toBeOnTheScreen();
+  expect(postCalls()).toHaveLength(0);
+});
+
+it('keeps a half-written draft when I switch to another tab and back', async () => {
+  await openForm();
+  await write({ title: 'Draft', body: 'Not finished' });
+
+  await act(async () => fireEvent.press(screen.getByRole('tab', { name: 'Stores' })));
+  await act(async () => fireEvent.press(screen.getByRole('tab', { name: 'Reviews' })));
+
+  expect(screen.getByLabelText('Title (optional)').props.value).toBe('Draft');
+  expect(screen.getByLabelText('Review').props.value).toBe('Not finished');
+});
+
+it('Cancel drops unsaved edits, so reopening shows the last saved review', async () => {
+  api.mine = {
+    id: 100,
+    product_id: 1,
+    title: 'First take',
+    body: 'Pretty good.',
+    author: 'm***',
+    stars: null,
+    created_at: AT,
+    updated_at: AT,
+  };
+  await openReviews();
+  await press('Edit your review');
+  await write({ title: 'Changed', body: 'Unsaved edit' });
+
+  await press('Cancel');
+  await press('Edit your review');
+
+  expect(screen.getByLabelText('Title (optional)').props.value).toBe('First take');
+  expect(screen.getByLabelText('Review').props.value).toBe('Pretty good.');
+});
+
+it('Cancel on a new review leaves the form blank when reopened', async () => {
+  await openForm();
+  await write({ body: 'Unsaved' });
+
+  await press('Cancel');
+  await press('Write a review');
+
+  expect(screen.getByLabelText('Review').props.value).toBe('');
+});
+
+it('confirms a posted review in the Reviews tab, and not again when the form reopens', async () => {
+  await openForm();
+  await write({ body: 'Lovely.' });
+
+  await press('Post review');
+
+  expect(await screen.findByText('Thanks! Your review was posted.')).toBeOnTheScreen();
+  await press('Edit your review');
+  expect(screen.queryByText('Thanks! Your review was posted.')).not.toBeOnTheScreen();
 });

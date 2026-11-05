@@ -108,6 +108,11 @@ const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
   if (pathname === '/products/1/availability') {
     return jsonResponse(200, { product_id: 1, stores: [] });
   }
+  // The Reviews tab is open by default.
+  if (pathname === '/products/1/reviews') {
+    return jsonResponse(200, { items: [], total: 0, limit: 10, offset: 0 });
+  }
+  if (pathname === '/products/1/reviews/me') return notFound('review_not_found');
 
   if (pathname === '/me/saved') return jsonResponse(200, [...fake.saved].reverse().map(savedBody));
   if ((match = pathname.match(/^\/me\/saved\/(\d+)$/))) {
@@ -211,16 +216,16 @@ describe('Save on the product page', () => {
 });
 
 describe('Saved tab', () => {
-  it('lists saved products, newest first, with size and price', async () => {
+  it('lists saved products, newest first, with the price', async () => {
     fake.saved = [1, 3];
 
     renderRouter('src/app', { initialUrl: '/saved' });
 
     expect(await screen.findByText('Plain Rice')).toBeOnTheScreen();
     expect(screen.getByText('Sample Chips')).toBeOnTheScreen();
-    expect(screen.getByText('12 oz')).toBeOnTheScreen();
     expect(screen.getByText('$3.50')).toBeOnTheScreen();
     expect(screen.getByText('No price yet')).toBeOnTheScreen();
+    expect(screen.getByText('2 products to come back to')).toBeOnTheScreen();
     const names = screen
       .getAllByRole('button', { name: /^Open / })
       .map((b) => b.props.accessibilityLabel);
@@ -258,7 +263,7 @@ describe('Saved tab', () => {
 
     expect(
       await screen.findByRole('button', { name: 'Sample Chips is in your cart' }),
-    ).toBeDisabled();
+    ).toBeOnTheScreen();
     expect(writes()).toEqual(['POST /me/cart/1']);
     // The Cart tab's badge counts both products.
     expect(within(cartTab()).getByText('2')).toBeOnTheScreen();
@@ -274,6 +279,19 @@ describe('Saved tab', () => {
       await screen.findByRole('button', { name: 'Sample Chips is in your cart' }),
     ).toBeOnTheScreen();
     expect(screen.queryByRole('button', { name: /^Add Sample Chips/ })).not.toBeOnTheScreen();
+
+    await press('Sample Chips is in your cart');
+
+    expect(screen).toHavePathname('/cart');
+  });
+
+  it('opens Your orders from the header', async () => {
+    renderRouter('src/app', { initialUrl: '/saved' });
+    await screen.findByText('Nothing saved yet');
+
+    await press('Your orders');
+
+    expect(screen).toHavePathname('/orders');
   });
 
   it('shows a hint when nothing is saved', async () => {
@@ -308,6 +326,23 @@ describe('Add to cart', () => {
     expect(screen).toHavePathname('/cart');
     expect(await screen.findByText('Sample Chips')).toBeOnTheScreen();
     expect(within(cartTab()).getByText('2')).toBeOnTheScreen();
+  });
+
+  it('clears the Added to cart strip after a few seconds', async () => {
+    renderRouter('src/app', { initialUrl: '/product/1' });
+    const timers = jest.spyOn(globalThis, 'setTimeout');
+    try {
+      await press('Add to cart');
+      expect(await screen.findByText('Added to cart')).toBeOnTheScreen();
+
+      // Run the clear-after timer the strip started, instead of waiting for it.
+      const clear = timers.mock.calls.find(([, delay]) => delay === 4000);
+      expect(clear).toBeDefined();
+      act(() => (clear![0] as () => void)());
+      expect(screen.queryByText('Added to cart')).not.toBeOnTheScreen();
+    } finally {
+      timers.mockRestore();
+    }
   });
 
   it('shows the count on the tab from the start', async () => {

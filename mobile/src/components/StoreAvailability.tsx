@@ -6,7 +6,7 @@ import Badge from '@/components/Badge';
 import Button from '@/components/Button';
 import ErrorBanner from '@/components/ErrorBanner';
 import Loader from '@/components/Loader';
-import { useApiGet } from '@/hooks/useApiGet';
+import type { ApiGetState } from '@/hooks/useApiGet';
 import { usePreferredStore } from '@/hooks/usePreferredStore';
 import { colors, radius, spacing, textStyles } from '@/theme';
 import type { ProductAvailability, StoreStock } from '@/types/store';
@@ -19,12 +19,14 @@ import type { ProductAvailability, StoreStock } from '@/types/store';
  * Kept short so it doesn't push the rest of the page down: a summary and only the shopper's own
  * store, with "Show all N stores" to see the rest.
  */
-export default function StoreAvailability({ productId }: { productId: number }) {
+export default function StoreAvailability({
+  availability: { loading, data, error, reload },
+}: {
+  /** GET /products/{id}/availability, loaded by the product page, which also shows its summary. */
+  availability: ApiGetState<ProductAvailability>;
+}) {
   const router = useRouter();
   const { store: preferred, loading: preferredLoading } = usePreferredStore();
-  const { loading, data, error, reload } = useApiGet<ProductAvailability>(
-    `/products/${productId}/availability`,
-  );
   const [expanded, setExpanded] = useState(false);
 
   let content;

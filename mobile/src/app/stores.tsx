@@ -1,24 +1,36 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRouter } from 'expo-router';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useRef } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { useAuth } from '@/auth';
 import AsyncContent from '@/components/AsyncContent';
+import Badge from '@/components/Badge';
 import Button from '@/components/Button';
-import Card from '@/components/Card';
 import { useApiGet } from '@/hooks/useApiGet';
 import { usePreferredStore, type PreferredStore } from '@/hooks/usePreferredStore';
-import { colors, sharedStyles, spacing, textStyles } from '@/theme';
+import { colors, radius, shadows, sharedStyles, sizes, spacing, textStyles } from '@/theme';
 import type { Store } from '@/types/store';
 
 /**
  * Store picker (T078): every MCCS store, to pick the one the shopper uses most. It's remembered on
  * this device, and product pages list it first (T079). Picking one goes back to where it was
- * opened from (or Home). Each store's details button opens its page (T080).
+ * opened from (or Home). Each store's chevron opens its page (T080). Admins can add a store here.
  */
 export default function StoresScreen() {
   const router = useRouter();
+  const { isAdmin } = useAuth();
   const { store: preferred, setStore } = usePreferredStore();
   const { loading, data, error, reload } = useApiGet<Store[]>('/locations');
+
+  // Coming back from adding a store (or deleting one) shows the change; the first focus is the load.
+  const seenFirstFocus = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (seenFirstFocus.current) reload();
+      seenFirstFocus.current = true;
+    }, [reload]),
+  );
 
   function pick(store: PreferredStore | null) {
     setStore(store);
@@ -27,6 +39,7 @@ export default function StoresScreen() {
     else router.replace('/');
   }
 
+  const stores = data ?? [];
   return (
     <View style={sharedStyles.screen}>
       <AsyncContent
@@ -35,34 +48,35 @@ export default function StoresScreen() {
         onRetry={reload}
         loadingMessage="Loading stores…"
       >
-        <FlatList
-          data={data ?? []}
-          keyExtractor={(store) => String(store.id)}
-          contentContainerStyle={sharedStyles.screenContent}
-          ListHeaderComponent={
-            <Text style={sharedStyles.secondaryText}>
-              Pick the store you shop at most. Product pages will list it first.
-            </Text>
-          }
-          ListEmptyComponent={<Text style={sharedStyles.secondaryText}>No stores yet.</Text>}
-          renderItem={({ item }) => (
-            <StoreRow
-              store={item}
-              selected={item.id === preferred?.id}
-              onPress={() => pick({ id: item.id, name: item.name, slug: item.slug })}
-              onOpen={() => router.push(`/store/${item.id}`)}
+        <ScrollView contentContainerStyle={sharedStyles.screenContent}>
+          <Text style={styles.intro}>Pick your store: we&apos;ll show stock and prices there.</Text>
+          {isAdmin ? (
+            <Button
+              title="Add store"
+              icon="add"
+              variant="secondary"
+              onPress={() => router.push('/store/new')}
             />
-          )}
-          ListFooterComponent={
-            preferred ? (
-              <Button
-                title="Don't use a preferred store"
-                variant="text"
-                onPress={() => pick(null)}
+          ) : null}
+          <View style={styles.card}>
+            {stores.length === 0 ? (
+              <Text style={[sharedStyles.secondaryText, styles.empty]}>No stores yet.</Text>
+            ) : null}
+            {stores.map((item, index) => (
+              <StoreRow
+                key={item.id}
+                store={item}
+                selected={item.id === preferred?.id}
+                divider={index > 0}
+                onPress={() => pick({ id: item.id, name: item.name, slug: item.slug })}
+                onOpen={() => router.push(`/store/${item.id}`)}
               />
-            ) : null
-          }
-        />
+            ))}
+          </View>
+          {preferred ? (
+            <Button title="Don't use a preferred store" variant="text" onPress={() => pick(null)} />
+          ) : null}
+        </ScrollView>
       </AsyncContent>
     </View>
   );
@@ -71,11 +85,13 @@ export default function StoresScreen() {
 function StoreRow({
   store,
   selected,
+  divider,
   onPress,
   onOpen,
 }: {
   store: Store;
   selected: boolean;
+  divider: boolean;
   /** Picks this store. */
   onPress: () => void;
   /** Opens the store's page: address, hours, and directions (T080). */
@@ -83,7 +99,7 @@ function StoreRow({
 }) {
   // Two buttons side by side, not one inside the other, so screen readers can reach both.
   return (
-    <Card style={[styles.row, selected && styles.selected]}>
+    <View style={[styles.row, divider && styles.divider]}>
       <Pressable
         onPress={onPress}
         accessibilityRole="button"
@@ -91,14 +107,13 @@ function StoreRow({
         accessibilityState={{ selected }}
         style={({ pressed }) => [styles.pick, pressed && styles.pressed]}
       >
-        <Ionicons
-          name={selected ? 'checkmark-circle' : 'ellipse-outline'}
-          size={textStyles.subheading.lineHeight}
-          color={selected ? colors.accent : colors.textMuted}
-        />
+        <View style={styles.tile}>
+          <Ionicons name="storefront-outline" size={sizes.icon} color={colors.action} />
+        </View>
         <View style={styles.text}>
           <Text style={styles.name}>{store.name}</Text>
           {store.address ? <Text style={styles.address}>{store.address}</Text> : null}
+          {selected ? <Badge label="Your store" tone="success" /> : null}
         </View>
       </Pressable>
       <Pressable
@@ -108,23 +123,34 @@ function StoreRow({
         // The icon is small; this makes the tap target about 48 points, like a Button.
         hitSlop={spacing.md}
       >
-        <Ionicons
-          name="information-circle-outline"
-          size={textStyles.subheading.lineHeight}
-          color={colors.accent}
-        />
+        <Ionicons name="chevron-forward" size={sizes.icon} color={colors.textMuted} />
       </Pressable>
-    </Card>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  intro: {
+    ...textStyles.body,
+    color: colors.textSecondary,
+  },
+  card: {
+    borderRadius: radius.xl,
+    backgroundColor: colors.surface,
+    ...shadows.card,
+  },
+  empty: {
+    padding: spacing.lg,
+  },
   row: {
     ...sharedStyles.row,
     gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
   },
-  selected: {
-    backgroundColor: colors.accentSoft,
+  divider: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
   },
   pick: {
     ...sharedStyles.row,
@@ -134,9 +160,18 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.6,
   },
+  tile: {
+    width: sizes.thumbSmall,
+    height: sizes.thumbSmall,
+    borderRadius: radius.md,
+    backgroundColor: colors.actionSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   text: {
     flex: 1,
     gap: spacing.xxs,
+    alignItems: 'flex-start',
   },
   name: {
     ...textStyles.bodyStrong,

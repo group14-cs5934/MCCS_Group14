@@ -101,6 +101,34 @@ def test_marked_out_of_stock_at_a_store_shows_out_of_stock_there(client, setup) 
     assert shown["quantico-mcx"]["quantity"] == 12
 
 
+def test_the_admin_product_list_sums_up_stock_across_stores(client, setup, connection) -> None:
+    """The list says where each product is in stock, low (at the reorder point, 5 by default),
+    out, or unknown, so admins see stock without opening every product."""
+    client.post("/admin/stores", json={"name": "Camp Pendleton MCX"})  # no record there
+    set_stock(client, setup, "lejeune", {"in_stock": True, "quantity": 2})  # low
+    other = add_product(connection, barcode="012000171741")
+    connection.commit()
+    client.put(f"/admin/products/{other}/stock/{setup['quantico']['id']}", json={"in_stock": False})
+
+    listed = {row["id"]: row["stock"] for row in client.get("/admin/products").json()}
+
+    assert listed[setup["product_id"]] == {
+        "stores": 3,
+        "in_stock": 2,
+        "low": 1,
+        "out": 0,
+        "unknown": 1,
+    }
+    assert listed[other] == {"stores": 3, "in_stock": 0, "low": 0, "out": 1, "unknown": 2}
+    # The product's own stock page says which store is low.
+    rows = client.get(f"/admin/products/{setup['product_id']}/stock").json()["stores"]
+    assert {row["store"]["name"]: row["low"] for row in rows} == {
+        "Camp Lejeune MCX": True,
+        "Quantico MCX": False,
+        "Camp Pendleton MCX": False,
+    }
+
+
 def test_a_store_with_no_record_can_be_set(client, setup, connection) -> None:
     product_id = add_product(connection, barcode="012000171741")
     connection.commit()

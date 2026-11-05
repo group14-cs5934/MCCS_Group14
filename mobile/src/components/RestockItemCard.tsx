@@ -1,5 +1,6 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { cancelRestockRequest, requestRestock, setReorderPoint } from '@/api';
 import Badge from '@/components/Badge';
@@ -9,7 +10,7 @@ import ErrorBanner from '@/components/ErrorBanner';
 import { ProductPhoto } from '@/components/SearchResultsList';
 import TextField from '@/components/TextField';
 import { changeError, isAccessLost, type OnDenied } from '@/components/storeAccess';
-import { colors, spacing, textStyles } from '@/theme';
+import { colors, radius, sizes, spacing, textStyles } from '@/theme';
 import type { RestockItem, RestockRequest } from '@/types/restock';
 
 /** The largest quantity and reorder point the API accepts. */
@@ -37,20 +38,31 @@ function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
 }
 
-/** The views, scans and stock-outs of the last 30 days, as short lines. */
-function statLines(item: RestockItem): string[] {
+/** 1200 as "1.2k". */
+function compact(count: number): string {
+  return count >= 1000 ? `${Math.round(count / 100) / 10}k` : String(count);
+}
+
+/** The three figures under the name: views, stock-outs, and the sales rate (else scans). */
+function figures(item: RestockItem): { value: string; label: string }[] {
   const { stats } = item;
-  const lines = [`Views ${stats.views_30d} · Scans ${stats.scans_30d} in 30 days`];
+  return [
+    { value: compact(stats.views_30d), label: 'views, 30 days' },
+    { value: `${stats.stockouts_30d}×`, label: 'ran out, 30 days' },
+    stats.sold_per_day !== null
+      ? { value: `~${stats.sold_per_day} / day`, label: 'sells' }
+      : { value: compact(stats.scans_30d), label: 'scans, 30 days' },
+  ];
+}
+
+/** Facts that don't fit in the figures, as short lines. */
+function extraLines(item: RestockItem): string[] {
+  const { stats } = item;
+  const lines: string[] = [];
   if (stats.interest_change !== null) {
     const change = Math.round(stats.interest_change);
     lines.push(`Interest ${change > 0 ? '+' : ''}${change}% vs the 30 days before`);
   }
-  lines.push(
-    stats.stockouts_30d === 0
-      ? 'Has not run out in 30 days'
-      : `Ran out ${plural(stats.stockouts_30d, 'time', 'times')} in 30 days`,
-  );
-  if (stats.sold_per_day !== null) lines.push(`Sells about ${stats.sold_per_day} a day`);
   if (stats.days_left !== null) lines.push(`About ${plural(stats.days_left, 'day', 'days')} left`);
   return lines;
 }
@@ -69,16 +81,24 @@ type Props = {
   /** Whether they may request reorders, cancel them and change reorder points. */
   canRequest: boolean;
   onDenied: OnDenied;
+  /** Called after a request, cancel or reorder-point change, so counts elsewhere can reload. */
+  onChanged: () => void;
 };
 
 /**
- * One low or out-of-stock product: its status, statistics and the advice, with (for request_restock)
- * Request reorder, Cancel request and Change reorder point.
+ * One low or out-of-stock product: its status, figures and the advice, with (for request_restock)
+ * a quantity stepper with Request reorder, Cancel, and Change reorder point.
  */
-export default function RestockItemCard({ storeId, item: loaded, canRequest, onDenied }: Props) {
+export default function RestockItemCard({
+  storeId,
+  item: loaded,
+  canRequest,
+  onDenied,
+  onChanged,
+}: Props) {
   // The item as last changed here; the list shows what it loaded until it loads again.
   const [item, setItem] = useState(loaded);
-  const [mode, setMode] = useState<'request' | 'point' | null>(null);
+  const [pointOpen, setPointOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const busy = useRef(false);
@@ -95,8 +115,12 @@ export default function RestockItemCard({ storeId, item: loaded, canRequest, onD
     const outcome = await run();
     busy.current = false;
     setSaving(false);
-    if (outcome === true) setMode(null);
-    else setError(outcome || failure);
+    if (outcome === true) {
+      setPointOpen(false);
+      onChanged();
+    } else {
+      setError(outcome || failure);
+    }
   }
 
   /** Turns a failed call into text, or hands a lost permission to My store. */
@@ -116,78 +140,58 @@ export default function RestockItemCard({ storeId, item: loaded, canRequest, onD
           <Text style={styles.name}>{name}</Text>
           {item.product.size ? <Text style={styles.caption}>{item.product.size}</Text> : null}
           <View style={styles.badges}>
-            <Badge label={item.status === 'out' ? 'Out' : 'Low'} tone="danger" />
-            {item.stats.popular ? <Badge label="Popular" tone="accent" /> : null}
+            {item.status === 'out' ? (
+              <Badge label="Out of stock" tone="danger" />
+            ) : (
+              <Badge
+                label={item.quantity === null ? 'Low' : `Low · ${item.quantity} left`}
+                tone="warning"
+              />
+            )}
+            {item.stats.popular ? <Badge label="Popular" tone="info" /> : null}
           </View>
         </View>
       </View>
 
-      <Text style={styles.body}>
+      <View style={styles.figures}>
+        {figures(item).map((figure) => (
+          <View key={figure.label} style={styles.figure}>
+            <Text style={styles.figureValue}>{figure.value}</Text>
+            <Text style={styles.caption}>{figure.label}</Text>
+          </View>
+        ))}
+      </View>
+      <Text style={styles.caption}>
         {item.quantity === null ? 'Quantity unknown' : `Quantity ${item.quantity}`}
         {` · Reorder at ${item.reorder_point}`}
         {item.reorder_point_is_default ? ' (store default)' : ''}
         {item.aisle ? ` · ${item.aisle}` : ''}
       </Text>
-      {statLines(item).map((line) => (
+      {extraLines(item).map((line) => (
         <Text key={line} style={styles.caption}>
           {line}
         </Text>
       ))}
-      {item.advice ? <Text style={styles.advice}>{item.advice}</Text> : null}
-
-      {open ? (
-        <Text style={styles.body}>
-          Requested {open.quantity} on {formatDate(open.requested_at)}
-          {open.note ? ` · ${open.note}` : ''}
-        </Text>
-      ) : request ? (
-        <Text style={styles.caption}>{closedText(request)}</Text>
+      {item.advice ? (
+        <View style={styles.advice}>
+          <Text style={styles.adviceText}>{item.advice}</Text>
+        </View>
       ) : null}
 
-      {error ? <ErrorBanner message={error} /> : null}
-
-      {canRequest && mode === 'request' ? (
-        <RequestForm
-          item={item}
-          saving={saving}
-          onCancel={() => setMode(null)}
-          onSubmit={(quantity, note) =>
-            change(`Couldn't request ${name}.`, async () => {
-              const result = await requestRestock(storeId, item.product.id, {
-                quantity,
-                ...(note && { note }),
-              });
-              if (!result.ok) return refused(`Couldn't request ${name}.`, result);
-              setItem({ ...item, last_request: result.data });
-              return true;
-            })
-          }
-        />
-      ) : canRequest && mode === 'point' ? (
-        <ReorderPointForm
-          item={item}
-          saving={saving}
-          onCancel={() => setMode(null)}
-          onSubmit={(point) =>
-            change(`Couldn't change the reorder point of ${name}.`, async () => {
-              const result = await setReorderPoint(storeId, item.product.id, point);
-              if (!result.ok) {
-                return refused(`Couldn't change the reorder point of ${name}.`, result);
-              }
-              setItem({ ...item, ...result.data });
-              return true;
-            })
-          }
-        />
-      ) : canRequest ? (
-        <View style={styles.actions}>
-          {open ? (
+      {open ? (
+        <View style={styles.requested}>
+          <Ionicons name="cube-outline" size={sizes.icon} color={colors.accent} />
+          <Text style={styles.requestedText}>
+            Requested {open.quantity} on {formatDate(open.requested_at)}
+            {open.note ? ` · ${open.note}` : ''}
+          </Text>
+          {canRequest ? (
             <Button
-              title="Cancel request"
-              variant="text"
+              title="Cancel"
+              variant="secondary"
               loading={saving}
               accessibilityLabel={`Cancel the reorder request for ${name}`}
-              style={styles.action}
+              style={styles.cancel}
               onPress={() =>
                 change(`Couldn't cancel the request for ${name}.`, async () => {
                   const result = await cancelRestockRequest(storeId, item.product.id);
@@ -200,52 +204,87 @@ export default function RestockItemCard({ storeId, item: loaded, canRequest, onD
                 })
               }
             />
-          ) : (
-            <Button
-              title="Request reorder"
-              variant="secondary"
-              icon="cart-outline"
-              accessibilityLabel={`Request reorder of ${name}`}
-              style={styles.action}
-              onPress={() => {
-                setError(null);
-                setMode('request');
-              }}
+          ) : null}
+        </View>
+      ) : request ? (
+        <Text style={styles.caption}>{closedText(request)}</Text>
+      ) : null}
+
+      {error ? <ErrorBanner message={error} /> : null}
+
+      {canRequest && pointOpen ? (
+        <ReorderPointForm
+          item={item}
+          saving={saving}
+          onCancel={() => setPointOpen(false)}
+          onSubmit={(point) =>
+            change(`Couldn't change the reorder point of ${name}.`, async () => {
+              const result = await setReorderPoint(storeId, item.product.id, point);
+              if (!result.ok) {
+                return refused(`Couldn't change the reorder point of ${name}.`, result);
+              }
+              setItem({ ...item, ...result.data });
+              return true;
+            })
+          }
+        />
+      ) : canRequest ? (
+        <>
+          {open ? null : (
+            <RequestForm
+              item={item}
+              saving={saving}
+              onSubmit={(quantity, note) =>
+                change(`Couldn't request ${name}.`, async () => {
+                  const result = await requestRestock(storeId, item.product.id, {
+                    quantity,
+                    ...(note && { note }),
+                  });
+                  if (!result.ok) return refused(`Couldn't request ${name}.`, result);
+                  setItem({ ...item, last_request: result.data });
+                  return true;
+                })
+              }
             />
           )}
           <Button
             title="Reorder point"
             variant="text"
             accessibilityLabel={`Change the reorder point of ${name}`}
-            style={styles.action}
+            style={styles.left}
             onPress={() => {
               setError(null);
-              setMode('point');
+              setPointOpen(true);
             }}
           />
-        </View>
+        </>
       ) : null}
     </Card>
   );
 }
 
-/** Quantity (suggested, or what was asked for last time) and an optional note. */
+/** A quantity stepper (suggested, or what was asked for last time), Request reorder, and a note. */
 function RequestForm({
   item,
   saving,
-  onCancel,
   onSubmit,
 }: {
   item: RestockItem;
   saving: boolean;
-  onCancel: () => void;
   onSubmit: (quantity: number, note: string) => void;
 }) {
   const start = item.suggested_quantity ?? item.last_request?.quantity;
   const [quantity, setQuantity] = useState(start === undefined ? '' : String(start));
   const [note, setNote] = useState('');
+  const [noting, setNoting] = useState(false);
   const [problem, setProblem] = useState<string | undefined>();
   const name = item.product.name;
+
+  function step(by: number) {
+    const current = parseWhole(quantity, 0) ?? 0;
+    setQuantity(String(Math.min(MAX_NUMBER, Math.max(1, current + by))));
+    setProblem(undefined);
+  }
 
   function submit() {
     const value = parseWhole(quantity, 1);
@@ -259,35 +298,58 @@ function RequestForm({
 
   return (
     <View style={styles.form}>
-      <TextField
-        label={`Quantity to order of ${name}`}
-        value={quantity}
-        onChangeText={setQuantity}
-        keyboardType="number-pad"
-        error={problem}
-      />
-      <TextField
-        label={`Note for ${name} (optional)`}
-        value={note}
-        onChangeText={setNote}
-        maxLength={NOTE_MAX_LENGTH}
-      />
-      <View style={styles.actions}>
+      <View style={styles.order}>
+        <View style={styles.stepper}>
+          <Pressable
+            onPress={() => step(-1)}
+            accessibilityRole="button"
+            accessibilityLabel={`One less of ${name}`}
+            style={styles.step}
+          >
+            <Ionicons name="remove" size={sizes.icon} color={colors.textPrimary} />
+          </Pressable>
+          <TextInput
+            value={quantity}
+            onChangeText={setQuantity}
+            keyboardType="number-pad"
+            accessibilityLabel={`Quantity to order of ${name}`}
+            style={styles.quantity}
+          />
+          <Pressable
+            onPress={() => step(1)}
+            accessibilityRole="button"
+            accessibilityLabel={`One more of ${name}`}
+            style={styles.step}
+          >
+            <Ionicons name="add" size={sizes.icon} color={colors.textPrimary} />
+          </Pressable>
+        </View>
         <Button
-          title="Cancel"
-          variant="text"
-          onPress={onCancel}
-          disabled={saving}
-          style={styles.action}
-        />
-        <Button
-          title="Send request"
+          title="Request reorder"
+          variant="action"
           onPress={submit}
           loading={saving}
-          accessibilityLabel={`Send the reorder request for ${name}`}
-          style={styles.action}
+          accessibilityLabel={`Request reorder of ${name}`}
+          style={styles.orderButton}
         />
       </View>
+      {problem ? <Text style={styles.problem}>{problem}</Text> : null}
+      {noting ? (
+        <TextField
+          label={`Note for ${name} (optional)`}
+          value={note}
+          onChangeText={setNote}
+          maxLength={NOTE_MAX_LENGTH}
+        />
+      ) : (
+        <Button
+          title="Add a note"
+          variant="text"
+          accessibilityLabel={`Add a note to the reorder of ${name}`}
+          onPress={() => setNoting(true)}
+          style={styles.left}
+        />
+      )}
     </View>
   );
 }
@@ -359,7 +421,7 @@ function ReorderPointForm({
 
 const styles = StyleSheet.create({
   card: {
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
   header: {
     flexDirection: 'row',
@@ -372,6 +434,7 @@ const styles = StyleSheet.create({
   },
   badges: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: spacing.sm,
   },
@@ -379,17 +442,80 @@ const styles = StyleSheet.create({
     ...textStyles.bodyStrong,
     color: colors.textPrimary,
   },
-  body: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-  },
   caption: {
     ...textStyles.caption,
     color: colors.textSecondary,
   },
-  advice: {
+  figures: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  figure: {
+    flex: 1,
+    gap: spacing.xxs,
+  },
+  figureValue: {
     ...textStyles.bodyStrong,
-    color: colors.accent,
+    color: colors.textPrimary,
+  },
+  advice: {
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.actionSoft,
+  },
+  adviceText: {
+    ...textStyles.body,
+    color: colors.actionPressed,
+  },
+  requested: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  requestedText: {
+    ...textStyles.bodyStrong,
+    flex: 1,
+    color: colors.textPrimary,
+  },
+  cancel: {
+    alignSelf: 'auto',
+  },
+  order: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  stepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  step: {
+    width: sizes.touch,
+    height: sizes.touch,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quantity: {
+    ...textStyles.bodyStrong,
+    minWidth: sizes.touch,
+    textAlign: 'center',
+    color: colors.textPrimary,
+  },
+  orderButton: {
+    flex: 1,
+  },
+  problem: {
+    ...textStyles.caption,
+    color: colors.danger,
+  },
+  left: {
+    alignSelf: 'flex-start',
   },
   form: {
     gap: spacing.sm,

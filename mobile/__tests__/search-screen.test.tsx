@@ -211,6 +211,33 @@ it('clearing the search clears the results right away', async () => {
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
 
+it('Recently viewed products are quick links before typing', async () => {
+  await AsyncStorage.setItem(
+    'recent-products:user-1',
+    JSON.stringify([
+      { id: 7, name: 'Cheerios', image_url: null, price: '4.99', rating: null, viewed_at: 'x' },
+    ]),
+  );
+  await openSearch();
+  fetchMock.mockReturnValue(new Promise(() => {}));
+
+  fireEvent.press(await screen.findByRole('button', { name: 'Open Cheerios' }));
+
+  expect(screen).toHavePathname('/product/7');
+});
+
+it('offers the barcode scanner when nothing matches', async () => {
+  await openSearch();
+  respondWith(200, []);
+
+  typeQuickly('xqzv');
+  await pause();
+  await screen.findByText('No results');
+  fireEvent.press(screen.getByRole('button', { name: 'Scan a barcode' }));
+
+  expect(screen).toHavePathname('/scan');
+});
+
 // T038 acceptance: each result shows name, price, and photo; tapping one opens its product page.
 it('shows each result’s name, price, and photo, and tapping one opens its product page', async () => {
   await openSearch();

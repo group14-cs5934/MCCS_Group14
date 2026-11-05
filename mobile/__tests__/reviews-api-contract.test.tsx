@@ -109,6 +109,7 @@ it("shows each review's author, date, title, and the author's stars", async () =
 it('posts a review as the same request the integration test sends', async () => {
   await openReviews();
   await screen.findByText(page.items[0].body);
+  await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Write a review' })));
   fireEvent.changeText(screen.getByLabelText('Title (optional)'), 'Good value');
   fireEvent.changeText(screen.getByLabelText('Review'), 'Cheaper here than off base.');
 

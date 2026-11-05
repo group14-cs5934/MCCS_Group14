@@ -134,7 +134,10 @@ export default function StoreStockRow({ storeId, row: loaded, onDenied }: Props)
         </View>
         {row.admin_set_at ? <Badge label="Set by hand" tone="accent" /> : null}
       </View>
-      <Text style={[styles.status, !row.in_stock && styles.out]}>{describe(row)}</Text>
+      <Badge
+        label={describe(row)}
+        tone={!row.updated_at ? 'warning' : row.in_stock ? 'success' : 'danger'}
+      />
       <Button
         title="Edit stock"
         variant="text"
@@ -171,13 +174,6 @@ const styles = StyleSheet.create({
   caption: {
     ...textStyles.caption,
     color: colors.textSecondary,
-  },
-  status: {
-    ...textStyles.body,
-    color: colors.textPrimary,
-  },
-  out: {
-    color: colors.danger,
   },
   edit: {
     alignSelf: 'flex-start',

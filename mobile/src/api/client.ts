@@ -64,6 +64,8 @@ export type ApiError = {
    * barcode gives ['retry_scan', 'manual_search'].
    */
   actions?: ErrorAction[];
+  /** For a 422, one entry per invalid field: `loc` is the path (e.g. ['body', 'name']). */
+  details?: { loc: (string | number)[]; msg: string }[];
   /** The server's request ID. Include it in bug reports to find the matching server log line. */
   requestId?: string;
 };
@@ -107,14 +109,17 @@ function messageForStatus(status: number): string {
  * "actions" when there's something to offer (see the backend README: errors). Other bodies, e.g.
  * a proxy's HTML error page, give none of them.
  */
-function readServerError(body: unknown): Pick<ApiError, 'code' | 'serverMessage' | 'actions'> {
+function readServerError(
+  body: unknown,
+): Pick<ApiError, 'code' | 'serverMessage' | 'actions' | 'details'> {
   if (typeof body !== 'object' || body === null) {
     return {};
   }
-  const { code, message, actions } = body as Record<string, unknown>;
+  const { code, message, actions, details } = body as Record<string, unknown>;
   return {
     code: typeof code === 'string' ? code : undefined,
     serverMessage: typeof message === 'string' ? message : undefined,
+    ...(Array.isArray(details) && { details: details as ApiError['details'] }),
     // Actions this version of the app doesn't know how to offer are left out.
     ...(Array.isArray(actions) && {
       actions: actions.filter((action): action is ErrorAction => ERROR_ACTIONS.includes(action)),

@@ -24,6 +24,7 @@ from app.core.auth import TokenVerifier
 from app.core.config import load_settings
 from app.main import create_app
 from app.repositories.audit_log import get_audit_log_repository
+from app.repositories.insights import get_insights_repository
 from app.repositories.products import get_product_repository
 from app.repositories.ratings import get_rating_repository
 from app.repositories.restock import get_restock_repository
@@ -42,6 +43,7 @@ ADMIN_ID = UUID("a0000000-0000-4000-8000-000000000001")
 # The admin endpoints that exist today. The route list must include at least these, so the
 # automatic discovery below can't silently find nothing.
 KNOWN_ADMIN_ROUTES = {
+    ("GET", "/admin/overview"),
     ("GET", "/admin/users"),
     ("GET", "/admin/products"),
     ("PATCH", "/admin/users/{user_id}"),
@@ -168,6 +170,7 @@ def client(make_client, private_key, users) -> TestClient:
     client.app.dependency_overrides[get_store_role_repository] = lambda: Tripwire("store roles")
     client.app.dependency_overrides[get_restock_repository] = lambda: Tripwire("restock")
     client.app.dependency_overrides[get_shopping_repository] = lambda: Tripwire("shopping")
+    client.app.dependency_overrides[get_insights_repository] = lambda: Tripwire("insights")
     client.app.dependency_overrides[get_audit_log_repository] = lambda: Tripwire("audit log")
     return client
 

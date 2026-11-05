@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-library';
+import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
 
 import { getMe } from '@/api/me';
 import type { Product } from '@/types/product';
@@ -187,7 +187,9 @@ const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
       });
     }
     const item = api.items.find((row) => row.product.id === productId)!;
-    return jsonResponse(201, request(20, productId, item.product.name, body));
+    const created = request(20, productId, item.product.name, body);
+    api.requests.push(created);
+    return jsonResponse(201, created);
   }
   if (rest.endsWith('/requests/open') && method === 'DELETE') return jsonResponse(204);
   if (rest.endsWith('/reorder-point') && method === 'PUT') {
@@ -291,7 +293,7 @@ describe('counting product views and scans', () => {
     renderRouter('src/app', { initialUrl: '/product/2' });
     await screen.findByText('Diet Pepsi');
     await act(async () => fireEvent.press(screen.getByRole('tab', { name: 'Reviews' })));
-    await act(async () => fireEvent.press(screen.getByRole('tab', { name: 'Overview' })));
+    await act(async () => fireEvent.press(screen.getByRole('tab', { name: 'Stores' })));
 
     expect(activity()).toHaveLength(1);
   });
@@ -313,6 +315,7 @@ describe('the restock badge', () => {
     signedInAs('staff', QUANTICO, VIEWER);
     renderRouter('src/app');
 
+    fireEvent.press(await screen.findByRole('button', { name: 'Account' }));
     const button = await screen.findByRole('button', { name: 'My store' });
     expect(await screen.findByText('2')).toBeOnTheScreen();
 
@@ -339,6 +342,7 @@ describe('the restock badge', () => {
     signedInAs('staff', QUANTICO, WORKER);
     renderRouter('src/app');
 
+    fireEvent.press(await screen.findByRole('button', { name: 'Account' }));
     await screen.findByRole('button', { name: 'My store' });
     await act(async () => jest.advanceTimersByTime(1000));
     expect(screen.queryByText('2')).not.toBeOnTheScreen();
@@ -350,10 +354,35 @@ describe('the restock badge', () => {
     signedInAs('staff', QUANTICO, VIEWER);
     renderRouter('src/app');
 
+    fireEvent.press(await screen.findByRole('button', { name: 'Account' }));
     await screen.findByRole('button', { name: 'My store' });
     await act(async () => jest.advanceTimersByTime(1000));
     expect(sent(/\/restock\/summary$/)).toHaveLength(1);
     expect(screen.queryByText('0')).not.toBeOnTheScreen();
+  });
+});
+
+describe('the My store header', () => {
+  it('shows the store, the role and out, low and open reorder tiles', async () => {
+    signedInAs('staff', QUANTICO, VIEWER);
+    renderRouter('src/app', { initialUrl: '/my-store' });
+
+    expect(await screen.findByText('Quantico MCX')).toBeOnTheScreen();
+    expect(screen.getByText('Store tools · Looker')).toBeOnTheScreen();
+    expect(await screen.findByText('Running low')).toBeOnTheScreen();
+    expect(screen.getByText('Reorders open')).toBeOnTheScreen();
+    expect(screen.getAllByText('Out of stock').length).toBeGreaterThan(0);
+  });
+
+  it('has no tiles, and asks for no summary, for a role without view_restock', async () => {
+    signedInAs('staff', QUANTICO, WORKER);
+    renderRouter('src/app', { initialUrl: '/my-store' });
+
+    expect(await screen.findByText('Store tools · Worker')).toBeOnTheScreen();
+    await act(async () => jest.advanceTimersByTime(1000));
+    expect(screen.queryByText('Running low')).not.toBeOnTheScreen();
+    expect(screen.queryByText('Reorders open')).not.toBeOnTheScreen();
+    expect(sent(/\/restock/)).toHaveLength(0);
   });
 });
 
@@ -367,7 +396,7 @@ describe('the Restock section', () => {
     signedInAs('staff', QUANTICO, WORKER);
     renderRouter('src/app', { initialUrl: '/my-store' });
 
-    expect(await screen.findByText('Your role here: Worker')).toBeOnTheScreen();
+    expect(await screen.findByText('Store tools · Worker')).toBeOnTheScreen();
     expect(screen.queryByRole('tab', { name: 'Restock' })).not.toBeOnTheScreen();
     expect(sent(/\/restock/)).toHaveLength(0);
   });
@@ -377,23 +406,26 @@ describe('the Restock section', () => {
     await open();
 
     expect(screen.getByText('12 oz')).toBeOnTheScreen();
-    // The status badges (the filter's choices are radios with the same words).
-    expect(screen.getAllByText('Out')).toHaveLength(2);
-    expect(screen.getAllByText('Low')).toHaveLength(2);
+    // Status pills (the header tile has the same words as the Out of stock pill).
+    expect(screen.getAllByText('Out of stock')).toHaveLength(2);
+    expect(screen.getByText('Low · 3 left')).toBeOnTheScreen();
     expect(screen.getByText('Popular')).toBeOnTheScreen();
     expect(
       screen.getByText('Quantity 0 · Reorder at 5 (store default) · Aisle 3'),
     ).toBeOnTheScreen();
     expect(screen.getByText('Quantity 3 · Reorder at 8')).toBeOnTheScreen();
-    expect(screen.getByText('Views 120 · Scans 45 in 30 days')).toBeOnTheScreen();
+    expect(screen.getByText('120')).toBeOnTheScreen();
+    expect(screen.getByText('3×')).toBeOnTheScreen();
+    expect(screen.getByText('~2.5 / day')).toBeOnTheScreen();
     expect(screen.getByText('Interest +18% vs the 30 days before')).toBeOnTheScreen();
-    expect(screen.getByText('Ran out 3 times in 30 days')).toBeOnTheScreen();
-    expect(screen.getByText('Sells about 2.5 a day')).toBeOnTheScreen();
     expect(screen.getByText('About 3 days left')).toBeOnTheScreen();
     expect(screen.getByText(CHIPS.advice!)).toBeOnTheScreen();
     expect(screen.getByText(/Last request of 18 was restocked/)).toBeOnTheScreen();
     expect(screen.getByText(/^Requested 12 on /)).toBeOnTheScreen();
-    expect(screen.getByText('1 out · 1 low · 1 requested')).toBeOnTheScreen();
+    expect(screen.getByRole('radio', { name: 'All 2' })).toBeOnTheScreen();
+    expect(screen.getByRole('radio', { name: 'Out 1' })).toBeOnTheScreen();
+    expect(screen.getByText('Out 1')).toBeOnTheScreen();
+    expect(screen.getByText('Low 1')).toBeOnTheScreen();
     // Read-only: nothing to change.
     expect(screen.queryByRole('button', { name: /Request reorder/ })).not.toBeOnTheScreen();
     expect(screen.queryByRole('button', { name: /Cancel the reorder/ })).not.toBeOnTheScreen();
@@ -404,7 +436,7 @@ describe('the Restock section', () => {
     signedInAs('staff', QUANTICO, VIEWER);
     await open();
 
-    await act(async () => fireEvent.press(screen.getByRole('radio', { name: 'Low' })));
+    await act(async () => fireEvent.press(screen.getByRole('radio', { name: 'Low 1' })));
 
     expect(await screen.findByText('Cola')).toBeOnTheScreen();
     expect(screen.queryByText('Sample Chips')).not.toBeOnTheScreen();
@@ -437,16 +469,16 @@ describe('the Restock section', () => {
     it('requests a reorder with the suggested quantity and a note', async () => {
       await open();
 
-      fireEvent.press(screen.getByRole('button', { name: 'Request reorder of Sample Chips' }));
       expect(screen.getByLabelText('Quantity to order of Sample Chips').props.value).toBe('24');
+      fireEvent.press(
+        screen.getByRole('button', { name: 'Add a note to the reorder of Sample Chips' }),
+      );
       fireEvent.changeText(
         screen.getByLabelText('Note for Sample Chips (optional)'),
         ' Before Friday ',
       );
       await act(async () =>
-        fireEvent.press(
-          screen.getByRole('button', { name: 'Send the reorder request for Sample Chips' }),
-        ),
+        fireEvent.press(screen.getByRole('button', { name: 'Request reorder of Sample Chips' })),
       );
 
       expect(sent(/\/requests$/).filter((call) => call.method === 'POST')).toEqual([
@@ -462,15 +494,30 @@ describe('the Restock section', () => {
       ).toBeOnTheScreen();
     });
 
+    it('updates the Reorders open tile after a reorder request', async () => {
+      await open();
+      // The number in the same tile as the "Reorders open" label.
+      const openCount = () => {
+        let node = screen.getByText('Reorders open').parent!;
+        while (within(node).queryAllByText(/^\d+$/).length === 0) node = node.parent!;
+        return within(node).getByText(/^\d+$/).props.children;
+      };
+      expect(openCount()).toBe(1);
+
+      await act(async () =>
+        fireEvent.press(screen.getByRole('button', { name: 'Request reorder of Sample Chips' })),
+      );
+      await screen.findByText(/^Requested 24 on /);
+      await waitFor(() => expect(openCount()).toBe(2));
+      expect(sent(/\/restock\/summary$/)).toHaveLength(2);
+    });
+
     it('needs a whole quantity', async () => {
       await open();
 
-      fireEvent.press(screen.getByRole('button', { name: 'Request reorder of Sample Chips' }));
       fireEvent.changeText(screen.getByLabelText('Quantity to order of Sample Chips'), '0');
       await act(async () =>
-        fireEvent.press(
-          screen.getByRole('button', { name: 'Send the reorder request for Sample Chips' }),
-        ),
+        fireEvent.press(screen.getByRole('button', { name: 'Request reorder of Sample Chips' })),
       );
 
       expect(screen.getByText('Enter a whole number from 1 to 10000.')).toBeOnTheScreen();
@@ -481,11 +528,8 @@ describe('the Restock section', () => {
       api.alreadyRequested = true;
       await open();
 
-      fireEvent.press(screen.getByRole('button', { name: 'Request reorder of Sample Chips' }));
       await act(async () =>
-        fireEvent.press(
-          screen.getByRole('button', { name: 'Send the reorder request for Sample Chips' }),
-        ),
+        fireEvent.press(screen.getByRole('button', { name: 'Request reorder of Sample Chips' })),
       );
 
       expect(

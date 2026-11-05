@@ -43,7 +43,7 @@ describe('signed out', () => {
     await openSignIn();
 
     expect(screen).toHavePathname('/sign-in');
-    expect(screen.queryByText('Scan & compare.')).not.toBeOnTheScreen();
+    expect(screen.queryByText('What are you shopping for?')).not.toBeOnTheScreen();
   });
 
   it("can't open a product directly", async () => {
@@ -60,7 +60,7 @@ describe('sign in', () => {
     fillIn({ Email: ` ${EMAIL} `, Password: PASSWORD });
     fireEvent.press(screen.getByText('Sign In'));
 
-    expect(await screen.findByText('Scan & compare.')).toBeOnTheScreen();
+    expect(await screen.findByText('What are you shopping for?')).toBeOnTheScreen();
     expect(screen).toHavePathname('/');
     expect(mockAuth.signInWithPassword).toHaveBeenCalledWith({ email: EMAIL, password: PASSWORD });
   });
@@ -116,7 +116,7 @@ describe('sign up', () => {
     fillIn({ Email: EMAIL, Password: PASSWORD, 'Confirm password': PASSWORD });
     fireEvent.press(screen.getByText('Create Account'));
 
-    expect(await screen.findByText('Scan & compare.')).toBeOnTheScreen();
+    expect(await screen.findByText('What are you shopping for?')).toBeOnTheScreen();
     expect(mockAuth.signUp).toHaveBeenCalledWith({ email: EMAIL, password: PASSWORD });
   });
 
@@ -170,7 +170,8 @@ describe('signed in', () => {
   it('shows who is signed in and signs out back to the sign-in screen', async () => {
     renderRouter('src/app');
 
-    expect(await screen.findByText(`Signed in as ${EMAIL}`)).toBeOnTheScreen();
+    fireEvent.press(await screen.findByRole('button', { name: 'Account' }));
+    expect(await screen.findByText(EMAIL)).toBeOnTheScreen();
     await act(async () => {
       fireEvent.press(screen.getByText('Sign out'));
     });
@@ -197,7 +198,8 @@ describe('roles', () => {
     fillIn({ Email: EMAIL, Password: PASSWORD });
     fireEvent.press(screen.getByText('Sign In'));
 
-    expect(await screen.findByText(`Signed in as ${EMAIL}`)).toBeOnTheScreen();
+    fireEvent.press(await screen.findByRole('button', { name: 'Account' }));
+    expect(await screen.findByText(EMAIL)).toBeOnTheScreen();
     expect(getMeMock).toHaveBeenCalledTimes(1);
   });
 
@@ -210,12 +212,13 @@ describe('roles', () => {
     renderRouter('src/app');
 
     // Admins start in the admin area, which opens on top of Home; Back shows Home.
-    expect(await screen.findByRole('tab', { name: 'Products' })).toBeOnTheScreen();
+    expect(await screen.findByText('Recon · all stores')).toBeOnTheScreen();
     expect(screen).toHavePathname('/admin');
 
     await act(async () => router.back());
 
-    expect(await screen.findByText(`Signed in as ${EMAIL} · Admin`)).toBeOnTheScreen();
+    fireEvent.press(await screen.findByRole('button', { name: 'Account' }));
+    expect(await screen.findByText('Administrator')).toBeOnTheScreen();
   });
 
   it("still opens Home when the role can't be loaded", async () => {
@@ -225,7 +228,8 @@ describe('roles', () => {
     });
     renderRouter('src/app');
 
-    expect(await screen.findByText(`Signed in as ${EMAIL}`)).toBeOnTheScreen();
+    fireEvent.press(await screen.findByRole('button', { name: 'Account' }));
+    expect(await screen.findByText(EMAIL)).toBeOnTheScreen();
     expect(getMeMock).toHaveBeenCalledTimes(1);
   });
 });
@@ -277,7 +281,7 @@ describe('deactivated accounts', () => {
     expect(await screen.findByText(DEACTIVATED_MESSAGE)).toBeOnTheScreen();
     expect(screen).toHavePathname('/sign-in');
     expect(mockAuth.signOut).toHaveBeenCalled();
-    expect(screen.queryByText(`Signed in as ${EMAIL}`)).not.toBeOnTheScreen();
+    expect(screen.queryByText(EMAIL)).not.toBeOnTheScreen();
   });
 
   it('are signed out when the app opens with their saved session', async () => {
@@ -298,7 +302,8 @@ describe('deactivated accounts', () => {
     deactivated = false;
     fillIn({ Email: EMAIL, Password: PASSWORD });
     fireEvent.press(screen.getByText('Sign In'));
-    expect(await screen.findByText(`Signed in as ${EMAIL}`)).toBeOnTheScreen();
+    fireEvent.press(await screen.findByRole('button', { name: 'Account' }));
+    expect(await screen.findByText(EMAIL)).toBeOnTheScreen();
 
     await act(async () => {
       fireEvent.press(screen.getByText('Sign out'));

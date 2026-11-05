@@ -58,7 +58,7 @@ afterAll(() => {
   globalThis.fetch = originalFetch;
 });
 
-/** Tab bar buttons are announced as e.g. "Scan, tab, 2 of 3". */
+/** Tab bar buttons are announced as e.g. "Scan, tab, 3 of 5". */
 const tab = (name: string) => screen.getByRole('button', { name: new RegExp(`^${name}, tab`) });
 
 describe('navigation shell', () => {
@@ -66,7 +66,12 @@ describe('navigation shell', () => {
     renderRouter('src/app');
     expect(screen).toHavePathname('/');
 
-    await screen.findByText('Scan & compare.');
+    await screen.findByText('What are you shopping for?');
+    fireEvent.press(tab('Search'));
+    expect(screen).toHavePathname('/search');
+    expect(tab('Search')).toBeSelected();
+    expect(await screen.findByLabelText('Search products')).toBeOnTheScreen();
+
     fireEvent.press(tab('Scan'));
     expect(screen).toHavePathname('/scan');
     expect(tab('Scan')).toBeSelected();
@@ -84,16 +89,19 @@ describe('navigation shell', () => {
 
     fireEvent.press(tab('Home'));
     expect(screen).toHavePathname('/');
-    expect(screen.getByText('Scan & compare.')).toBeOnTheScreen();
+    expect(screen.getByText('What are you shopping for?')).toBeOnTheScreen();
   });
 
-  it('returns to Home when going back from a product', async () => {
+  it('returns to the Account screen when going back from a product', async () => {
     renderRouter('src/app');
 
+    fireEvent.press(await screen.findByRole('button', { name: 'Account' }));
     fireEvent.press(await screen.findByText('Open a sample product'));
     expect(screen).toHavePathname('/product/1');
     expect(screen.getByText('Loading product…')).toBeOnTheScreen();
 
+    act(() => router.back());
+    expect(screen).toHavePathname('/account');
     act(() => router.back());
     expect(screen).toHavePathname('/');
   });
@@ -101,7 +109,7 @@ describe('navigation shell', () => {
   it('returns to the tab the product was opened from', async () => {
     renderRouter('src/app');
 
-    await screen.findByText('Scan & compare.');
+    await screen.findByText('What are you shopping for?');
     fireEvent.press(tab('Saved'));
     fireEvent.press(await screen.findByRole('button', { name: 'Open Sample Chips' }));
     expect(screen).toHavePathname('/product/1');
@@ -113,7 +121,7 @@ describe('navigation shell', () => {
   it('goes back through search to the product and then Home', async () => {
     renderRouter('src/app');
 
-    fireEvent.press(await screen.findByText('Search manually'));
+    fireEvent.press(await screen.findByRole('button', { name: 'Search products or brands' }));
     expect(screen).toHavePathname('/search');
     fireEvent.press(screen.getByText('Cheerios'));
     expect(screen).toHavePathname('/product/42');

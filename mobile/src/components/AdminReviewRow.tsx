@@ -1,5 +1,6 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { deleteReview, setReviewHidden, type ApiError } from '@/api';
 import Badge from '@/components/Badge';
@@ -7,7 +8,7 @@ import Button from '@/components/Button';
 import Card from '@/components/Card';
 import ErrorBanner from '@/components/ErrorBanner';
 import StarRating from '@/components/StarRating';
-import { colors, spacing, textStyles } from '@/theme';
+import { colors, radius, sizes, spacing, textStyles } from '@/theme';
 import type { AdminReview } from '@/types/review';
 
 function failureMessage(error: ApiError, what: string): string {
@@ -91,28 +92,40 @@ export default function AdminReviewRow({
 
   return (
     <Card style={styles.card}>
-      <View style={styles.header}>
-        <View style={styles.headerText}>
-          <Text style={styles.author} numberOfLines={1}>
-            {author}
-          </Text>
-          <Text style={styles.caption}>
-            Product #{review.product_id} · {date}
-          </Text>
+      {/* Only the content dims when hidden, so the buttons stay at full strength. */}
+      <View style={[styles.content, review.hidden && styles.hiddenContent]}>
+        <View style={styles.header}>
+          <View style={styles.thumb}>
+            <Ionicons
+              name="chatbubble-ellipses-outline"
+              size={sizes.icon}
+              color={colors.textSecondary}
+            />
+          </View>
+          <View style={styles.headerText}>
+            <Text style={styles.product} numberOfLines={1}>
+              Product #{review.product_id}
+            </Text>
+            <Text style={styles.caption} numberOfLines={1}>
+              {author} · {date}
+            </Text>
+          </View>
+          {review.hidden ? <Badge label="Hidden" tone="danger" /> : null}
         </View>
-        {review.hidden ? <Badge label="Hidden" tone="danger" /> : null}
+
+        {review.stars ? (
+          <View accessible accessibilityLabel={`${review.stars} out of 5 stars`}>
+            <StarRating value={review.stars} size={14} />
+          </View>
+        ) : null}
+        <View style={styles.text}>
+          {review.title ? <Text style={styles.title}>{review.title}</Text> : null}
+          <Text style={styles.body}>{review.body}</Text>
+        </View>
       </View>
 
-      {review.stars ? (
-        <View accessible accessibilityLabel={`${review.stars} out of 5 stars`}>
-          <StarRating value={review.stars} size={14} />
-        </View>
-      ) : null}
-      {review.title ? <Text style={styles.title}>{review.title}</Text> : null}
-      <Text style={styles.body}>{review.body}</Text>
-
       {confirmingDelete ? (
-        <View style={styles.confirm}>
+        <View style={styles.footer}>
           <Text style={styles.question}>
             Delete this review for good? It can&apos;t be undone. To take it down but keep it, hide
             it instead.
@@ -120,48 +133,44 @@ export default function AdminReviewRow({
           <View style={styles.actions}>
             <Button
               title="Cancel"
-              variant="text"
+              variant="secondary"
               onPress={() => setConfirmingDelete(false)}
               disabled={busy !== null}
               style={styles.action}
             />
-            <Button
-              title="Delete"
-              variant="secondary"
+            <DeleteButton
+              author={author}
               onPress={remove}
+              disabled={busy !== null}
               loading={busy === 'delete'}
-              accessibilityLabel={`Delete review by ${author}`}
-              style={styles.action}
             />
           </View>
         </View>
       ) : (
-        <View style={styles.actions}>
+        <View style={styles.footer}>
+          <View style={styles.actions}>
+            <Button
+              title={hideLabel}
+              variant="secondary"
+              onPress={toggleHidden}
+              loading={busy === 'hide'}
+              accessibilityLabel={`${hideLabel} review by ${author}`}
+              style={styles.action}
+            />
+            <DeleteButton
+              author={author}
+              onPress={() => {
+                setError(null);
+                setConfirmingDelete(true);
+              }}
+              disabled={busy !== null}
+            />
+          </View>
           <Button
             title="View product"
             variant="text"
             onPress={() => onOpenProduct(review.product_id)}
             accessibilityLabel={`View the product reviewed by ${author}`}
-            style={styles.action}
-          />
-          <Button
-            title={hideLabel}
-            variant="text"
-            onPress={toggleHidden}
-            loading={busy === 'hide'}
-            accessibilityLabel={`${hideLabel} review by ${author}`}
-            style={styles.action}
-          />
-          <Button
-            title="Delete"
-            variant="text"
-            onPress={() => {
-              setError(null);
-              setConfirmingDelete(true);
-            }}
-            disabled={busy !== null}
-            accessibilityLabel={`Delete review by ${author}`}
-            style={styles.action}
           />
         </View>
       )}
@@ -171,20 +180,63 @@ export default function AdminReviewRow({
   );
 }
 
+function DeleteButton({
+  author,
+  onPress,
+  disabled,
+  loading = false,
+}: {
+  author: string;
+  onPress: () => void;
+  disabled: boolean;
+  loading?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={`Delete review by ${author}`}
+      accessibilityState={{ disabled }}
+      style={[styles.delete, disabled && styles.deleteBusy]}
+    >
+      {loading ? (
+        <ActivityIndicator color={colors.danger} />
+      ) : (
+        <Text style={styles.deleteText}>Delete</Text>
+      )}
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   card: {
-    gap: spacing.sm,
+    gap: spacing.md,
+  },
+  content: {
+    gap: spacing.md,
+  },
+  hiddenContent: {
+    opacity: 0.7,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
   },
+  thumb: {
+    width: sizes.avatar,
+    height: sizes.avatar,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted,
+  },
   headerText: {
     flex: 1,
     gap: spacing.xxs,
   },
-  author: {
+  product: {
     ...textStyles.bodyStrong,
     color: colors.textPrimary,
   },
@@ -192,16 +244,22 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     color: colors.textSecondary,
   },
+  text: {
+    gap: spacing.xs,
+  },
   title: {
     ...textStyles.bodyStrong,
     color: colors.textPrimary,
   },
   body: {
     ...textStyles.body,
-    color: colors.textPrimary,
+    color: colors.textSecondary,
   },
-  confirm: {
+  footer: {
     gap: spacing.xs,
+    paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
   },
   question: {
     ...textStyles.body,
@@ -209,11 +267,25 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'flex-end',
-    gap: spacing.sm,
+    gap: spacing.md,
   },
   action: {
+    flex: 1,
     alignSelf: 'auto',
+  },
+  delete: {
+    flex: 1,
+    minHeight: sizes.button,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.lg,
+    backgroundColor: colors.dangerSoft,
+  },
+  deleteBusy: {
+    opacity: 0.5,
+  },
+  deleteText: {
+    ...textStyles.label,
+    color: colors.danger,
   },
 });

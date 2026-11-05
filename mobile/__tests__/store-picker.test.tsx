@@ -61,7 +61,7 @@ async function openPicker(buttonName: string) {
 it("asks on Home for the shopper's store until they pick one", async () => {
   renderRouter('src/app');
 
-  expect(await screen.findByText('Not chosen yet')).toBeOnTheScreen();
+  expect(await screen.findByText('Choose store')).toBeOnTheScreen();
   expect(screen.getByRole('button', { name: 'Choose your store' })).toBeOnTheScreen();
 });
 
@@ -86,7 +86,7 @@ it('remembers the store after the app is closed and reopened', async () => {
   renderRouter('src/app');
 
   expect(await screen.findByText('Camp Pendleton MCX')).toBeOnTheScreen();
-  expect(screen.queryByText('Not chosen yet')).not.toBeOnTheScreen();
+  expect(screen.queryByText('Choose store')).not.toBeOnTheScreen();
 });
 
 it('marks the current store, and can stop using one', async () => {
@@ -104,7 +104,7 @@ it('marks the current store, and can stop using one', async () => {
   );
 
   expect(screen).toHavePathname('/');
-  expect(screen.getByText('Not chosen yet')).toBeOnTheScreen();
+  expect(screen.getByText('Choose store')).toBeOnTheScreen();
   expect(await AsyncStorage.getItem('preferred-store:user-1')).toBeNull();
 });
 
@@ -117,7 +117,7 @@ it("keeps each user's store separate on a shared phone", async () => {
 
   renderRouter('src/app');
 
-  expect(await screen.findByText('Not chosen yet')).toBeOnTheScreen();
+  expect(await screen.findByText('Choose store')).toBeOnTheScreen();
 });
 
 it("doesn't show the last user's store after someone else signs in", async () => {
@@ -128,6 +128,7 @@ it("doesn't show the last user's store after someone else signs in", async () =>
   renderRouter('src/app');
   expect(await screen.findByText('Camp Pendleton MCX')).toBeOnTheScreen();
 
+  fireEvent.press(screen.getByRole('button', { name: 'Account' }));
   await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Sign out' })));
   // User-2's saved store loads only when the test says, so the moment before it can be checked.
   let finishLoading: (saved: string | null) => void = () => {};
@@ -140,14 +141,14 @@ it("doesn't show the last user's store after someone else signs in", async () =>
     for (const [listener] of mockAuth.onAuthStateChange.mock.calls) listener('SIGNED_IN', other);
   });
 
-  // While it loads, Home shows neither user-1's store nor "Not chosen yet".
-  expect(await screen.findByText('Scan & compare.')).toBeOnTheScreen();
+  // While it loads, Home shows neither user-1's store nor "Choose store".
+  expect(await screen.findByText('What are you shopping for?')).toBeOnTheScreen();
   expect(screen.queryByText('Camp Pendleton MCX')).not.toBeOnTheScreen();
-  expect(screen.queryByText('Not chosen yet')).not.toBeOnTheScreen();
+  expect(screen.queryByText('Choose store')).not.toBeOnTheScreen();
 
   await act(async () => finishLoading(null));
 
-  expect(screen.getByText('Not chosen yet')).toBeOnTheScreen();
+  expect(screen.getByText('Choose store')).toBeOnTheScreen();
 });
 
 it('goes Home after picking when the picker was opened directly', async () => {
@@ -165,7 +166,7 @@ it("ignores a saved store it can't read", async () => {
 
   renderRouter('src/app');
 
-  expect(await screen.findByText('Not chosen yet')).toBeOnTheScreen();
+  expect(await screen.findByText('Choose store')).toBeOnTheScreen();
 });
 
 it("offers to try again when the stores can't be loaded", async () => {

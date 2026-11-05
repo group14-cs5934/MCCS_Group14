@@ -32,6 +32,7 @@ from app.core.auth import TokenVerifier
 from app.core.config import load_settings
 from app.main import create_app
 from app.repositories.audit_log import get_audit_log_repository
+from app.repositories.insights import get_insights_repository
 from app.repositories.products import get_product_repository
 from app.repositories.ratings import get_rating_repository
 from app.repositories.restock import get_restock_repository
@@ -53,6 +54,7 @@ ACCESS: dict[tuple[str, str], Access] = {
     ("GET", "/health"): "public",
     ("GET", "/locations"): "public",
     ("GET", "/locations/{store_id}"): "public",
+    ("GET", "/locations/{store_id}/popular"): "public",
     ("GET", "/products/barcode/{code}"): "public",
     ("GET", "/products/search"): "public",
     ("POST", "/products/validate"): "public",  # checks a payload; saves nothing
@@ -91,6 +93,7 @@ ACCESS: dict[tuple[str, str], Access] = {
     ("GET", "/admin/reviews"): "admin",
     ("PATCH", "/admin/reviews/{review_id}"): "admin",
     ("DELETE", "/admin/reviews/{review_id}"): "admin",
+    ("GET", "/admin/overview"): "admin",
     ("GET", "/admin/users"): "admin",
     ("PATCH", "/admin/users/{user_id}"): "admin",
     ("GET", "/admin/products/{product_id}/stock"): "admin",
@@ -295,6 +298,7 @@ def client(make_client, private_key, users) -> TestClient:
         (get_store_role_repository, "store roles"),
         (get_restock_repository, "restock"),
         (get_shopping_repository, "shopping"),
+        (get_insights_repository, "insights"),
         (get_audit_log_repository, "audit log"),
     ]:
         overrides[dependency] = lambda name=name: Tripwire(name)

@@ -4,7 +4,8 @@ import { act, fireEvent, renderRouter, screen } from 'expo-router/testing-librar
 import { getMe } from '@/api/me';
 import { SEARCH_DEBOUNCE_MS } from '@/hooks/useProductSearch';
 import type { AuditLogEntry } from '@/types/audit';
-import type { Product } from '@/types/product';
+import type { AdminOverview } from '@/types/insights';
+import type { AdminProduct } from '@/types/admin';
 import type { AdminUserAccount, Role, StoreRole } from '@/types/user';
 
 // T090 acceptance: when a regular user tries to open the admin area, access is denied; an admin
@@ -16,7 +17,7 @@ import type { AdminUserAccount, Role, StoreRole } from '@/types/user';
 
 const getMeMock = jest.mocked(getMe);
 
-function product(id: number, name: string): Product {
+function product(id: number, name: string, stock?: AdminProduct['stock']): AdminProduct {
   const at = '2026-10-20T12:00:00Z';
   return {
     id,
@@ -35,6 +36,8 @@ function product(id: number, name: string): Product {
     last_synced_at: null,
     created_at: at,
     updated_at: at,
+    admin_fields: [],
+    stock,
   };
 }
 
@@ -76,8 +79,25 @@ const STORE_ROLES: StoreRole[] = [
   { id: 6, store_id: 4, name: 'Shelf stocker', permissions: ['edit_stock'], member_count: 0 },
 ];
 
+/** GET /admin/overview: the counts on the admin landing view. */
+const OVERVIEW: AdminOverview = {
+  products: 1284,
+  users: 342,
+  staff: 18,
+  admins: 2,
+  stores: 4,
+  reviews_today: 6,
+  out_of_stock: 23,
+  low_stock: 9,
+  open_reorders: 3,
+};
+
+/** What GET /admin/overview answers: OVERVIEW, or an error status. */
+let adminOverview: { status: number } | null = null;
 /** What GET /admin/products answers: the catalog (filtered by q), or an error status. */
 let adminProducts: { status: number } | null = null;
+/** The products GET /admin/products lists. */
+let catalog: AdminProduct[] = CATALOG;
 /** What GET /admin/users answers: USERS (filtered by email), or an error status. */
 let adminUsers: { status: number } | null = null;
 
@@ -161,13 +181,18 @@ const fetchMock = jest.fn(async (url: string, init?: RequestInit) => {
     userList = userList.map((item) => (item.id === userId ? user : item));
     return jsonResponse(200, user);
   }
+  if (pathname === '/admin/overview') {
+    if (adminOverview)
+      return jsonResponse(adminOverview.status, { code: 'forbidden', message: 'No' });
+    return jsonResponse(200, OVERVIEW);
+  }
   if (pathname === '/admin/products') {
     if (adminProducts)
       return jsonResponse(adminProducts.status, { code: 'forbidden', message: 'No' });
     const q = (searchParams.get('q') ?? '').toLowerCase();
     return jsonResponse(
       200,
-      CATALOG.filter((item) => item.name.toLowerCase().includes(q)),
+      catalog.filter((item) => item.name.toLowerCase().includes(q)),
     );
   }
   if (pathname === '/admin/audit-log') {
@@ -207,6 +232,11 @@ function signedInAs(role: Role) {
   });
 }
 
+/** Opens one of the Overview's Manage rows, e.g. "Users", once the Overview has loaded. */
+async function openSection(title: string) {
+  fireEvent.press(await screen.findByRole('button', { name: new RegExp(`^${title}\\.`) }));
+}
+
 const adminRequests = () =>
   fetchMock.mock.calls.filter(([url]) => new URL(url).pathname === '/admin/products');
 const activityRequests = () =>
@@ -223,7 +253,9 @@ const userUpdates = () =>
     }));
 
 beforeEach(() => {
+  adminOverview = null;
   adminProducts = null;
+  catalog = CATALOG;
   adminUsers = null;
   auditLog = null;
   auditEntries = ACTIVITY;
@@ -264,7 +296,7 @@ describe('regular users', () => {
   it("stay on Home and don't see the Admin button", async () => {
     renderRouter('src/app');
 
-    await screen.findByText('Scan & compare.');
+    await screen.findByText('What are you shopping for?');
     await act(async () => {}); // let the role finish loading
     expect(screen).toHavePathname('/');
     expect(screen.queryByRole('button', { name: 'Admin' })).not.toBeOnTheScreen();
@@ -276,6 +308,7 @@ describe('admins', () => {
 
   it('can open the admin area and see the product list', async () => {
     renderRouter('src/app', { initialUrl: '/admin' });
+    await openSection('Products');
 
     expect(await screen.findByText('Coca-Cola Classic')).toBeOnTheScreen();
     expect(screen.getByText('Diet Pepsi')).toBeOnTheScreen();
@@ -287,26 +320,28 @@ describe('admins', () => {
   it('start in the admin area when the app opens', async () => {
     renderRouter('src/app');
 
-    expect(await screen.findByText('Diet Pepsi')).toBeOnTheScreen();
+    expect(await screen.findByText('Recon · all stores')).toBeOnTheScreen();
     expect(screen).toHavePathname('/admin');
   });
 
   it('can go back to Home without being sent to the admin area again', async () => {
     renderRouter('src/app');
-    await screen.findByText('Diet Pepsi');
+    await screen.findByText('Recon · all stores');
 
     await act(async () => router.back());
 
     expect(screen).toHavePathname('/');
-    expect(screen.getByText('Scan & compare.')).toBeOnTheScreen();
+    expect(screen.getByText('What are you shopping for?')).toBeOnTheScreen();
 
+    fireEvent.press(screen.getByRole('button', { name: 'Account' }));
     fireEvent.press(screen.getByRole('button', { name: 'Admin' }));
     expect(screen).toHavePathname('/admin');
-    expect(await screen.findByText('Diet Pepsi')).toBeOnTheScreen();
+    expect(await screen.findByText('Recon · all stores')).toBeOnTheScreen();
   });
 
   it('open a product for editing by tapping it (T091)', async () => {
     renderRouter('src/app', { initialUrl: '/admin' });
+    await openSection('Products');
 
     const row = await screen.findByText('Diet Pepsi');
     // The form starts loading as it opens; let that finish inside act.
@@ -315,8 +350,32 @@ describe('admins', () => {
     expect(screen).toHavePathname('/admin-product/2');
   });
 
+  it('shows each product’s stock across the stores', async () => {
+    catalog = [
+      product(1, 'Mixed Chips', { stores: 4, in_stock: 3, low: 1, out: 1, unknown: 0 }),
+      product(2, 'Gone Soda', { stores: 4, in_stock: 0, low: 0, out: 4, unknown: 0 }),
+      product(3, 'New Gum', { stores: 4, in_stock: 0, low: 0, out: 0, unknown: 4 }),
+      product(4, 'Old Gum'),
+      product(5, 'Steady Water', { stores: 4, in_stock: 4, low: 0, out: 0, unknown: 0 }),
+    ];
+    renderRouter('src/app', { initialUrl: '/admin' });
+    await openSection('Products');
+    await screen.findByText('Mixed Chips');
+
+    expect(screen.getByText('In stock 3/4')).toBeOnTheScreen();
+    expect(screen.getByText('1 low')).toBeOnTheScreen();
+    expect(screen.getByText('Out at 1')).toBeOnTheScreen();
+    expect(screen.getByText('Out everywhere')).toBeOnTheScreen();
+    expect(screen.getAllByText('No stock records')).toHaveLength(2);
+    expect(screen.getByText('In stock 4/4')).toBeOnTheScreen();
+    expect(
+      screen.getByRole('button', { name: /^Mixed Chips, .*In stock 3\/4, 1 low, Out at 1$/ }),
+    ).toBeOnTheScreen();
+  });
+
   it('can add a product from the list (T091)', async () => {
     renderRouter('src/app', { initialUrl: '/admin' });
+    await openSection('Products');
     await screen.findByText('Diet Pepsi');
 
     await act(async () => fireEvent.press(screen.getByRole('button', { name: 'Add product' })));
@@ -326,6 +385,7 @@ describe('admins', () => {
 
   it('can search the product list', async () => {
     renderRouter('src/app', { initialUrl: '/admin' });
+    await openSection('Products');
     await screen.findByText('Coca-Cola Classic');
 
     fireEvent.changeText(screen.getByLabelText('Search products'), 'pepsi');
@@ -338,6 +398,78 @@ describe('admins', () => {
 
   it('are denied if the API no longer counts them as an admin', async () => {
     adminProducts = { status: 403 };
+
+    renderRouter('src/app', { initialUrl: '/admin' });
+    await openSection('Products');
+
+    expect(await screen.findByText('Admins only')).toBeOnTheScreen();
+  });
+});
+
+describe('overview', () => {
+  beforeEach(() => signedInAs('admin'));
+
+  it('shows the counts across every store', async () => {
+    renderRouter('src/app', { initialUrl: '/admin' });
+
+    expect(await screen.findByText('1284')).toBeOnTheScreen();
+    expect(screen.getByText('Users · 18 staff')).toBeOnTheScreen();
+    expect(screen.getByText('342')).toBeOnTheScreen();
+    expect(screen.getByLabelText('New reviews today: 6')).toBeOnTheScreen();
+    expect(screen.getByLabelText('Out of stock, all stores: 23')).toBeOnTheScreen();
+    expect(screen.getByText('Recon · all stores')).toBeOnTheScreen();
+  });
+
+  it('opens Store tools', async () => {
+    renderRouter('src/app', { initialUrl: '/admin' });
+
+    fireEvent.press(await screen.findByRole('button', { name: 'Store tools' }));
+
+    expect(screen).toHavePathname('/my-store');
+  });
+
+  it('leaves admin for the shopper side, where Home stays', async () => {
+    // Admins land on Home, which opens admin on top once per sign-in.
+    renderRouter('src/app', { initialUrl: '/' });
+    fireEvent.press(await screen.findByRole('button', { name: 'Leave admin' }));
+
+    expect(screen).toHavePathname('/');
+    expect(await screen.findByText('What are you shopping for?')).toBeOnTheScreen();
+  });
+
+  it('opens each Manage row, and a back arrow returns to the Overview', async () => {
+    renderRouter('src/app', { initialUrl: '/admin' });
+
+    await openSection('Users');
+    expect(await screen.findByText('shopper@example.com')).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole('button', { name: 'Back to admin' }));
+
+    await openSection('Reviews');
+    expect(await screen.findByRole('button', { name: 'Show hidden reviews' })).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole('button', { name: 'Back to admin' }));
+
+    await openSection('Activity');
+    expect(await screen.findByText('3 changes')).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole('button', { name: 'Back to admin' }));
+
+    await openSection('Stores');
+    expect(screen).toHavePathname('/stores');
+  });
+
+  it('lists the latest three changes, and See all opens Activity', async () => {
+    renderRouter('src/app', { initialUrl: '/admin' });
+
+    expect(await screen.findByText('admin@example.com edited product #2')).toBeOnTheScreen();
+    expect(screen.getByText('former@example.com hid review #9')).toBeOnTheScreen();
+    expect(new URL(activityRequests()[0][0]).searchParams.get('limit')).toBe('3');
+
+    fireEvent.press(screen.getByRole('button', { name: 'See all activity' }));
+
+    expect(await screen.findByText('3 changes')).toBeOnTheScreen();
+  });
+
+  it('shows "Admins only" if the API refuses the overview', async () => {
+    adminOverview = { status: 403 };
 
     renderRouter('src/app', { initialUrl: '/admin' });
 
@@ -373,8 +505,7 @@ describe('users list', () => {
 
   async function openUsers() {
     renderRouter('src/app', { initialUrl: '/admin' });
-    await screen.findByText('Diet Pepsi');
-    fireEvent.press(screen.getByRole('tab', { name: 'Users' }));
+    await openSection('Users');
   }
 
   it('shows every user with their role and whether they are active', async () => {
@@ -382,43 +513,84 @@ describe('users list', () => {
 
     expect(await screen.findByText('admin@example.com')).toBeOnTheScreen();
     expect(screen.getByText('shopper@example.com')).toBeOnTheScreen();
-    expect(screen.getByText('2 users')).toBeOnTheScreen();
+    expect(screen.getByText('2 people')).toBeOnTheScreen();
     expect(screen.getByText('Admin')).toBeOnTheScreen();
-    expect(screen.getByText('Deactivated')).toBeOnTheScreen();
+    // The filter chip and the tag on the deactivated user's row.
+    expect(screen.getAllByText('Deactivated')).toHaveLength(2);
     expect(
-      screen.getByLabelText('shopper@example.com, User, Deactivated, joined Oct 15, 2026'),
+      screen.getByLabelText('shopper@example.com, Shopper, Deactivated, joined Oct 15, 2026'),
     ).toBeOnTheScreen();
     expect(new URL(userRequests()[0][0]).searchParams.get('limit')).toBe('100');
   });
 
   it('searches users by email', async () => {
     await openUsers();
-    await screen.findByText('2 users');
+    await screen.findByText('2 people');
 
     fireEvent.changeText(screen.getByLabelText('Search users by email'), 'shop');
     await act(async () => jest.advanceTimersByTime(SEARCH_DEBOUNCE_MS));
 
-    expect(await screen.findByText('1 user')).toBeOnTheScreen();
+    expect(await screen.findByText('1 person')).toBeOnTheScreen();
     expect(screen.queryByText('admin@example.com')).not.toBeOnTheScreen();
     expect(new URL(userRequests().at(-1)![0]).searchParams.get('email')).toBe('shop');
   });
 
-  it('keeps each list’s search when switching between Products and Users', async () => {
+  it('keeps each list’s search when going between Products and Users', async () => {
     renderRouter('src/app', { initialUrl: '/admin' });
+    await openSection('Products');
     await screen.findByText('Diet Pepsi');
     fireEvent.changeText(screen.getByLabelText('Search products'), 'pepsi');
     await act(async () => jest.advanceTimersByTime(SEARCH_DEBOUNCE_MS));
     await screen.findByText('1 product');
 
-    fireEvent.press(screen.getByRole('tab', { name: 'Users' }));
-    expect(await screen.findByText('2 users')).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole('button', { name: 'Back to admin' }));
+    await openSection('Users');
+    expect(await screen.findByText('2 people')).toBeOnTheScreen();
     expect(screen.getByLabelText('Search users by email')).toHaveProp('value', '');
     // The users list never searched for the products' text.
     expect(userRequests().every(([url]) => !new URL(url).searchParams.has('email'))).toBe(true);
 
-    fireEvent.press(screen.getByRole('tab', { name: 'Products' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Back to admin' }));
+    await openSection('Products');
     expect(screen.getByLabelText('Search products')).toHaveProp('value', 'pepsi');
     expect(await screen.findByText('1 product')).toBeOnTheScreen();
+  });
+
+  it('filters the loaded users by Staff, Admins and Deactivated', async () => {
+    userList = [
+      ...USERS,
+      {
+        id: 'u-3',
+        email: 'cashier@example.com',
+        role: 'staff',
+        active: true,
+        created_at: '2026-10-20T12:00:00Z',
+        store_id: 4,
+        store_role: { id: 6, name: 'Shelf stocker', permissions: ['edit_stock'] },
+      },
+    ];
+    await openUsers();
+    await screen.findByText('3 people');
+
+    fireEvent.press(screen.getByRole('button', { name: 'Show staff users' }));
+    expect(screen.getByText('cashier@example.com')).toBeOnTheScreen();
+    expect(screen.queryByText('admin@example.com')).not.toBeOnTheScreen();
+    expect(screen.queryByText('shopper@example.com')).not.toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Show staff users' })).toBeSelected();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Show admin users' }));
+    expect(screen.getByText('admin@example.com')).toBeOnTheScreen();
+    expect(screen.queryByText('cashier@example.com')).not.toBeOnTheScreen();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Show deactivated users' }));
+    expect(screen.getByText('shopper@example.com')).toBeOnTheScreen();
+    expect(screen.queryByText('admin@example.com')).not.toBeOnTheScreen();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Show all users' }));
+    expect(screen.getByText('admin@example.com')).toBeOnTheScreen();
+    expect(screen.getByText('cashier@example.com')).toBeOnTheScreen();
+    // Filtering happens on the client: the API was never asked for a role.
+    expect(userRequests().every(([url]) => !new URL(url).searchParams.has('role'))).toBe(true);
   });
 
   it('shows "Admins only" if the API refuses the users list', async () => {
@@ -439,9 +611,8 @@ describe('managing users', () => {
 
   async function openUsers() {
     renderRouter('src/app', { initialUrl: '/admin' });
-    await screen.findByText('Diet Pepsi');
-    fireEvent.press(screen.getByRole('tab', { name: 'Users' }));
-    await screen.findByText(/^\d+ users?$/);
+    await openSection('Users');
+    await screen.findByText(/^\d+ (people|person)$/);
   }
 
   it('deactivates a user after the admin confirms', async () => {
@@ -462,7 +633,7 @@ describe('managing users', () => {
 
     expect(userUpdates()).toEqual([{ path: '/admin/users/u-2', body: { active: false } }]);
     expect(
-      screen.getByLabelText('shopper@example.com, User, Deactivated, joined Oct 15, 2026'),
+      screen.getByLabelText('shopper@example.com, Shopper, Deactivated, joined Oct 15, 2026'),
     ).toBeOnTheScreen();
     expect(
       screen.getByRole('button', { name: 'Reactivate shopper@example.com' }),
@@ -502,7 +673,7 @@ describe('managing users', () => {
       ),
     ).toBeOnTheScreen();
     await act(async () =>
-      fireEvent.press(screen.getByRole('button', { name: 'Save role of shopper@example.com' })),
+      fireEvent.press(screen.getByRole('button', { name: 'Make Admin for shopper@example.com' })),
     );
 
     expect(userUpdates()).toEqual([
@@ -518,13 +689,15 @@ describe('managing users', () => {
     await openUsers();
 
     fireEvent.press(screen.getByRole('button', { name: 'Change role of admin@example.com' }));
-    fireEvent.press(screen.getByRole('radio', { name: 'User' }));
+    fireEvent.press(screen.getByRole('radio', { name: 'Shopper' }));
     await act(async () =>
-      fireEvent.press(screen.getByRole('button', { name: 'Save role of admin@example.com' })),
+      fireEvent.press(screen.getByRole('button', { name: 'Make Shopper for admin@example.com' })),
     );
 
     expect(userUpdates()).toEqual([{ path: '/admin/users/u-1', body: { role: 'user' } }]);
-    expect(screen.getByLabelText('admin@example.com, User, joined Oct 1, 2026')).toBeOnTheScreen();
+    expect(
+      screen.getByLabelText('admin@example.com, Shopper, joined Oct 1, 2026'),
+    ).toBeOnTheScreen();
   });
 
   it("offers no changes on the admin's own row", async () => {
@@ -552,7 +725,7 @@ describe('managing users', () => {
     fireEvent.press(screen.getByRole('button', { name: 'Change role of shopper@example.com' }));
     fireEvent.press(screen.getByRole('radio', { name: 'Staff' }));
     expect(screen.getByText('Choose their store.')).toBeOnTheScreen();
-    fireEvent.press(screen.getByRole('button', { name: 'Save role of shopper@example.com' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Save role for shopper@example.com' }));
     expect(userUpdates()).toHaveLength(0);
 
     fireEvent.press(screen.getByRole('radio', { name: 'Quantico MCX' }));
@@ -560,7 +733,7 @@ describe('managing users', () => {
     expect(await screen.findByRole('radio', { name: 'Shelf stocker' })).toBeOnTheScreen();
     expect(screen.getByRole('radio', { name: 'Manager' })).toBeOnTheScreen();
     expect(screen.getByText('Choose their role at the store.')).toBeOnTheScreen();
-    fireEvent.press(screen.getByRole('button', { name: 'Save role of shopper@example.com' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Save role for shopper@example.com' }));
     expect(userUpdates()).toHaveLength(0);
 
     fireEvent.press(screen.getByRole('radio', { name: 'Shelf stocker' }));
@@ -570,7 +743,11 @@ describe('managing users', () => {
       ),
     ).toBeOnTheScreen();
     await act(async () =>
-      fireEvent.press(screen.getByRole('button', { name: 'Save role of shopper@example.com' })),
+      fireEvent.press(
+        screen.getByRole('button', {
+          name: 'Make Shelf stocker at Quantico MCX for shopper@example.com',
+        }),
+      ),
     );
 
     expect(userUpdates()).toEqual([
@@ -606,7 +783,11 @@ describe('managing users', () => {
     fireEvent.press(screen.getByRole('radio', { name: 'Camp Lejeune MCX' }));
     fireEvent.press(await screen.findByRole('radio', { name: 'Manager' }));
     await act(async () =>
-      fireEvent.press(screen.getByRole('button', { name: 'Save role of shopper@example.com' })),
+      fireEvent.press(
+        screen.getByRole('button', {
+          name: 'Make Manager at Camp Lejeune MCX for shopper@example.com',
+        }),
+      ),
     );
 
     expect(userUpdates()).toEqual([
@@ -635,7 +816,7 @@ describe('managing users', () => {
       ),
     ).toBeOnTheScreen();
     expect(
-      screen.getByLabelText('shopper@example.com, User, joined Oct 15, 2026'),
+      screen.getByLabelText('shopper@example.com, Shopper, joined Oct 15, 2026'),
     ).toBeOnTheScreen();
   });
 
@@ -671,8 +852,7 @@ describe('activity', () => {
 
   async function openActivity() {
     renderRouter('src/app', { initialUrl: '/admin' });
-    await screen.findByText('Diet Pepsi');
-    fireEvent.press(screen.getByRole('tab', { name: 'Activity' }));
+    await openSection('Activity');
   }
 
   it('shows each admin change: who, what, and when, newest first', async () => {
@@ -688,7 +868,7 @@ describe('activity', () => {
     expect(screen.getByText('Hidden: no → yes')).toBeOnTheScreen();
     // Shown in the phone's own time zone, so only the date is the same everywhere.
     expect(screen.getByText(/^Oct 24, 2026, \d{1,2}:\d{2}/)).toBeOnTheScreen();
-    expect(new URL(activityRequests()[0][0]).searchParams.get('limit')).toBe('100');
+    expect(new URL(activityRequests().at(-1)![0]).searchParams.get('limit')).toBe('100');
   });
 
   it('shows a stock change by store, and it opens the product', async () => {
@@ -760,7 +940,7 @@ describe('activity', () => {
   it('shows "Admins only" if the API refuses the log', async () => {
     auditLog = { status: 403 };
 
-    await openActivity();
+    renderRouter('src/app', { initialUrl: '/admin' });
 
     expect(await screen.findByText('Admins only')).toBeOnTheScreen();
   });

@@ -38,15 +38,21 @@ def _product_not_found() -> ApiError:
 
 
 def _admin_view(products: Products, product: ProductRead) -> AdminProductRead:
-    """The product with which of its fields an admin set (the sync leaves those alone)."""
-    fields = products.admin_fields([product.id]).get(product.id, [])
-    return AdminProductRead(**product.model_dump(), admin_fields=fields)
+    """The product with which of its fields an admin set (the sync leaves those alone) and its
+    stock across the stores."""
+    return _admin_views(products, [product])[0]
 
 
 def _admin_views(products: Products, found: list[ProductRead]) -> list[AdminProductRead]:
-    fields = products.admin_fields([product.id for product in found])
+    ids = [product.id for product in found]
+    fields = products.admin_fields(ids)
+    stock = products.stock_summaries(ids)
     return [
-        AdminProductRead(**product.model_dump(), admin_fields=fields.get(product.id, []))
+        AdminProductRead(
+            **product.model_dump(),
+            admin_fields=fields.get(product.id, []),
+            stock=stock.get(product.id),
+        )
         for product in found
     ]
 

@@ -1,7 +1,9 @@
-import { fireEvent, renderRouter, screen } from 'expo-router/testing-library';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-library';
 
 import type { Product } from '@/types/product';
 import type { RatingSummary } from '@/types/rating';
+import type { StoreStock } from '@/types/store';
 
 // T025: when the app requests a seeded product, the API returns it and the app displays it.
 // This covers the app half with the API response faked; the API ↔ database half is covered by
@@ -58,13 +60,17 @@ const MY_RATING_PATH = /\/products\/\d+\/ratings\/me$/;
 const AVAILABILITY_PATH = /\/products\/\d+\/availability$/;
 const ACTIVITY_PATH = /\/products\/\d+\/activity$/;
 const SAVED_PATH = /\/me\/saved\/\d+$/;
+const REVIEWS_PATH = /\/products\/\d+\/reviews(\/me)?(\?.*)?$/;
 
 /** What GET /products/{id}/ratings answers; each test starts with no ratings. */
 let ratings: RatingSummary | Error = { product_id: 1, average: null, count: 0 };
 
+/** What GET /products/{id}/availability answers. */
+let stores: StoreStock[] = [];
+
 /**
  * The product requests made (the page also asks for the product's ratings and which stores have
- * it once it loads, counts the view, and asks whether it's saved).
+ * it once it loads, counts the view, asks whether it's saved, and loads the Reviews tab).
  */
 const productRequests = () =>
   fetchMock.mock.calls.filter(
@@ -73,7 +79,8 @@ const productRequests = () =>
       !MY_RATING_PATH.test(url) &&
       !AVAILABILITY_PATH.test(url) &&
       !ACTIVITY_PATH.test(url) &&
-      !SAVED_PATH.test(url),
+      !SAVED_PATH.test(url) &&
+      !REVIEWS_PATH.test(url),
   );
 
 /** The URLs requested, in order. */
@@ -82,6 +89,7 @@ const requestedUrls = () => fetchMock.mock.calls.map(([url]) => url);
 beforeEach(() => {
   fetchMock.mockReset();
   ratings = { product_id: 1, average: null, count: 0 };
+  stores = [];
   // Product responses are queued by each test with respondWith; the product loads first, so the
   // ratings requests that follow get `ratings`, and "not rated yet" for the user's own rating.
   fetchMock.mockImplementation(async (url) => {
@@ -92,7 +100,7 @@ beforeEach(() => {
       return jsonResponse(404, { code: 'not_saved', message: 'Not saved' }); // see cart.test.tsx
     }
     if (AVAILABILITY_PATH.test(url)) {
-      return jsonResponse(200, { product_id: 1, stores: [] }); // see store-availability.test.tsx
+      return jsonResponse(200, { product_id: 1, stores }); // see store-availability.test.tsx
     }
     if (!RATINGS_PATH.test(url)) {
       return jsonResponse(500, { code: 'internal_error', message: 'Not set up by this test' });
@@ -143,6 +151,19 @@ it('looks the product up by barcode when opened from a scan', async () => {
   expect(await screen.findByText('Sample Chips')).toBeOnTheScreen();
   expect(productRequests()).toHaveLength(1);
   expect(fetchMock.mock.calls[0][0]).toMatch(/\/products\/barcode\/036000291452$/);
+});
+
+it('has Save and Add to cart in the bottom bar, and no Rate it or Scan another buttons', async () => {
+  respondWith(200, SAMPLE_CHIPS);
+
+  renderRouter('src/app', { initialUrl: '/product/1' });
+
+  await screen.findByText('Sample Chips');
+  expect(screen.getByRole('button', { name: 'Save' })).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'Add to cart' })).toBeOnTheScreen();
+  expect(screen.queryByRole('button', { name: 'Rate it' })).not.toBeOnTheScreen();
+  expect(screen.queryByRole('button', { name: 'Scan another' })).not.toBeOnTheScreen();
+  expect(screen.getAllByRole('button', { name: 'Add to cart' })).toHaveLength(1);
 });
 
 it('says when a product has no price yet', async () => {
@@ -239,5 +260,107 @@ describe('ratings', () => {
     expect(await screen.findByText('Ratings unavailable')).toBeOnTheScreen();
     expect(screen.getByText('Sample Chips')).toBeOnTheScreen();
     expect(screen.getByText('$3.49')).toBeOnTheScreen();
+  });
+});
+
+describe('stock panel', () => {
+  beforeEach(() => AsyncStorage.clear());
+
+  function stock(id: number, name: string, inStock: boolean, extra: Partial<StoreStock> = {}) {
+    return {
+      store: { id, name, slug: `store-${id}`, address: null, hours: null },
+      in_stock: inStock,
+      quantity: null,
+      aisle: null,
+      updated_at: null,
+      ...extra,
+    } satisfies StoreStock;
+  }
+
+  it("shows the shopper's own store first, with its aisle and shelf count", async () => {
+    stores = [
+      stock(1, 'Camp Lejeune MCX', true),
+      stock(2, 'Quantico MCX', true, { aisle: 'Aisle 7', quantity: 18 }),
+      stock(3, 'Camp Pendleton MCX', true),
+      stock(4, 'Twentynine Palms MCX', false),
+    ];
+    await AsyncStorage.setItem(
+      'preferred-store:user-1',
+      JSON.stringify({ id: 2, name: 'Quantico MCX' }),
+    );
+    respondWith(200, SAMPLE_CHIPS);
+
+    renderRouter('src/app', { initialUrl: '/product/1' });
+
+    expect(await screen.findByText('In stock at Quantico MCX')).toBeOnTheScreen();
+    expect(screen.getByText('Aisle 7 · 18 on the shelf')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'In stock at 2 other stores' })).toBeOnTheScreen();
+  });
+
+  it("says when the shopper's own store is out of it", async () => {
+    stores = [stock(1, 'Camp Lejeune MCX', true), stock(2, 'Quantico MCX', false)];
+    await AsyncStorage.setItem(
+      'preferred-store:user-1',
+      JSON.stringify({ id: 2, name: 'Quantico MCX' }),
+    );
+    respondWith(200, SAMPLE_CHIPS);
+
+    renderRouter('src/app', { initialUrl: '/product/1' });
+
+    expect(await screen.findByText('Out of stock at Quantico MCX')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'In stock at 1 other store' })).toBeOnTheScreen();
+  });
+
+  it('summarises all stores when no store is chosen, and the link opens the Stores tab', async () => {
+    stores = [stock(1, 'Camp Lejeune MCX', true), stock(2, 'Quantico MCX', false)];
+    respondWith(200, SAMPLE_CHIPS);
+
+    renderRouter('src/app', { initialUrl: '/product/1' });
+
+    expect(await screen.findByText('Available at 1 store')).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole('button', { name: 'See all stores' }));
+    expect(screen.getByRole('tab', { name: 'Stores' })).toBeSelected();
+    expect(await screen.findByText('Available at')).toBeOnTheScreen();
+  });
+});
+
+describe('recently scanned', () => {
+  beforeEach(() => AsyncStorage.clear());
+
+  it('remembers the product for the signed-in user once it has loaded', async () => {
+    ratings = { product_id: 1, average: 4.5, count: 2 };
+    respondWith(200, SAMPLE_CHIPS);
+
+    renderRouter('src/app', { initialUrl: '/product/1' });
+    await screen.findByText('4.5');
+
+    await waitFor(async () => {
+      const saved = JSON.parse((await AsyncStorage.getItem('recent-products:user-1')) ?? '[]');
+      expect(saved).toEqual([
+        expect.objectContaining({
+          id: 1,
+          name: 'Sample Chips',
+          image_url: null,
+          price: '3.49',
+          rating: 4.5,
+        }),
+      ]);
+    });
+  });
+
+  it('is saved once per product, however often the page re-renders', async () => {
+    respondWith(200, SAMPLE_CHIPS);
+    const setItem = jest.spyOn(AsyncStorage, 'setItem');
+    setItem.mockClear();
+
+    renderRouter('src/app', { initialUrl: '/product/1' });
+    await screen.findByText('No ratings yet');
+    const saves = () => setItem.mock.calls.filter(([key]) => key === 'recent-products:user-1');
+    await waitFor(() => expect(saves()).toHaveLength(1));
+    fireEvent.press(screen.getByRole('tab', { name: 'Nutrition' }));
+    fireEvent.press(screen.getByRole('tab', { name: 'Reviews' }));
+
+    expect(saves()).toHaveLength(1);
+    setItem.mockRestore();
   });
 });
