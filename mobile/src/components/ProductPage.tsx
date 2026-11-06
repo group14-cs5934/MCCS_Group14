@@ -19,6 +19,7 @@ import AsyncContent from '@/components/AsyncContent';
 import Button from '@/components/Button';
 import ErrorState from '@/components/ErrorState';
 import Loader from '@/components/Loader';
+import OverallReview from '@/components/OverallReview';
 import ProductActions from '@/components/ProductActions';
 import ProductNutrition from '@/components/ProductNutrition';
 import RateProduct from '@/components/RateProduct';
@@ -257,6 +258,9 @@ function ProductDetails({ product }: { product: Product }) {
           <View style={styles.tabContent}>
             {/* Kept mounted (just hidden) on the other tabs, so a half-written review isn't lost. */}
             <View style={tab === 'reviews' ? styles.tabContent : styles.hidden}>
+              {/* The AI-written overall review from other stores' reviews (T052.8), apart from app
+                  users' own reviews below. Hidden when the product doesn't have one. */}
+              <OverallReview productId={product.id} />
               <View style={sharedStyles.card}>
                 {/* Saving a rating reloads the average above, so it includes the new one. */}
                 <RateProduct productId={product.id} onSaved={ratings.reload} />

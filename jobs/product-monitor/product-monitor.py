@@ -525,8 +525,11 @@ def system_prompt() -> str:
         "  set matches_expected_product=false.\n"
         if COLLECT_PRICE_AND_STOCK
         else "- If the page is for a different product (brand, flavour, model or variant) than\n"
-        "  expected, set matches_expected_product=false. Ignore the package size, weight or\n"
-        "  count: the same product in another size or pack still matches.\n"
+        "  expected, set matches_expected_product=false. Ignore the package size, weight,\n"
+        "  count and format, even when they are part of the expected name: the same product\n"
+        "  in another size, a multipack, single-serve packs or cups, or a bigger or smaller\n"
+        "  bottle or box still matches (e.g. 'Oreo cookies sleeve pack 1 x 0.78 oz' matches\n"
+        "  an Oreo 14.3 oz package; '2 Pack ketchup, 32 oz' matches a 20 oz ketchup bottle).\n"
     )
     return f"""You extract product data from online store pages.
 Rules:

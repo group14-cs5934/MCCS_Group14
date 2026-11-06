@@ -1,5 +1,6 @@
 """Product reviews (US09): a signed-in user writes a review of a product, and anyone can read a
-product's reviews, newest first, a page at a time.
+product's reviews, newest first, a page at a time. Anyone can also read the product's AI-written
+overall review (T052.8), which is kept apart from users' reviews.
 
 Each user has one review per product; posting again replaces its title and text, and they can
 remove it. The review's rules (required text, length limits) are in app/schemas/review.py.
@@ -15,8 +16,8 @@ from fastapi import APIRouter, Query, Response, status
 
 from app.core.auth import CurrentUser
 from app.core.errors import ApiError, error_response
-from app.repositories import Reviews
-from app.schemas import ReviewCreate, ReviewPage, ReviewRead
+from app.repositories import OverallReviews, Reviews
+from app.schemas import OverallReviewRead, ReviewCreate, ReviewPage, ReviewRead
 
 router = APIRouter(
     prefix="/products",
@@ -50,6 +51,31 @@ def list_reviews(
     if page is None:
         raise ApiError(404, "product_not_found", "Product not found")
     return page
+
+
+@router.get(
+    "/{product_id:int}/overall-review",
+    responses={
+        404: error_response(
+            "No product with this ID (product_not_found), or it has no overall review yet "
+            "(overall_review_not_found)"
+        )
+    },
+)
+def get_overall_review(product_id: int, overall_reviews: OverallReviews) -> OverallReviewRead:
+    """The product's overall review, written by AI from shoppers' reviews on other stores' sites
+    (T052.8), with each store's own average rating and review count. No sign-in needed.
+
+    Written by jobs/product-monitor, not by app users, so the app shows it apart from their
+    reviews and labels it as AI-written. 404 with code overall_review_not_found if the product
+    doesn't have one yet.
+    """
+    exists, overall = overall_reviews.get(product_id)
+    if not exists:
+        raise ApiError(404, "product_not_found", "Product not found")
+    if overall is None:
+        raise ApiError(404, "overall_review_not_found", "This product has no overall review yet")
+    return overall
 
 
 @router.post(

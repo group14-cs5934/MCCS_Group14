@@ -100,6 +100,10 @@ async function fakeApi(url: string): Promise<Response> {
   if (pathname.endsWith('/ratings/me')) {
     return jsonResponse(404, { code: 'rating_not_found', message: 'Not rated' });
   }
+  // No product has an AI overall review yet (T052.8).
+  if (pathname.endsWith('/overall-review')) {
+    return jsonResponse(404, { code: 'overall_review_not_found', message: 'None yet' });
+  }
   const found = CATALOG.find((candidate) => candidate.id === id);
   return found ? jsonResponse(200, found) : jsonResponse(404, notFound);
 }
