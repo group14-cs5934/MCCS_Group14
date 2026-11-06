@@ -1,7 +1,7 @@
 """
 Daily product monitor: gathers shoppers' reviews from a store's product pages.
 
-For every entry in products.yaml:
+For every product in the catalog (the products table) with a product_page_url:
   1. Fetch the product page (respecting robots.txt, with retries).
   2. Pull structured data the page already exposes (schema.org JSON-LD) plus a
      cleaned text version of the page.
@@ -13,28 +13,19 @@ For every entry in products.yaml:
      agent_source_ratings row for that store.
   5. For each product with new reviews, ask the model to write one overall review from all
      the reviews collected for it, and save that to agent_review_summaries.
-These are the agent's own tables; the app's tables aren't touched.
+These are the agent's own tables, keyed by products.id; the app's tables aren't touched.
+A review's source is the store's web address, e.g. mynavyexchange.com.
 
-With COLLECT_PRICE_AND_STOCK=1 it also writes to the app's tables: a prices row, the
-product_stock row for that store, and the product if its barcode is new. Only this needs a
-barcode, read off the page or set in products.yaml.
+With COLLECT_PRICE_AND_STOCK=1 it also writes to the app's tables: a prices row and the
+product_stock row for the STOCK_STORE store location.
 
-Each entry gives the product our own ID (entries for one product at different stores share it, so
-its reviews are grouped) and says where the reviews come from (store):
-
-  products:
-    - product: example-cola-12-oz
-      name: Example Cola 12 oz
-      store: navy-exchange
-      url: https://www.example.com/p/example-cola
-
-make_products_yaml.py builds this file from backend/scripts/demo_products.csv. Entries
-without a url yet are skipped.
+To add a product, set its page (migration 022 adds the column):
+  UPDATE products SET product_page_url = 'https://...' WHERE id = 42;
 
 Usage:
   python product-monitor.py                # normal run, writes to the database
-  python product-monitor.py --dry-run      # print extracted rows, don't touch the DB
-  python product-monitor.py --only doritos # run entries whose product, name or barcode has this
+  python product-monitor.py --dry-run      # print extracted rows; only reads the product list
+  python product-monitor.py --only pepsi   # only products whose ID or name has this
   python product-monitor.py --summaries-only # only write overall reviews; fetch no pages
 """
 
@@ -58,7 +49,7 @@ from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
 import httpx
-import yaml
+import psycopg
 from anthropic import AsyncAnthropic
 from bs4 import BeautifulSoup
 from playwright.async_api import BrowserContext, Playwright, async_playwright
@@ -72,7 +63,6 @@ MODEL = os.getenv("CLAUDE_MODEL", "claude-haiku-5-5")
 MAX_PAGE_CHARS = int(os.getenv("MAX_PAGE_CHARS", "40000"))
 CONCURRENCY = int(os.getenv("CONCURRENCY", "4"))
 PER_DOMAIN_DELAY = float(os.getenv("PER_DOMAIN_DELAY", "3"))  # seconds between hits to one store
-PRODUCTS_FILE = os.getenv("PRODUCTS_FILE", "products.yaml")
 # How long to wait for a page, and then for its reviews to appear (a page may have none).
 PAGE_TIMEOUT_MS = int(os.getenv("PAGE_TIMEOUT_MS", "45000"))
 REVIEW_WAIT_MS = int(os.getenv("REVIEW_WAIT_MS", "15000"))
@@ -93,6 +83,8 @@ MAX_SUMMARY_REVIEWS = int(os.getenv("MAX_SUMMARY_REVIEWS", "200"))
 COLLECT_PRICE_AND_STOCK = os.getenv("COLLECT_PRICE_AND_STOCK", "0") == "1"
 # Used when the page shows a price but no currency. prices.currency defaults to USD as well.
 DEFAULT_CURRENCY = os.getenv("DEFAULT_CURRENCY", "USD")
+# The store_locations slug the online store's stock is saved under (prices and stock only).
+STOCK_STORE = os.getenv("STOCK_STORE", "mcx-online")
 USER_AGENT = os.getenv(
     "USER_AGENT",
     "ProductMonitorBot/1.0 (+contact: you@example.com)",
@@ -102,12 +94,8 @@ USER_AGENT = os.getenv(
 CENT = Decimal("0.01")
 MAX_AMOUNT = Decimal("99999999.99")
 CURRENCY_RE = re.compile(r"[A-Z]{3}")
-# products column limits.
 MAX_NAME = 200
-MAX_SIZE = 50
-GTIN_LENGTHS = (8, 12, 13, 14)  # EAN-8, UPC-A, EAN-13, GTIN-14
-# agent_reviews column limits; stars are stored on a 0-5 scale.
-MAX_PRODUCT_ID = 100
+MAX_SOURCE = 100
 # A review must have this share of its runs of this many words on the page to be kept.
 REVIEW_MATCH_WORDS = 3
 REVIEW_MATCH_SHARE = 0.5
@@ -132,73 +120,48 @@ log = logging.getLogger("product-agent")
 # --------------------------------------------------------------------------
 @dataclass
 class Product:
-    product: str  # our own ID, which groups a product's reviews from different stores
-    store: str  # where the reviews come from (a store_locations.slug if collecting stock)
+    id: int  # products.id
     name: str
-    url: str
-    barcode: str | None = None  # only for COLLECT_PRICE_AND_STOCK; read off the page if not set
+    size: str | None
+    url: str  # products.product_page_url
+
+    @property
+    def store(self) -> str:
+        """Where the reviews come from, saved as their source: the page's web address without
+        www., e.g. mynavyexchange.com."""
+        host = (urlparse(self.url).hostname or "").removeprefix("www.")
+        return host[:MAX_SOURCE]
+
+    @property
+    def expected(self) -> str:
+        """The product as the model is told to expect it."""
+        return f"{self.name} ({self.size})" if self.size else self.name
 
     @property
     def label(self) -> str:
-        return f"{self.name} @ {self.store}"
+        return f"#{self.id} {self.name} @ {self.store}"
 
 
-def normalize_barcode(value: Any) -> str | None:
-    """value as the backend stores barcodes, or None if it isn't a valid UPC/EAN/GTIN.
-
-    Leading zeros that only pad a code to GTIN-14 or EAN-13 are dropped, so a UPC-A comes out
-    as the 12 digits printed on the package, which is what the app sends after a scan (like
-    backend/scripts/seed_dev.py). The check digit doesn't change when they're dropped."""
-    if not isinstance(value, str):
-        return None
-    digits = re.sub(r"[\s-]", "", value)
-    if not digits.isdigit() or len(digits) not in GTIN_LENGTHS:
-        return None
-    body, check = digits[:-1], int(digits[-1])
-    # GS1 check digit: weight body digits 3,1,3,... starting from the right.
-    total = sum(int(d) * (3 if i % 2 == 0 else 1) for i, d in enumerate(reversed(body)))
-    if (10 - total % 10) % 10 != check:
-        return None
-    if len(digits) == 14 and digits.startswith("0"):
-        digits = digits[1:]
-    if len(digits) == 13 and digits.startswith("0"):
-        digits = digits[1:]
-    return digits
+def connect() -> psycopg.Connection:
+    # Supabase's pooler (port 6543) runs in transaction mode, which doesn't support prepared
+    # statements.
+    return psycopg.connect(os.environ["DATABASE_URL"], autocommit=True, prepare_threshold=None)
 
 
-def same_barcode_forms(barcode: str) -> list[str]:
-    """Every length this barcode can be written at by adding or removing leading zeros, which
-    all name the same product (same as same_barcode_forms in backend/app/repositories)."""
-    digits = barcode.lstrip("0")
-    return [digits.zfill(length) for length in GTIN_LENGTHS if len(digits) <= length]
+SELECT_PRODUCTS = """
+SELECT id, name, size, product_page_url
+FROM products
+WHERE product_page_url IS NOT NULL
+ORDER BY id
+"""
 
 
-def load_products(path: str) -> list[Product]:
-    with open(path, encoding="utf-8") as f:
-        raw = yaml.safe_load(f) or {}
-    products = []
-    for item in raw.get("products", []):
-        if not item.get("url"):
-            # make_products_yaml.py leaves url null until someone fills it in.
-            log.warning("Skipping %s: no url yet", item.get("name"))
-            continue
-        try:
-            product = Product(**item)
-        except TypeError as e:
-            raise SystemExit(f"Bad entry in {path}: {item!r} ({e})") from e
-        if not isinstance(product.product, str) or not 0 < len(product.product) <= MAX_PRODUCT_ID:
-            raise SystemExit(f"Bad product ID in {path}: {product.product!r}")
-        if product.barcode is not None:
-            if not isinstance(product.barcode, str):
-                # Unquoted, YAML reads 01234567 as a number and the leading zero is lost.
-                raise SystemExit(f"Quote the barcode in {path}: {product.barcode!r}")
-            barcode = normalize_barcode(product.barcode)
-            if barcode is None:
-                raise SystemExit(f"Not a valid barcode in {path}: {product.barcode!r}")
-            product.barcode = barcode
-        products.append(product)
+def load_products() -> list[Product]:
+    """The catalog's products that have a page to read. Only reads, so a dry run uses it too."""
+    with connect() as conn:
+        products = [Product(*row) for row in conn.execute(SELECT_PRODUCTS).fetchall()]
     if not products:
-        raise SystemExit(f"No products with a url found in {path}")
+        raise SystemExit("No product has a product_page_url yet")
     return products
 
 
@@ -512,22 +475,6 @@ REVIEW_PROPERTIES: dict[str, Any] = {
 }
 
 PRICE_STOCK_PROPERTIES: dict[str, Any] = {
-    "barcode": {
-        "type": ["string", "null"],
-        "description": (
-            "The product's UPC, EAN or GTIN digits exactly as the page shows them "
-            "(e.g. gtin12/gtin13 in the structured data). Never a SKU, item, "
-            "model or part number."
-        ),
-    },
-    "size": {
-        "type": ["string", "null"],
-        "description": "Package size or count as shown, e.g. 9.25 oz or 12-pack.",
-    },
-    "image_url": {
-        "type": ["string", "null"],
-        "description": "The main product photo's absolute URL.",
-    },
     "price": {
         "type": ["number", "null"],
         "description": "Current selling price as a number, no symbols.",
@@ -556,7 +503,7 @@ def extract_tool() -> dict[str, Any]:
     required = ["found_product", "matches_expected_product", "review_count", "reviews"]
     if COLLECT_PRICE_AND_STOCK:
         properties |= PRICE_STOCK_PROPERTIES
-        required += ["barcode", "price", "currency", "in_stock"]
+        required += ["price", "currency", "in_stock"]
     return {
         "name": "record_product_data",
         "description": "Record the product data found on the page.",
@@ -568,10 +515,18 @@ def system_prompt() -> str:
     price_rule = (
         "- price is the price a customer pays right now for the default variant.\n"
         "  Put a crossed-out price in list_price.\n"
-        "- Copy the barcode digit for digit, only from a value labelled UPC, EAN or GTIN; "
-        "null otherwise.\n"
         if COLLECT_PRICE_AND_STOCK
         else ""
+    )
+    # Reviews barely depend on pack size, so a reviews-only run accepts any size of the same
+    # product. Prices and stock are per size, so that mode still needs the exact one.
+    match_rule = (
+        "- If the page is for a different product (brand, flavour or size) than expected,\n"
+        "  set matches_expected_product=false.\n"
+        if COLLECT_PRICE_AND_STOCK
+        else "- If the page is for a different product (brand, flavour, model or variant) than\n"
+        "  expected, set matches_expected_product=false. Ignore the package size, weight or\n"
+        "  count: the same product in another size or pack still matches.\n"
     )
     return f"""You extract product data from online store pages.
 Rules:
@@ -579,9 +534,7 @@ Rules:
 - Prefer the schema.org structured data when it exists, and check it against the visible text.
 {price_rule}- If the page is a captcha, error, login wall or not a single product,
   set found_product=false.
-- If the page is for a different product (brand, flavour or size) than expected,
-  set matches_expected_product=false.
-- rating and review_count describe all the product's reviews as the page summarises them
+{match_rule}- rating and review_count describe all the product's reviews as the page summarises them
   (e.g. "4.6 out of 5, 1,234 reviews"); don't work them out from the reviews shown.
 - reviews: at most {MAX_REVIEWS} reviews shoppers wrote, newest first. Copy the text as written,
   cut to {MAX_REVIEW_BODY} characters. Never include a reviewer's name, username or location,
@@ -601,7 +554,7 @@ async def extract(client: AsyncAnthropic, product: Product, page: str) -> dict[s
         messages=[
             {
                 "role": "user",
-                "content": f"Product we expect: {product.name}\nURL: {product.url}\n\n{page}",
+                "content": f"Product we expect: {product.expected}\nURL: {product.url}\n\n{page}",
             }
         ],
     )
@@ -697,38 +650,6 @@ def short_text(value: Any, limit: int) -> str | None:
     return " ".join(value.split())[:limit] or None
 
 
-def https_url(value: Any) -> str | None:
-    """value if it's an absolute https URL (phones block plain-http images), else None."""
-    if not isinstance(value, str):
-        return None
-    parsed = urlparse(value.strip())
-    return value.strip() if parsed.scheme == "https" and parsed.netloc else None
-
-
-def page_barcode(product: Product, data: dict[str, Any]) -> str:
-    """The product's barcode: the one read off the page, which must match products.yaml when
-    that sets one too."""
-    found = normalize_barcode(data.get("barcode"))
-    if data.get("barcode") and found is None:
-        log.warning("%s: page barcode %r isn't a valid UPC/EAN", product.label, data["barcode"])
-    if product.barcode and found and found != product.barcode:
-        raise RuntimeError(f"page barcode {found} isn't {product.barcode} from products.yaml")
-    barcode = product.barcode or found
-    if barcode is None:
-        raise RuntimeError("no barcode on the page; add it to products.yaml")
-    return barcode
-
-
-def new_product_row(product: Product, barcode: str, data: dict[str, Any]) -> dict[str, Any]:
-    """The products row to add, only used if no product has this barcode yet."""
-    return {
-        "barcode": barcode,
-        "name": short_text(data.get("title"), MAX_NAME) or product.name[:MAX_NAME],
-        "size": short_text(data.get("size"), MAX_SIZE),
-        "image_url": https_url(data.get("image_url")),
-    }
-
-
 def to_stars(value: Any, scale: Any, places: str) -> Decimal | None:
     """A rating on the page's scale (5 if it doesn't say) as stars out of 5, rounded to places
     (e.g. "0.1"); None if it isn't a usable rating."""
@@ -803,7 +724,7 @@ def review_rows(
         if key in reviews:  # keep the first copy
             continue
         reviews[key] = {
-            "product": product.product,
+            "product_id": product.id,
             "source": product.store,
             "source_url": product.url,
             "review_key": key,
@@ -821,7 +742,7 @@ def review_rows(
     summary = None
     if average is not None or count is not None or reviews:
         summary = {
-            "product": product.product,
+            "product_id": product.id,
             "source": product.store,
             "source_url": product.url,
             "product_name": short_text(data.get("title"), MAX_NAME),
@@ -833,7 +754,7 @@ def review_rows(
 
 
 def price_and_stock_rows(
-    product: Product, barcode: str, data: dict[str, Any], run_at: str
+    product: Product, data: dict[str, Any], run_at: str
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     """Turn extracted data into a prices row and a product_stock row; None for either one the
     page didn't give a usable value for."""
@@ -846,7 +767,7 @@ def price_and_stock_rows(
         log.warning("%s: bad currency %r", product.label, currency)
     else:
         price = {
-            "barcode": barcode,
+            "product_id": product.id,
             "amount": amount,
             "currency": currency,
             "source": product.store,
@@ -869,32 +790,14 @@ def price_and_stock_rows(
         log.warning("%s: stock status unknown", product.label)
     else:
         stock = {
-            "barcode": barcode,
-            "store": product.store,
+            "product_id": product.id,
+            "store": STOCK_STORE,
             "in_stock": in_stock,
             "quantity": quantity,
             "updated_at": run_at,
         }
     return price, stock
 
-
-# The stored product with this barcode in any of its forms (the backend and the product sync
-# match barcodes the same way), preferring the exact form.
-FIND_PRODUCT = """
-SELECT id FROM products
-WHERE barcode = ANY(%(forms)s)
-ORDER BY barcode = %(barcode)s DESC
-LIMIT 1
-"""
-
-# Only used when FIND_PRODUCT finds nothing. A product already in the database is left as it
-# is, so edits made in the admin screen stay.
-INSERT_PRODUCT = """
-INSERT INTO products (barcode, name, size, image_url)
-VALUES (%(barcode)s, %(name)s, %(size)s, %(image_url)s)
-ON CONFLICT (barcode) DO NOTHING
-RETURNING id
-"""
 
 # Skipped when an admin set the product's price, so the monitor doesn't replace it (T089).
 INSERT_PRICE = """
@@ -925,18 +828,18 @@ STORE_EXISTS = "SELECT 1 FROM store_locations WHERE slug = %s"
 # first_seen_at.
 INSERT_AGENT_REVIEW = """
 INSERT INTO agent_reviews
-    (product, source, source_url, review_key, stars, title, body, reviewed_on, first_seen_at)
-VALUES (%(product)s, %(source)s, %(source_url)s, %(review_key)s, %(stars)s, %(title)s, %(body)s,
-    %(reviewed_on)s, %(first_seen_at)s)
-ON CONFLICT (product, source, review_key) DO NOTHING
+    (product_id, source, source_url, review_key, stars, title, body, reviewed_on, first_seen_at)
+VALUES (%(product_id)s, %(source)s, %(source_url)s, %(review_key)s, %(stars)s, %(title)s,
+    %(body)s, %(reviewed_on)s, %(first_seen_at)s)
+ON CONFLICT (product_id, source, review_key) DO NOTHING
 """
 
 UPSERT_SOURCE_RATING = """
 INSERT INTO agent_source_ratings
-    (product, source, source_url, product_name, average_stars, review_count, updated_at)
-VALUES (%(product)s, %(source)s, %(source_url)s, %(product_name)s, %(average_stars)s,
+    (product_id, source, source_url, product_name, average_stars, review_count, updated_at)
+VALUES (%(product_id)s, %(source)s, %(source_url)s, %(product_name)s, %(average_stars)s,
     %(review_count)s, %(updated_at)s)
-ON CONFLICT (product, source) DO UPDATE
+ON CONFLICT (product_id, source) DO UPDATE
 SET source_url = EXCLUDED.source_url,
     product_name = EXCLUDED.product_name,
     average_stars = EXCLUDED.average_stars,
@@ -948,33 +851,31 @@ SET source_url = EXCLUDED.source_url,
 SELECT_PRODUCT_RATINGS = """
 SELECT source, average_stars, review_count
 FROM agent_source_ratings
-WHERE product = %(product)s
+WHERE product_id = %(product_id)s
 ORDER BY source
 """
 
 COUNT_PRODUCT_REVIEWS = """
 SELECT
-    (SELECT count(*) FROM agent_reviews WHERE product = %(product)s),
-    (SELECT review_count FROM agent_review_summaries WHERE product = %(product)s)
+    (SELECT count(*) FROM agent_reviews WHERE product_id = %(product_id)s),
+    (SELECT review_count FROM agent_review_summaries WHERE product_id = %(product_id)s)
 """
 
 # Every source's reviews for one product, newest first, without any note of who wrote them.
 SELECT_PRODUCT_REVIEWS = """
 SELECT source, stars, reviewed_on, title, body
 FROM agent_reviews
-WHERE product = %(product)s
+WHERE product_id = %(product_id)s
 ORDER BY reviewed_on DESC NULLS LAST, id DESC
 LIMIT %(limit)s
 """
 
 UPSERT_OVERALL_REVIEW = """
 INSERT INTO agent_review_summaries
-    (product, product_name, overall_review, review_count, model, generated_at)
-VALUES (%(product)s, %(product_name)s, %(overall_review)s, %(review_count)s, %(model)s,
-    %(generated_at)s)
-ON CONFLICT (product) DO UPDATE
-SET product_name = EXCLUDED.product_name,
-    overall_review = EXCLUDED.overall_review,
+    (product_id, overall_review, review_count, model, generated_at)
+VALUES (%(product_id)s, %(overall_review)s, %(review_count)s, %(model)s, %(generated_at)s)
+ON CONFLICT (product_id) DO UPDATE
+SET overall_review = EXCLUDED.overall_review,
     review_count = EXCLUDED.review_count,
     model = EXCLUDED.model,
     generated_at = EXCLUDED.generated_at
@@ -987,8 +888,7 @@ class Rows:
 
     reviews: list[dict[str, Any]]
     source_rating: dict[str, Any] | None
-    # Only with COLLECT_PRICE_AND_STOCK. new_product is only added if its barcode is new.
-    new_product: dict[str, Any] | None = None
+    # Only with COLLECT_PRICE_AND_STOCK.
     price: dict[str, Any] | None = None
     stock: dict[str, Any] | None = None
 
@@ -998,50 +898,41 @@ class Saved:
     """What a write actually changed."""
 
     reviews: int = 0  # reviews not seen before
-    new_product: bool = False
     price: bool = False  # False when an admin set the price (T089)
     stock: bool = False  # False when an admin or store staff set the stock (T094)
 
 
 class DatabaseWriter:
     """Writes to the agent_reviews, agent_source_ratings and agent_review_summaries tables
-    through DATABASE_URL (and with COLLECT_PRICE_AND_STOCK, to the products, prices and
-    product_stock tables)."""
+    through DATABASE_URL (and with COLLECT_PRICE_AND_STOCK, to the prices and product_stock
+    tables)."""
 
     def __init__(self) -> None:
-        import psycopg
-
-        # Supabase's pooler (port 6543) runs in transaction mode, which doesn't support
-        # prepared statements.
-        self.conn = psycopg.connect(
-            os.environ["DATABASE_URL"], autocommit=True, prepare_threshold=None
-        )
+        self.conn = connect()
         # Writes run in worker threads; a psycopg connection runs one transaction at a time.
         self._lock = threading.Lock()
 
     def close(self) -> None:
         self.conn.close()
 
-    def unknown_stores(self, products: list[Product]) -> set[str]:
-        """The store slugs in products that aren't in store_locations."""
-        stores = {p.store for p in products}
+    def store_exists(self, slug: str) -> bool:
         with self._lock, self.conn.cursor() as cur:
-            cur.execute("SELECT slug FROM store_locations WHERE slug = ANY(%s)", (list(stores),))
-            return stores - {row[0] for row in cur.fetchall()}
+            return cur.execute(STORE_EXISTS, (slug,)).fetchone() is not None
 
     def reviews_to_summarize(
-        self, product: str
+        self, product_id: int
     ) -> tuple[int, list[dict[str, Any]], list[dict[str, Any]]] | None:
         """The product's review count, newest reviews and store ratings, or None if it has no
         reviews, or no new ones since its overall review was written."""
+        key = {"product_id": product_id}
         with self._lock, self.conn.cursor() as cur:
-            total, summarized = cur.execute(COUNT_PRODUCT_REVIEWS, {"product": product}).fetchone()
+            total, summarized = cur.execute(COUNT_PRODUCT_REVIEWS, key).fetchone()
             if total == 0 or total == summarized:
                 return None
-            cur.execute(SELECT_PRODUCT_REVIEWS, {"product": product, "limit": MAX_SUMMARY_REVIEWS})
+            cur.execute(SELECT_PRODUCT_REVIEWS, {**key, "limit": MAX_SUMMARY_REVIEWS})
             names = [column.name for column in cur.description]
             reviews = [dict(zip(names, row, strict=True)) for row in cur.fetchall()]
-            cur.execute(SELECT_PRODUCT_RATINGS, {"product": product})
+            cur.execute(SELECT_PRODUCT_RATINGS, key)
             names = [column.name for column in cur.description]
             ratings = [dict(zip(names, row, strict=True)) for row in cur.fetchall()]
             return total, reviews, ratings
@@ -1059,33 +950,15 @@ class DatabaseWriter:
                 saved.reviews += cur.rowcount
             if rows.source_rating is not None:
                 cur.execute(UPSERT_SOURCE_RATING, rows.source_rating)
-            if rows.new_product is not None and (rows.price or rows.stock):
-                self._write_price_and_stock(cur, rows, saved)
+            if rows.price is not None:
+                cur.execute(INSERT_PRICE, rows.price)
+                saved.price = cur.rowcount == 1
+            if rows.stock is not None:
+                # Nothing written means an admin or store staff set this store's stock (left
+                # alone on purpose). main() has already checked that the store exists.
+                cur.execute(UPSERT_STOCK, rows.stock)
+                saved.stock = cur.rowcount == 1
         return saved
-
-    @staticmethod
-    def _write_price_and_stock(cur: Any, rows: Rows, saved: Saved) -> None:
-        barcode = rows.new_product["barcode"]
-        find = {"barcode": barcode, "forms": same_barcode_forms(barcode)}
-        row = cur.execute(FIND_PRODUCT, find).fetchone()
-        if row is None:
-            row = cur.execute(INSERT_PRODUCT, rows.new_product).fetchone()
-            saved.new_product = row is not None
-            if row is None:  # added by someone else since FIND_PRODUCT ran
-                row = cur.execute(FIND_PRODUCT, find).fetchone()
-        product_id = row[0]
-        if rows.price is not None:
-            cur.execute(INSERT_PRICE, {**rows.price, "product_id": product_id})
-            saved.price = cur.rowcount == 1
-        if rows.stock is not None:
-            cur.execute(UPSERT_STOCK, {**rows.stock, "product_id": product_id})
-            saved.stock = cur.rowcount == 1
-            # Nothing written means either no such store, or an admin set this store's stock
-            # (left alone on purpose).
-            if not saved.stock:
-                store_exists = cur.execute(STORE_EXISTS, (rows.stock["store"],)).fetchone()
-                if store_exists is None:
-                    raise RuntimeError(f"No store {rows.stock['store']} to stock")
 
 
 # --------------------------------------------------------------------------
@@ -1140,9 +1013,7 @@ async def process(
             reviews, summary = review_rows(product, data, run_at)
             rows = Rows(reviews, summary)
             if COLLECT_PRICE_AND_STOCK:
-                barcode = page_barcode(product, data)
-                rows.new_product = new_product_row(product, barcode, data)
-                rows.price, rows.stock = price_and_stock_rows(product, barcode, data, run_at)
+                rows.price, rows.stock = price_and_stock_rows(product, data, run_at)
             if not (rows.reviews or rows.source_rating or rows.price or rows.stock):
                 # A product nobody has reviewed yet, or reviews the page loads with JavaScript
                 # after it opens (which this fetch can't see).
@@ -1154,13 +1025,12 @@ async def process(
                 return True
             saved = await asyncio.to_thread(writer.write, rows)
             log.info(
-                "%s: %d new of %d reviews read, rating=%s (%s reviews)%s%s",
+                "%s: %d new of %d reviews read, rating=%s (%s reviews)%s",
                 label,
                 saved.reviews,
                 len(rows.reviews),
                 summary and summary["average_stars"],
                 summary and summary["review_count"],
-                " (new product)" if saved.new_product else "",
                 price_stock_note(rows, saved),
             )
             return True
@@ -1179,25 +1049,25 @@ async def summarize(
     """Write the product's overall review if it has reviews the model hasn't seen yet."""
     async with sem:
         try:
-            found = await asyncio.to_thread(writer.reviews_to_summarize, product.product)
+            found = await asyncio.to_thread(writer.reviews_to_summarize, product.id)
+            label = f"#{product.id} {product.name}"
             if found is None:
-                log.info("%s: overall review is up to date", product.product)
+                log.info("%s: overall review is up to date", label)
                 return True
             total, reviews, ratings = found
             text = await write_overall_review(claude, product.name, reviews, ratings)
             row = {
-                "product": product.product,
-                "product_name": product.name[:MAX_NAME],
+                "product_id": product.id,
                 "overall_review": text,
                 "review_count": total,
                 "model": MODEL,
                 "generated_at": run_at,
             }
             await asyncio.to_thread(writer.save_overall_review, row)
-            log.info("%s: overall review written from %d reviews", product.product, len(reviews))
+            log.info("%s: overall review written from %d reviews", label, len(reviews))
             return True
         except Exception:  # keep going with the other products
-            log.exception("%s: overall review failed", product.product)
+            log.exception("#%s %s: overall review failed", product.id, product.name)
             return False
 
 
@@ -1213,23 +1083,19 @@ async def main() -> int:
         action="store_true",
         help="only write overall reviews from the reviews already saved; fetch no pages",
     )
-    parser.add_argument("--only", help="run entries whose product, name or barcode has this")
+    parser.add_argument("--only", help="only products whose ID or name has this")
     args = parser.parse_args()
     if args.dry_run and args.summaries_only:
         parser.error("--summaries-only reads and writes the database, so it can't be a dry run")
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    products = load_products(PRODUCTS_FILE)
+    products = load_products()
     if args.only:
         needle = args.only.lower()
-        products = [
-            p
-            for p in products
-            if any(needle in (text or "").lower() for text in (p.product, p.name, p.barcode))
-        ]
+        products = [p for p in products if needle == str(p.id) or needle in p.name.lower()]
         if not products:
-            raise SystemExit(f"No product matching {args.only!r}")
+            raise SystemExit(f"No product with a page matching {args.only!r}")
     total = len(products)
 
     run_at = datetime.now(UTC).isoformat()
@@ -1240,12 +1106,9 @@ async def main() -> int:
 
     try:
         if writer is not None and COLLECT_PRICE_AND_STOCK:
-            # Stock needs a store location. Skip entries without one before spending a fetch and a
-            # Claude call. (Reviews don't: their source is only a name.)
-            bad_stores = await asyncio.to_thread(writer.unknown_stores, products)
-            for store in sorted(bad_stores):
-                log.error("No store_locations row with slug %s; skipping it", store)
-            products = [p for p in products if p.store not in bad_stores]
+            # Check before spending any fetches and model calls.
+            if not await asyncio.to_thread(writer.store_exists, STOCK_STORE):
+                raise SystemExit(f"No store_locations row with slug {STOCK_STORE} (STOCK_STORE)")
         results = []
         if not args.summaries_only:
             results = await asyncio.gather(
@@ -1253,10 +1116,9 @@ async def main() -> int:
             )
         summaries = []
         if writer is not None:
-            # One per product, however many stores it's at. A dry run has saved nothing to read.
-            unique = {p.product: p for p in products}.values()
+            # A dry run has saved nothing to read.
             summaries = await asyncio.gather(
-                *(summarize(p, claude, writer, run_at, sem) for p in unique)
+                *(summarize(p, claude, writer, run_at, sem) for p in products)
             )
     finally:
         await fetcher.close()
