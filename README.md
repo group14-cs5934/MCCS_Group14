@@ -633,15 +633,21 @@ the sync. UPCitemdb's free trial allows 100 lookups a day, hence `--limit 90`.
 pages, such as the Navy Exchange (which sells to MCX shoppers). It has its own uv project, so run
 its commands from that folder.
 
-For each entry in `products.yaml` it opens the product page in a headless browser (it obeys
-robots.txt and waits `PER_DOMAIN_DELAY` seconds between requests to one site), so reviews added
-by the page's scripts have loaded. It reads the average rating and schema.org reviews directly
-from the page, without reviewers' names, clicking through up to `MAX_REVIEW_PAGES` pages of
-them, newest first. A model checks that the page is for the right product. Only on a page
-without review markup does the model read the reviews itself (up to `MAX_REVIEWS`). Then, in one
-transaction, it:
+It works from the catalog: every product in `products` with a `product_page_url` (migration 022)
+is checked, and products without one are left out. To add a product, set its page:
 
-- saves reviews it hasn't seen before to `agent_reviews` (migration 017): product ID, source, stars
+```sql
+UPDATE products SET product_page_url = 'https://www.mynavyexchange.com/...' WHERE id = 42;
+```
+
+For each of those products it opens the page in a headless browser (it obeys robots.txt and waits
+`PER_DOMAIN_DELAY` seconds between requests to one site), so reviews added by the page's scripts
+have loaded. It reads the average rating and schema.org reviews directly from the page, without
+reviewers' names, clicking through up to `MAX_REVIEW_PAGES` pages of them, newest first. A model
+checks that the page is for the right product. Only on a page without review markup does the
+model read the reviews itself (up to `MAX_REVIEWS`). Then, in one transaction, it:
+
+- saves reviews it hasn't seen before to `agent_reviews` (migration 017): product, source, stars
   (out of 5, whatever scale the source uses), title, text and date. **Reviewers' names are never
   saved.** A review is recognised by its product, source, text and stars, so one the page still
   shows on the next run isn't saved twice, and its `first_seen_at` stays the first time it was
@@ -652,42 +658,40 @@ transaction, it:
 Then, for each product with reviews it hasn't summarized yet, it sends all the reviews collected
 for that product (the newest `MAX_SUMMARY_REVIEWS`) to the model, and saves the overall review it
 writes to `agent_review_summaries`, one row per product. The model is told how many reviews the
-stores report, so it can say how much of the picture its reviews are. Products with no new reviews are skipped,
-so they cost nothing. `--summaries-only` does this step without fetching any pages. A dry run skips
-it, because it saves no reviews to read. `model` records what wrote each overall review, so
-AI-generated text can be told apart, and `CLAUDE_MODEL` decides which model that is.
+stores report, so it can say how much of the picture its reviews are. Products with no new
+reviews are skipped, so they cost nothing. `--summaries-only` does this step without fetching any
+pages. A dry run skips it, because it saves no reviews to read. `model` records what wrote each
+overall review, so AI-generated text can be told apart, and `CLAUDE_MODEL` decides which model
+that is.
 
 These are the agent's own tables. By default the job writes nothing else, so the app's tables
 (including `reviews` and `ratings`, which hold app users' own reviews) are untouched and the app
-doesn't show this data.
-Rows name products by the job's own `product` ID from `products.yaml`, not by barcode, because
-many product pages don't show one. Linking an ID to the catalog is a separate step, for when the
-app shows this data.
+doesn't show this data yet. Their rows belong to a product (`product_id`, deleted with it), and a
+review's `source` is the page's web address without `www.`, e.g. `mynavyexchange.com`.
 
-A page that's for a different product is skipped. A page with no rating or reviews is logged and
-nothing is saved for it. A review the model returns that isn't found on the page is dropped and
-logged, so an invented one can't be saved. Reviews read from markup are saved exactly as written, so
-a name a shopper typed into their own review stays in `agent_reviews`. On the Navy Exchange, the first page has 8 reviews and later ones more, so the default read 128 in
-testing. Raising
-`MAX_REVIEW_PAGES` reads further back, with a pause between pages, but check the store's terms
-first. Sites that block the job, as Walmart does, are logged as failures; it doesn't try to get
-past them.
+A page that's for a different product is skipped. When collecting reviews, the same product in
+another package size or count still matches (e.g. a 14.3 oz Oreo page for a 13.29 oz product),
+since size makes little difference to reviews; price and stock mode still needs the exact size. A
+page with no rating or reviews is logged and nothing is saved for it. A review the model returns
+that isn't found on the page is dropped and logged, so an invented one can't be saved. Reviews
+read from markup are saved exactly as written, so a name a shopper typed into their own review
+stays in `agent_reviews`. On the Navy Exchange, the first page has 8 reviews and later ones more,
+so the default read 128 in testing. Raising `MAX_REVIEW_PAGES` reads further back, with a pause
+between pages, but check the store's terms first. Sites that block the job, as Walmart does, are
+logged as failures; it doesn't try to get past them.
 
 **Prices and stock** are off by default. With `COLLECT_PRICE_AND_STOCK=1` the job also writes to
-the app's tables, which needs a barcode (read off the page, or set in `products.yaml`, quoted) and
-`store` to be a `store_locations.slug`. It adds the product to `products` if its barcode is new (an
-existing product is never changed), adds a row to `prices` (`source` is the store's slug, and the app shows the newest
-price, so this becomes the product's current price), and updates the product's `product_stock`
-row for that store (`aisle` is left alone). A price an admin set, or stock an admin or store staff
-set, is kept.
+the app's tables: a row in `prices` (`source` is the page's web address, and the app shows the
+newest price, so this becomes the product's current price) and the product's `product_stock` row
+for the `STOCK_STORE` store location (`aisle` is left alone). A price an admin set, or stock an
+admin or store staff set, is kept.
 
 ```sh
 cd jobs/product-monitor
 uv sync
 uv run playwright install chromium         # once: the browser the job loads pages in
-uv run make_products_yaml.py               # build products.yaml from backend/scripts/demo_products.csv
-uv run --env-file .env product-monitor.py --dry-run        # print the rows it would write; doesn't touch the database
-uv run --env-file .env product-monitor.py --only doritos   # only entries whose product, name or barcode has "doritos"
+uv run --env-file .env product-monitor.py --dry-run        # print the rows it would write; only reads the product list
+uv run --env-file .env product-monitor.py --only pepsi     # only products whose ID or name has "pepsi"
 uv run --env-file .env product-monitor.py                  # write to the database
 uv run --env-file .env product-monitor.py --summaries-only # only write overall reviews
 ```
@@ -707,47 +711,31 @@ ARC only accepts requests from the VT Campus VPN, so connect to it first. That a
 using ARC can't run from GitHub Actions. ARC limits non-streaming answers to 8,000 tokens, so keep
 `MAX_REVIEWS` at 10 or below when using it.
 
-**`products.yaml`**: one entry per product and store. `product` is our own ID: give a product the
-same ID at every store and its reviews are grouped together. Keep sizes separate (a 12-count and a
-32-count get different IDs), since merging them later is easier than splitting them. `store` says
-where the reviews come from, saved as `source`. Entries without a `url` are skipped.
-
-```yaml
-products:
-  - product: "starbucks-veranda-blend-k-cup-pods-32-count"
-    name: "Starbucks Veranda Blend K-Cup Pods, 32-Count"
-    store: "navy-exchange"
-    url: "https://www.mynavyexchange.com/starbucks-veranda-blend-k-cup-pods-32-count/12750774"
-```
-
-`make_products_yaml.py` makes one entry for each product in `demo_products.csv`, with an ID made
-from its name and `url` left to fill in. Running it again keeps the URLs and IDs already filled in,
-and any entries added by hand.
-
 The job reads its settings from environment variables only (not from `backend/.env`), which
 `--env-file .env` fills in:
 
-| Variable                  | Required        | Default                     | Notes                                                        |
-| ------------------------- | --------------- | --------------------------- | ------------------------------------------------------------ |
-| `DATABASE_URL`            | yes, to write   |                             | Same Postgres connection string as the backend               |
-| `ANTHROPIC_API_KEY`       | yes             |                             | Anthropic or ARC API key                                     |
-| `ANTHROPIC_BASE_URL`      | no              | Anthropic's API             | Another Anthropic-compatible API, such as ARC                |
-| `PRODUCTS_FILE`           | no              | `products.yaml`             | Relative to the folder the job runs from                     |
-| `USER_AGENT`              | no              | `ProductMonitorBot/1.0 …`   | Set a real contact address before running it on a schedule   |
-| `CLAUDE_MODEL`            | no              | `claude-haiku-5-5`          | Model that reads the pages (`gpt-oss-120b` on ARC)           |
-| `MAX_REVIEW_PAGES`        | no              | `5`                         | Pages of a product's reviews to read, newest first           |
-| `MAX_REVIEWS`             | no              | `10`                        | Most reviews the model reads from a page without markup      |
-| `MAX_SUMMARY_REVIEWS`     | no              | `200`                       | Most reviews sent to the model for one overall review        |
-| `COLLECT_PRICE_AND_STOCK` | no              | `0`                         | `1` also saves prices and stock                              |
-| `DEFAULT_CURRENCY`        | no              | `USD`                       | Used when a page shows a price but no currency (prices only) |
-| `CONCURRENCY`             | no              | `4`                         | Products processed at once                                   |
-| `PER_DOMAIN_DELAY`        | no              | `3`                         | Seconds between requests to the same site                    |
-| `MAX_PAGE_CHARS`          | no              | `40000`                     | Page text sent to the model per product                      |
-| `PAGE_TIMEOUT_MS`         | no              | `45000`                     | How long to wait for a page to load                          |
-| `REVIEW_WAIT_MS`          | no              | `15000`                     | How long to wait for reviews; a page may have none           |
+| Variable                  | Required | Default                   | Notes                                                        |
+| ------------------------- | -------- | ------------------------- | ------------------------------------------------------------ |
+| `DATABASE_URL`            | yes      |                           | Same Postgres connection string as the backend               |
+| `ANTHROPIC_API_KEY`       | yes      |                           | Anthropic or ARC API key                                     |
+| `ANTHROPIC_BASE_URL`      | no       | Anthropic's API           | Another Anthropic-compatible API, such as ARC                |
+| `USER_AGENT`              | no       | `ProductMonitorBot/1.0 …` | Set a real contact address before running it on a schedule   |
+| `CLAUDE_MODEL`            | no       | `claude-haiku-5-5`        | Model that reads the pages (`gpt-oss-120b` on ARC)           |
+| `MAX_REVIEW_PAGES`        | no       | `5`                       | Pages of a product's reviews to read, newest first           |
+| `MAX_REVIEWS`             | no       | `10`                      | Most reviews the model reads from a page without markup      |
+| `MAX_SUMMARY_REVIEWS`     | no       | `200`                     | Most reviews sent to the model for one overall review        |
+| `COLLECT_PRICE_AND_STOCK` | no       | `0`                       | `1` also saves prices and stock                              |
+| `STOCK_STORE`             | no       | `mcx-online`              | `store_locations.slug` the stock is saved under (stock only) |
+| `DEFAULT_CURRENCY`        | no       | `USD`                     | Used when a page shows a price but no currency (prices only) |
+| `CONCURRENCY`             | no       | `4`                       | Products processed at once                                   |
+| `PER_DOMAIN_DELAY`        | no       | `3`                       | Seconds between requests to the same site                    |
+| `MAX_PAGE_CHARS`          | no       | `40000`                   | Page text sent to the model per product                      |
+| `PAGE_TIMEOUT_MS`         | no       | `45000`                   | How long to wait for a page to load                          |
+| `REVIEW_WAIT_MS`          | no       | `15000`                   | How long to wait for reviews; a page may have none           |
 
-The job exits with an error only if every product fails. CI doesn't check this folder yet, so
-run `uv run ruff check . && uv run ruff format --check .` in it before pushing.
+`DATABASE_URL` is needed even for a dry run, which reads the product list from it but writes
+nothing. The job exits with an error only if every product fails. CI doesn't check this folder
+yet, so run `uv run ruff check . && uv run ruff format --check .` in it before pushing.
 
 ## Running the full stack (app ↔ API ↔ database)
 
