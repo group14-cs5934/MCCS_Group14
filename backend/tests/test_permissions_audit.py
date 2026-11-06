@@ -33,6 +33,7 @@ from app.core.config import load_settings
 from app.main import create_app
 from app.repositories.audit_log import get_audit_log_repository
 from app.repositories.insights import get_insights_repository
+from app.repositories.overall_reviews import get_overall_review_repository
 from app.repositories.products import get_product_repository
 from app.repositories.ratings import get_rating_repository
 from app.repositories.restock import get_restock_repository
@@ -62,6 +63,7 @@ ACCESS: dict[tuple[str, str], Access] = {
     ("GET", "/products/{product_id}/availability"): "public",
     ("GET", "/products/{product_id}/ratings"): "public",
     ("GET", "/products/{product_id}/reviews"): "public",
+    ("GET", "/products/{product_id}/overall-review"): "public",
     ("POST", "/products/{product_id}/activity"): "public",  # anonymous view and scan counts
     ("GET", "/me"): "signed_in",
     ("DELETE", "/me/cart"): "signed_in",
@@ -294,6 +296,7 @@ def client(make_client, private_key, users) -> TestClient:
         (get_product_repository, "products"),
         (get_rating_repository, "ratings"),
         (get_review_repository, "reviews"),
+        (get_overall_review_repository, "overall reviews"),
         (get_store_repository, "stores"),
         (get_store_role_repository, "store roles"),
         (get_restock_repository, "restock"),

@@ -4,6 +4,7 @@ from app.schemas.audit import AuditLogEntry
 from app.schemas.brand import BrandCreate, BrandRead
 from app.schemas.category import CategoryCreate, CategoryRead
 from app.schemas.error import ErrorAction, ErrorResponse
+from app.schemas.overall_review import OverallReviewRead, OverallReviewSource
 from app.schemas.price import PriceCreate, PriceRead
 from app.schemas.product import ProductCreate, ProductRead
 from app.schemas.rating import RatingCreate, RatingRead, RatingSummary
@@ -41,6 +42,8 @@ __all__ = [
     "CategoryRead",
     "ErrorAction",
     "ErrorResponse",
+    "OverallReviewRead",
+    "OverallReviewSource",
     "PERMISSIONS",
     "Permission",
     "PermissionInfo",

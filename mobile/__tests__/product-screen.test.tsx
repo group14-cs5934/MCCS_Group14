@@ -3,6 +3,7 @@ import { fireEvent, renderRouter, screen, waitFor } from 'expo-router/testing-li
 
 import type { Product } from '@/types/product';
 import type { RatingSummary } from '@/types/rating';
+import type { OverallReview } from '@/types/review';
 import type { StoreStock } from '@/types/store';
 
 // T025: when the app requests a seeded product, the API returns it and the app displays it.
@@ -10,6 +11,7 @@ import type { StoreStock } from '@/types/store';
 // backend/tests/test_product_lookup.py, and the full stack is checked by hand (README: full stack).
 // T056: when a product has ratings, its page shows the average and count; with no ratings it
 // shows "No ratings yet".
+// T052.8: the Reviews tab shows the AI-written overall review as a section of its own.
 
 /** The dev seed script's product (backend/scripts/seed_dev.py), with a price added. */
 const SAMPLE_CHIPS: Product = {
@@ -61,12 +63,16 @@ const AVAILABILITY_PATH = /\/products\/\d+\/availability$/;
 const ACTIVITY_PATH = /\/products\/\d+\/activity$/;
 const SAVED_PATH = /\/me\/saved\/\d+$/;
 const REVIEWS_PATH = /\/products\/\d+\/reviews(\/me)?(\?.*)?$/;
+const OVERALL_REVIEW_PATH = /\/products\/\d+\/overall-review$/;
 
 /** What GET /products/{id}/ratings answers; each test starts with no ratings. */
 let ratings: RatingSummary | Error = { product_id: 1, average: null, count: 0 };
 
 /** What GET /products/{id}/availability answers. */
 let stores: StoreStock[] = [];
+
+/** What GET /products/{id}/overall-review answers; null (a 404) until a test sets one. */
+let overallReview: OverallReview | null = null;
 
 /**
  * The product requests made (the page also asks for the product's ratings and which stores have
@@ -80,7 +86,8 @@ const productRequests = () =>
       !AVAILABILITY_PATH.test(url) &&
       !ACTIVITY_PATH.test(url) &&
       !SAVED_PATH.test(url) &&
-      !REVIEWS_PATH.test(url),
+      !REVIEWS_PATH.test(url) &&
+      !OVERALL_REVIEW_PATH.test(url),
   );
 
 /** The URLs requested, in order. */
@@ -90,6 +97,7 @@ beforeEach(() => {
   fetchMock.mockReset();
   ratings = { product_id: 1, average: null, count: 0 };
   stores = [];
+  overallReview = null;
   // Product responses are queued by each test with respondWith; the product loads first, so the
   // ratings requests that follow get `ratings`, and "not rated yet" for the user's own rating.
   fetchMock.mockImplementation(async (url) => {
@@ -98,6 +106,11 @@ beforeEach(() => {
     }
     if (SAVED_PATH.test(url)) {
       return jsonResponse(404, { code: 'not_saved', message: 'Not saved' }); // see cart.test.tsx
+    }
+    if (OVERALL_REVIEW_PATH.test(url)) {
+      return overallReview
+        ? jsonResponse(200, overallReview)
+        : jsonResponse(404, { code: 'overall_review_not_found', message: 'None yet' });
     }
     if (AVAILABILITY_PATH.test(url)) {
       return jsonResponse(200, { product_id: 1, stores }); // see store-availability.test.tsx
@@ -362,5 +375,37 @@ describe('recently scanned', () => {
 
     expect(saves()).toHaveLength(1);
     setItem.mockRestore();
+  });
+});
+
+describe('AI overall review', () => {
+  it("is shown on the Reviews tab, apart from app users' reviews", async () => {
+    overallReview = {
+      product_id: 1,
+      overall_review: 'Shoppers like the crunch; a few find it too salty.',
+      review_count: 40,
+      generated_at: '2026-11-01T12:00:00Z',
+      sources: [{ source: 'mynavyexchange.com', average_stars: 4.6, review_count: 928 }],
+    };
+    respondWith(200, SAMPLE_CHIPS);
+
+    renderRouter('src/app', { initialUrl: '/product/1' });
+
+    expect(
+      await screen.findByText('Shoppers like the crunch; a few find it too salty.'),
+    ).toBeOnTheScreen();
+    expect(screen.getByText('AI summary')).toBeOnTheScreen();
+  });
+
+  it("isn't shown when the product has none", async () => {
+    respondWith(200, SAMPLE_CHIPS);
+
+    renderRouter('src/app', { initialUrl: '/product/1' });
+
+    await screen.findByText('No ratings yet');
+    await waitFor(() =>
+      expect(requestedUrls()).toContainEqual(expect.stringMatching(OVERALL_REVIEW_PATH)),
+    );
+    expect(screen.queryByText('AI summary')).toBeNull();
   });
 });

@@ -38,3 +38,28 @@ export type ReviewPage = {
   limit: number;
   offset: number;
 };
+
+/** What one store's product page says about all of the product's reviews there. */
+export type OverallReviewSource = {
+  /** The store's web address, e.g. "mynavyexchange.com". */
+  source: string;
+  /** The page's average rating out of 5; null if it shows none. */
+  average_stars: number | null;
+  /** How many reviews the page says the product has; null if it doesn't say. */
+  review_count: number | null;
+};
+
+/**
+ * A product's overall review, written by AI from shoppers' reviews on other stores' sites
+ * (GET /products/{id}/overall-review, T052.8). Mirrors backend/app/schemas/overall_review.py.
+ */
+export type OverallReview = {
+  product_id: number;
+  /** The AI-written overall review. */
+  overall_review: string;
+  /** How many collected reviews it was written from. */
+  review_count: number;
+  generated_at: IsoDateTime;
+  /** Each store the reviews came from, most reviews first. */
+  sources: OverallReviewSource[];
+};

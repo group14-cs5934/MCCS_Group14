@@ -265,6 +265,7 @@ payloads get `422` with every problem listed.
 | `POST /products/validate`      | The cleaned-up payload, or `422` listing every problem.                     |
 | `GET /products/{id}/reviews`   | A page of reviews, newest first (`limit`, `offset`), or `404`.              |
 | `POST /products/{id}/reviews`  | Saves the signed-in user's review (one per product); `401` if signed out.   |
+| `GET /products/{id}/overall-review` | The AI-written overall review from other stores' reviews, or `404` (see below). |
 | `GET /locations`               | Every MCCS store, sorted by name.                                           |
 | `GET /locations/{id}`          | One store with its `address` and `hours` (free text; `null` if not listed), or `404 store_not_found`. |
 | `GET /products/{id}/availability` | Each store with `in_stock` for the product (in stock first), or `404`.   |
@@ -292,6 +293,16 @@ a valid token):
 product. `POST` and `GET .../me` return `{"product_id", "stars", "created_at",
 "updated_at"}`. `stars` must be a whole number from 1 to 5; anything else (`0`, `6`, `4.5`,
 `"4"`) is a `422`. An unknown product is a `404` with code `product_not_found`.
+
+**AI overall review.** `GET /products/{id}/overall-review` is public and returns the overall
+review the [product monitor job](#product-monitor-job) wrote from shoppers' reviews on other
+stores' sites, e.g. `{"product_id": 7, "overall_review": "...", "review_count": 128,
+"generated_at": "...", "sources": [{"source": "mynavyexchange.com", "average_stars": 4.6,
+"review_count": 928}]}`. `review_count` is how many collected reviews it was written from;
+`sources` lists each store's own average and total (either can be `null`), most reviews first. A
+product without one is a `404` with code `overall_review_not_found`. The app shows it on the
+Reviews tab as a card of its own, labelled "AI summary", above app users' reviews, and hides it
+when there's none.
 
 Search takes `q` (words in the product name; small typos are fine, best match first),
 `category` (a category slug; only that category's products, sorted by name), or both, plus
@@ -665,9 +676,11 @@ overall review, so AI-generated text can be told apart, and `CLAUDE_MODEL` decid
 that is.
 
 These are the agent's own tables. By default the job writes nothing else, so the app's tables
-(including `reviews` and `ratings`, which hold app users' own reviews) are untouched and the app
-doesn't show this data yet. Their rows belong to a product (`product_id`, deleted with it), and a
-review's `source` is the page's web address without `www.`, e.g. `mynavyexchange.com`.
+(including `reviews` and `ratings`, which hold app users' own reviews) are untouched. The app
+shows the overall review and each store's totals on the product page's Reviews tab, apart from
+app users' reviews (`GET /products/{id}/overall-review`); the individual collected reviews aren't
+shown. Their rows belong to a product (`product_id`, deleted with it), and a review's `source` is
+the page's web address without `www.`, e.g. `mynavyexchange.com`.
 
 A page that's for a different product is skipped. When collecting reviews, the same product in
 another package size or count still matches (e.g. a 14.3 oz Oreo page for a 13.29 oz product),
