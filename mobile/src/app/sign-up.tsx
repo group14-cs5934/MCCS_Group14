@@ -6,6 +6,7 @@ import { MIN_PASSWORD_LENGTH, hasErrors, useAuth, validateSignUp, type FieldErro
 import Button from '@/components/Button';
 import ErrorBanner from '@/components/ErrorBanner';
 import IconBadge from '@/components/IconBadge';
+import Mascot from '@/components/Mascot';
 import TextField from '@/components/TextField';
 import { sharedStyles, spacing } from '@/theme';
 
@@ -62,6 +63,7 @@ export default function SignUpScreen() {
         contentContainerStyle={sharedStyles.screenContent}
         keyboardShouldPersistTaps="handled"
       >
+        <Mascot style={styles.mascot} />
         <View style={styles.intro}>
           <Text style={sharedStyles.title}>Create your account.</Text>
           <Text style={sharedStyles.secondaryText}>
@@ -108,6 +110,9 @@ export default function SignUpScreen() {
 }
 
 const styles = StyleSheet.create({
+  mascot: {
+    alignSelf: 'center',
+  },
   intro: {
     gap: spacing.sm,
   },

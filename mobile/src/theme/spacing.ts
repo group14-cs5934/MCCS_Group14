@@ -32,6 +32,8 @@ export const sizes = {
   thumb: 64, // product image in a cart row
   avatar: 36, // initials circle
   scanTab: 58, // the raised Scan button in the tab bar
+  mascot: 120, // sitting Chesty on sign-in, sign-up and order confirmation
+  mascotLying: 112, // width of lying-down Chesty on empty states
   icon: 20,
   iconLarge: 24,
 } as const;

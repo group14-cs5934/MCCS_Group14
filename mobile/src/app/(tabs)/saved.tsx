@@ -9,6 +9,7 @@ import { unsaveProduct } from '@/api/saved';
 import AsyncContent from '@/components/AsyncContent';
 import Button from '@/components/Button';
 import ErrorBanner from '@/components/ErrorBanner';
+import Mascot from '@/components/Mascot';
 import { ProductImage } from '@/components/ProductLine';
 import { useCartCount } from '@/hooks/useCartCount';
 import { useFocusGet } from '@/hooks/useFocusGet';
@@ -90,11 +91,7 @@ export default function SavedScreen() {
           }
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Ionicons
-                name="bookmark-outline"
-                size={textStyles.display.fontSize}
-                color={colors.textMuted}
-              />
+              <Mascot pose="lying" />
               <Text style={sharedStyles.heading}>Nothing saved yet</Text>
               <Text style={[sharedStyles.secondaryText, styles.center]}>
                 Tap Save on a product to keep it here.

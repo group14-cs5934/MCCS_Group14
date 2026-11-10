@@ -5,6 +5,7 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } fr
 import { hasErrors, useAuth, validateSignIn, type FieldErrors } from '@/auth';
 import Button from '@/components/Button';
 import ErrorBanner from '@/components/ErrorBanner';
+import Mascot from '@/components/Mascot';
 import TextField from '@/components/TextField';
 import { sharedStyles, spacing } from '@/theme';
 
@@ -44,6 +45,7 @@ export default function SignInScreen() {
         contentContainerStyle={sharedStyles.screenContent}
         keyboardShouldPersistTaps="handled"
       >
+        <Mascot style={styles.mascot} />
         <View style={styles.intro}>
           <Text style={sharedStyles.title}>Welcome back.</Text>
           <Text style={sharedStyles.secondaryText}>Sign in to scan and compare products.</Text>
@@ -80,6 +82,9 @@ export default function SignInScreen() {
 }
 
 const styles = StyleSheet.create({
+  mascot: {
+    alignSelf: 'center',
+  },
   intro: {
     gap: spacing.sm,
   },

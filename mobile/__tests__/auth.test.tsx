@@ -46,6 +46,16 @@ describe('signed out', () => {
     expect(screen.queryByText('What are you shopping for?')).not.toBeOnTheScreen();
   });
 
+  it('shows the mascot on sign-in and sign-up', async () => {
+    await openSignIn();
+    expect(screen.getByTestId('mascot', { includeHiddenElements: true })).toBeOnTheScreen();
+
+    fireEvent.press(screen.getByText('Create an account'));
+    await screen.findByText('Create your account.');
+    // Sign-in stays mounted under sign-up, so both screens' mascots are in the tree.
+    expect(screen.getAllByTestId('mascot', { includeHiddenElements: true })).toHaveLength(2);
+  });
+
   it("can't open a product directly", async () => {
     renderRouter('src/app', { initialUrl: '/product/1' });
 
