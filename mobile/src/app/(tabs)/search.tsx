@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncContent from '@/components/AsyncContent';
 import Button from '@/components/Button';
 import IconBadge from '@/components/IconBadge';
+import Mascot from '@/components/Mascot';
 import SearchResultsList from '@/components/SearchResultsList';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { usePreferredStore } from '@/hooks/usePreferredStore';
@@ -191,7 +192,6 @@ function SearchContent({
     >
       {results?.length === 0 ? (
         <Message
-          icon="help-circle-outline"
           title="No results"
           text={
             filtered
@@ -251,14 +251,15 @@ function Message({
   text,
   children,
 }: {
-  icon: ComponentProps<typeof IconBadge>['icon'];
+  /** Leave out to show the mascot instead. */
+  icon?: ComponentProps<typeof IconBadge>['icon'];
   title: string;
   text: string;
   children?: ReactNode;
 }) {
   return (
     <View style={[sharedStyles.centered, styles.message]} accessibilityLiveRegion="polite">
-      <IconBadge icon={icon} />
+      {icon ? <IconBadge icon={icon} /> : <Mascot pose="lying" />}
       <Text style={[sharedStyles.heading, styles.center]}>{title}</Text>
       <Text style={[sharedStyles.secondaryText, styles.center]}>{text}</Text>
       {children}

@@ -1,13 +1,13 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import AsyncContent from '@/components/AsyncContent';
 import Button from '@/components/Button';
+import Mascot from '@/components/Mascot';
 import OrderSummary from '@/components/OrderSummary';
 import { useApiGet } from '@/hooks/useApiGet';
-import { colors, radius, sharedStyles, sizes, spacing, textStyles } from '@/theme';
+import { colors, radius, sharedStyles, spacing, textStyles } from '@/theme';
 import type { Order } from '@/types/cart';
 
 /** Shown after Place order: the order number, store, pickup or delivery, items and total. */
@@ -24,13 +24,7 @@ export default function OrderConfirmationScreen() {
         <View
           style={[sharedStyles.headerBand, styles.hero, { paddingTop: insets.top + spacing.xxl }]}
         >
-          <View style={styles.check}>
-            <Ionicons
-              name="checkmark"
-              size={textStyles.display.fontSize}
-              color={colors.textOnPrimary}
-            />
-          </View>
+          <Mascot />
           <Text style={styles.title}>Order placed</Text>
           {data ? (
             <>
@@ -78,14 +72,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.sm,
     paddingHorizontal: spacing.xl,
-  },
-  check: {
-    width: sizes.thumb,
-    height: sizes.thumb,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.pill,
-    backgroundColor: colors.action,
   },
   title: {
     ...textStyles.hero,

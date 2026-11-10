@@ -364,6 +364,7 @@ describe('Cart tab', () => {
     renderRouter('src/app', { initialUrl: '/cart' });
 
     expect(await screen.findByText('Your cart is empty')).toBeOnTheScreen();
+    expect(screen.getByTestId('mascot', { includeHiddenElements: true })).toBeOnTheScreen();
     expect(screen.queryByRole('button', { name: 'Checkout' })).not.toBeOnTheScreen();
   });
 

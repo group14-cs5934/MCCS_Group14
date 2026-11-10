@@ -10,6 +10,7 @@ import AsyncContent from '@/components/AsyncContent';
 import Button from '@/components/Button';
 import Card from '@/components/Card';
 import ErrorBanner from '@/components/ErrorBanner';
+import Mascot from '@/components/Mascot';
 import ProductLine from '@/components/ProductLine';
 import { useCartCount } from '@/hooks/useCartCount';
 import { useFocusGet } from '@/hooks/useFocusGet';
@@ -78,11 +79,7 @@ export default function CartScreen() {
           }
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Ionicons
-                name="cart-outline"
-                size={textStyles.display.fontSize}
-                color={colors.textMuted}
-              />
+              <Mascot pose="lying" />
               <Text style={sharedStyles.heading}>Your cart is empty</Text>
               <Text style={[sharedStyles.secondaryText, styles.center]}>
                 Tap Add to cart on a product, or on one you saved.

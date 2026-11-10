@@ -10,6 +10,7 @@ export default function NotFoundScreen() {
         title="Page not found"
         description="This screen does not exist."
         links={[{ label: 'Go to Home', href: '/' }]}
+        mascot
       />
     </>
   );
